@@ -9,8 +9,8 @@ class Conv2D : public Module{
         int kernel_size;
         int stride;
         int padding;
-        Tensor<int,4> weight;
-        Tensor<int,1> bias;
+        Tensor<int> weight;
+        Tensor<int> bias;
         Conv2D(int in_channels, int out_channels, int kernel_size, int stride, int padding);
-        Tensor<int,4> operator()(Tensor<int,4> x);
+        Tensor<int> operator()(Tensor<int> x);
 };
