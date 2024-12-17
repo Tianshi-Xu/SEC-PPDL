@@ -3,6 +3,10 @@
 int main() {
     // 使用double类型的张量
     Tensor<double> tensor_double({2, 3}, {1.1, 2.2, 3.3, 4.4, 5.5, 6.6});
+    // 初始化一个3x3的张量，默认值为0
+    Tensor<int> x({3,3});
+    x.print();
+    
     std::cout << "Double Tensor:\n";
     tensor_double.print();
     tensor_double({0,0})=999;
