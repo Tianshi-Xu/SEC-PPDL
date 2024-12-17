@@ -1,273 +1,145 @@
 #include <iostream>
 #include <vector>
-#include <stdexcept>
 #include <cassert>
 #include <numeric>
+#include <functional>
+#include <initializer_list>
+#include <type_traits>
 
-// 前向声明
-template <typename T, size_t N>
-class Tensor;
-
-// 特化模板：一维张量
+// Tensor类定义
 template <typename T>
-class Tensor<T, 1> {
-public:
-    std::vector<T> data;
-
-    // 默认构造函数
-    Tensor() {}
-
-    // 使用指定形状初始化张量，初始化为默认值（比如0）
-    Tensor(const std::vector<size_t>& shape) {
-        resize(shape);
-    }
-
-    // 获取张量的形状
-    std::vector<size_t> shape() const {
-        return { data.size() };
-    }
-
-    // 公共的 resize 方法
-    void resize(const std::vector<size_t>& shape) {
-        if (shape.size() != 1) {
-            throw std::invalid_argument("Shape size does not match tensor dimension.");
-        }
-        data.resize(shape[0], T{}); // 使用默认值初始化
-    }
-
-    // 重载 () 运算符 支持访问和赋值
-    T& operator()(const std::vector<size_t>& indices) {
-        if (indices.size() != 1) {
-            throw std::invalid_argument("Incorrect number of indices for 1D tensor.");
-        }
-        return data[indices[0]];
-    }
-
-    const T& operator()(const std::vector<size_t>& indices) const {
-        if (indices.size() != 1) {
-            throw std::invalid_argument("Incorrect number of indices for 1D tensor.");
-        }
-        return data[indices[0]];
-    }
-
-    // 将张量扁平化为一维数组
-    std::vector<T> flatten() const {
-        return data;
-    }
-
-    // 将张量重塑为新的形状
-    Tensor<T, 1> reshape(const std::vector<size_t>& new_shape) const {
-        if (new_shape.size() != 1) {
-            throw std::invalid_argument("New shape does not match tensor dimension.");
-        }
-        if (new_shape[0] != data.size()) {
-            throw std::invalid_argument("New shape must have the same number of elements.");
-        }
-        Tensor<T, 1> reshaped_tensor(new_shape);
-        reshaped_tensor.data = data;
-        return reshaped_tensor;
-    }
-
-    // 将扁平化数据填充到张量
-    void fill_from_flattened(const std::vector<T>& flattened_data, size_t& index) {
-        for (auto& val : data) {
-            val = flattened_data[index++];
-        }
-    }
-
-    // 辅助函数，扁平化张量
-    void flatten_helper(std::vector<T>& result) const {
-        result.insert(result.end(), data.begin(), data.end());
-    }
-
-    // 友元函数：加法运算符
-    friend Tensor operator+(const Tensor& a, const Tensor& b) {
-        // 首先检查两个张量的形状是否相同
-        if (a.shape() != b.shape()) {
-            throw std::invalid_argument("Cannot add Tensors with different shapes.");
-        }
-
-        // 创建一个新的 Tensor 以存储结果
-        Tensor result(a.shape());
-        result.data.resize(a.data.size());
-
-        // 执行元素级加法
-        for (size_t i = 0; i < a.data.size(); ++i) {
-            result.data[i] = a.data[i] + b.data[i];
-        }
-
-        return result;
-    }
-
-    // 友元函数：减法运算符
-    friend Tensor operator-(const Tensor& a, const Tensor& b) {
-        // 首先检查两个张量的形状是否相同
-        if (a.shape() != b.shape()) {
-            throw std::invalid_argument("Cannot subtract Tensors with different shapes.");
-        }
-
-        // 创建一个新的 Tensor 以存储结果
-        Tensor result(a.shape());
-        result.data.resize(a.data.size());
-
-        // 执行元素级减法
-        for (size_t i = 0; i < a.data.size(); ++i) {
-            result.data[i] = a.data[i] - b.data[i];
-        }
-
-        return result;
-    }
-};
-
-// 一般模板：N维张量（N >= 2）
-template <typename T, size_t N>
 class Tensor {
 public:
-    std::vector<Tensor<T, N - 1>> data; // 存储每个元素的数据
-
-    // 默认构造函数：创建一个空的张量
-    Tensor() {}
-
-    // 使用指定形状初始化张量，初始化为默认值（比如0）
-    Tensor(const std::vector<size_t>& shape) {
-        resize(shape);
+    // 构造函数
+    Tensor(const std::vector<size_t>& shape)
+        : shape_(shape) {
+        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
+        computeStrides();
+        data_.resize(totalSize(), T(0));
     }
 
-    // 获取当前张量的形状
-    std::vector<size_t> shape() const {
-        std::vector<size_t> current_shape;
-        current_shape.push_back(data.size());
-        if (!data.empty()) {
-            auto subshape = data.front().shape();
-            current_shape.insert(current_shape.end(), subshape.begin(), subshape.end());
-        } else {
-            current_shape.insert(current_shape.end(), N - 1, 0);
-        }
-        return current_shape;
+    // 从初始化列表构造
+    Tensor(const std::vector<size_t>& shape, const std::initializer_list<T>& values)
+        : shape_(shape), data_(values) {
+        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
+        computeStrides();
+        assert(data_.size() == totalSize() && "Data size does not match shape");
     }
 
-    // 公共的 resize 方法，用于根据给定形状调整张量的大小
-    void resize(const std::vector<size_t>& shape) {
-        if (shape.size() < 1) {
-            throw std::invalid_argument("Shape must have at least one dimension.");
-        }
-        size_t dim_size = shape[0];
-        data.resize(dim_size, Tensor<T, N - 1>()); // 使用默认构造初始化
-        std::vector<size_t> sub_shape(shape.begin() + 1, shape.end());
-        for (auto& sub_tensor : data) {
-            sub_tensor.resize(sub_shape);
-        }
+    // Flatten操作
+    void flatten() {
+        shape_ = { data_.size() };
+        strides_ = { 1 };
     }
 
-    // 重载 () 运算符 支持访问和赋值
+    // Reshape操作
+    void reshape(const std::vector<size_t>& new_shape) {
+        size_t new_size = std::accumulate(new_shape.begin(), new_shape.end(), size_t(1), std::multiplies<size_t>());
+        assert(new_size == data_.size() && "Total size must remain unchanged in reshape");
+        shape_ = new_shape;
+        computeStrides();
+    }
+
+    // 索引访问（通过向量索引）
     T& operator()(const std::vector<size_t>& indices) {
-        if (indices.size() != N) {
-            throw std::invalid_argument("Incorrect number of indices.");
-        }
-        return data[indices[0]](std::vector<size_t>(indices.begin() + 1, indices.end()));
+        size_t idx = computeIndex(indices);
+        return data_[idx];
     }
 
     const T& operator()(const std::vector<size_t>& indices) const {
-        if (indices.size() != N) {
-            throw std::invalid_argument("Incorrect number of indices.");
-        }
-        return data[indices[0]](std::vector<size_t>(indices.begin() + 1, indices.end()));
+        size_t idx = computeIndex(indices);
+        return data_[idx];
     }
 
-    // 友元函数：加法运算符
-    friend Tensor operator+(const Tensor& a, const Tensor& b) {
-        // 首先检查两个张量的形状是否相同
-        if (a.shape() != b.shape()) {
-            throw std::invalid_argument("Cannot add Tensors with different shapes.");
+    // 索引访问（通过初始化列表）
+    T& operator()(std::initializer_list<size_t> indices) {
+        return operator_(std::vector<size_t>(indices));
+    }
+
+    const T& operator()(std::initializer_list<size_t> indices) const {
+        return operator_(std::vector<size_t>(indices));
+    }
+
+    // 获取形状
+    const std::vector<size_t>& shape() const { return shape_; }
+
+    // 获取数据
+    const std::vector<T>& data() const { return data_; }
+
+    // 加法
+    Tensor<T> operator+(const Tensor<T>& other) const {
+        assert(shape_ == other.shape_ && "Shapes must match for addition");
+        Tensor<T> result(shape_);
+        for (size_t i = 0; i < data_.size(); ++i) {
+            result.data_[i] = data_[i] + other.data_[i];
         }
-
-        // 创建一个新的 Tensor 以存储结果
-        Tensor result(a.shape());
-        result.data.resize(a.data.size());
-
-        // 执行元素级加法
-        for (size_t i = 0; i < a.data.size(); ++i) {
-            result.data[i] = a.data[i] + b.data[i];
-        }
-
         return result;
     }
 
-    // 友元函数：减法运算符
-    friend Tensor operator-(const Tensor& a, const Tensor& b) {
-        // 首先检查两个张量的形状是否相同
-        if (a.shape() != b.shape()) {
-            throw std::invalid_argument("Cannot subtract Tensors with different shapes.");
+    // 减法
+    Tensor<T> operator-(const Tensor<T>& other) const {
+        assert(shape_ == other.shape_ && "Shapes must match for subtraction");
+        Tensor<T> result(shape_);
+        for (size_t i = 0; i < data_.size(); ++i) {
+            result.data_[i] = data_[i] - other.data_[i];
         }
-
-        // 创建一个新的 Tensor 以存储结果
-        Tensor result(a.shape());
-        result.data.resize(a.data.size());
-
-        // 执行元素级减法
-        for (size_t i = 0; i < a.data.size(); ++i) {
-            result.data[i] = a.data[i] - b.data[i];
-        }
-
         return result;
     }
 
-    // 将张量扁平化为一维数组
-    std::vector<T> flatten() const {
-        std::vector<T> result;
-        flatten_helper(result);
-        return result;
+    // 打印张量（仅支持打印数据和形状）
+    void print() const {
+        std::cout << "Shape: [";
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            std::cout << shape_[i];
+            if (i != shape_.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]\nData: [";
+        for (size_t i = 0; i < data_.size(); ++i) {
+            std::cout << data_[i];
+            if (i != data_.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]\n";
     }
 
-    // 将张量重塑为新的形状（需要确保新的形状与原始元素数量一致）
-    Tensor<T, N> reshape(const std::vector<size_t>& new_shape) const {
-        size_t total_size = 1;
-        for (size_t dim : shape()) {
-            total_size *= dim;
-        }
-        size_t new_total_size = std::accumulate(new_shape.begin(), new_shape.end(), static_cast<size_t>(1), std::multiplies<size_t>());
+private:
+    std::vector<size_t> shape_;
+    std::vector<size_t> strides_;
+    std::vector<T> data_;
 
-        if (total_size != new_total_size) {
-            throw std::invalid_argument("New shape must have the same number of elements.");
-        }
-
-        std::vector<T> flattened_data = flatten();
-        Tensor<T, N> reshaped_tensor(new_shape);
-        size_t index = 0;
-        reshaped_tensor.fill_from_flattened(flattened_data, index);
-        return reshaped_tensor;
-    }
-
-    // 递归的访问和赋值函数
-    T& get_element(const std::vector<size_t>& indices) {
-        if constexpr (N == 1) {
-            return data[indices[0]];
-        }
-        else {
-            return data[indices[0]].get_element(std::vector<size_t>(indices.begin() + 1, indices.end()));
+    // 计算步长
+    void computeStrides() {
+        strides_.resize(shape_.size());
+        if (shape_.empty()) return;
+        strides_[shape_.size() - 1] = 1;
+        for (int i = static_cast<int>(shape_.size()) - 2; i >= 0; --i) {
+            strides_[i] = strides_[i + 1] * shape_[i + 1];
         }
     }
 
-    const T& get_element(const std::vector<size_t>& indices) const {
-        if constexpr (N == 1) {
-            return data[indices[0]];
-        }
-        else {
-            return data[indices[0]].get_element(std::vector<size_t>(indices.begin() + 1, indices.end()));
-        }
+    // 计算总大小
+    size_t totalSize() const {
+        if (shape_.empty()) return 0;
+        return std::accumulate(shape_.begin(), shape_.end(), size_t(1), std::multiplies<size_t>());
     }
 
-    // 将扁平化数据填充到张量
-    void fill_from_flattened(const std::vector<T>& flattened_data, size_t& index) {
-        for (auto& sub_tensor : data) {
-            sub_tensor.fill_from_flattened(flattened_data, index);
+    // 计算一维索引
+    size_t computeIndex(const std::vector<size_t>& indices) const {
+        assert(indices.size() == shape_.size() && "Number of indices must match number of dimensions");
+        size_t idx = 0;
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            assert(indices[i] < shape_[i] && "Index out of bounds");
+            idx += indices[i] * strides_[i];
         }
+        return idx;
     }
 
-    // 辅助函数，扁平化张量
-    void flatten_helper(std::vector<T>& result) const {
-        for (const auto& sub_tensor : data) {
-            sub_tensor.flatten_helper(result);
-        }
+    // 辅助函数，避免重复代码
+    T& operator_(const std::vector<size_t>& indices) {
+        return const_cast<T&>(static_cast<const Tensor<T>&>(*this).operator()(indices));
+    }
+
+    const T& operator_(const std::vector<size_t>& indices) const {
+        return operator()(indices);
     }
 };
+

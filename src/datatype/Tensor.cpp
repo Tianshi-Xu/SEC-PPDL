@@ -1,98 +1,57 @@
 #include "Tensor.h"
-using namespace std;
-
-// 辅助函数：打印张量的形状
-template <typename T, size_t N>
-void print_shape(const Tensor<T, N>& tensor) {
-    std::vector<size_t> shp = tensor.shape();
-    std::cout << "(";
-    for (size_t i = 0; i < shp.size(); ++i) {
-        std::cout << shp[i];
-        if (i != shp.size() - 1) std::cout << ", ";
-    }
-    std::cout << ")";
-}
-
-template <typename T>
-void print_tensor_3d(const Tensor<T, 3>& tensor) {
-    std::vector<size_t> shp = tensor.shape();
-    if (shp.size() != 3) {
-        throw std::invalid_argument("print_tensor_3d expects a 3D tensor.");
-    }
-    size_t dim0 = shp[0];
-    size_t dim1 = shp[1];
-    size_t dim2 = shp[2];
-
-    for (size_t i = 0; i < dim0; ++i) {
-        std::cout << "Slice " << i << ":\n";
-        for (size_t j = 0; j < dim1; ++j) {
-            for (size_t k = 0; k < dim2; ++k) {
-                std::cout << tensor({i, j, k}) << "\t";
-            }
-            std::cout << "\n";
-        }
-        std::cout << "\n";
-    }
-}
-
+// 示例使用
 int main() {
-    try {
-        // 定义三维张量的形状
-        std::vector<size_t> shape = {2, 3, 4}; // 2 slices, 3 rows, 4 columns
+    // 使用double类型的张量
+    Tensor<double> tensor_double({2, 3}, {1.1, 2.2, 3.3, 4.4, 5.5, 6.6});
+    std::cout << "Double Tensor:\n";
+    tensor_double.print();
+    tensor_double({0,0})=999;
+    // 重塑为3x2
+    tensor_double.reshape({3, 2});
+    std::cout << "After reshape to [3, 2]:\n";
+    tensor_double.print();
 
-        // 创建两个三维张量
-        Tensor<int, 3> tensor1(shape);
-        Tensor<int, 3> tensor2(shape);
+    // 展平
+    tensor_double.flatten();
+    std::cout << "After flatten:\n";
+    tensor_double.print();
 
-        // 初始化 tensor1
-        // 填充 tensor1 的元素为 i * 100 + j * 10 + k
-        for (size_t i = 0; i < shape[0]; ++i) {
-            for (size_t j = 0; j < shape[1]; ++j) {
-                for (size_t k = 0; k < shape[2]; ++k) {
-                    tensor1({i, j, k}) = static_cast<int>(i * 100 + j * 10 + k);
-                }
-            }
-        }
+    // 重新形状为2x3
+    tensor_double.reshape({2, 3});
+    std::cout << "After reshape back to [2, 3]:\n";
+    tensor_double.print();
 
-        // 初始化 tensor2
-        // 填充 tensor2 的元素为 (i + 1) * 100 + (j + 1) * 10 + (k + 1)
-        for (size_t i = 0; i < shape[0]; ++i) {
-            for (size_t j = 0; j < shape[1]; ++j) {
-                for (size_t k = 0; k < shape[2]; ++k) {
-                    tensor2({i, j, k}) = static_cast<int>((i + 1) * 100 + (j + 1) * 10 + (k + 1));
-                }
-            }
-        }
+    // 索引访问
+    std::cout << "Element at (1, 2): " << tensor_double({1, 2}) << "\n\n";
 
-        // 打印 tensor1
-        std::cout << "Tensor1 Shape: ";
-        print_shape(tensor1);
-        std::cout << "\nTensor1 Data:\n";
-        print_tensor_3d(tensor1);
+    // 使用int32_t类型的张量
+    Tensor<int32_t> tensor_int32({2, 3}, {1, 2, 3, 4, 5, 6});
+    std::cout << "int32_t Tensor:\n";
+    tensor_int32.print();
 
-        // 打印 tensor2
-        std::cout << "Tensor2 Shape: ";
-        print_shape(tensor2);
-        std::cout << "\nTensor2 Data:\n";
-        print_tensor_3d(tensor2);
+    // 创建另一个int32_t张量
+    Tensor<int32_t> tensor_int32_2({2, 3}, {6, 5, 4, 3, 2, 1});
+    tensor_int32_2.print();
 
-        // 执行加法
-        Tensor<int, 3> tensor_sum = tensor1 + tensor2;
-        std::cout << "Sum Tensor Shape: ";
-        print_shape(tensor_sum);
-        std::cout << "\nSum Tensor Data:\n";
-        print_tensor_3d(tensor_sum);
+    // 加法
+    Tensor<int32_t> sum_int32 = tensor_int32 + tensor_int32_2;
+    std::cout << "Sum of int32_t tensors:\n";
+    sum_int32.print();
 
-        // 执行减法
-        Tensor<int, 3> tensor_diff = tensor1 - tensor2;
-        std::cout << "Difference Tensor Shape: ";
-        print_shape(tensor_diff);
-        std::cout << "\nDifference Tensor Data:\n";
-        print_tensor_3d(tensor_diff);
+    // 减法
+    Tensor<int32_t> diff_int32 = tensor_int32 - tensor_int32_2;
+    std::cout << "Difference of int32_t tensors:\n";
+    diff_int32.print();
 
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
-    }
+    // 使用int64_t类型的张量
+    Tensor<int64_t> tensor_int64({2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+    std::cout << "int64_t Tensor:\n";
+    tensor_int64.print();
+
+    // 使用float类型的张量
+    Tensor<float> tensor_float({3}, {1.0f, 2.0f, 3.0f});
+    std::cout << "float Tensor:\n";
+    tensor_float.print();
 
     return 0;
 }
