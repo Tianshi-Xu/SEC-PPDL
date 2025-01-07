@@ -13,7 +13,7 @@ public:
     // 构造函数
     Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
-        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
+        // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         computeStrides();
         data_.resize(totalSize(), T(0));
     }
@@ -21,7 +21,7 @@ public:
     // 从初始化列表构造
     Tensor(const std::vector<size_t>& shape, const std::initializer_list<T>& values)
         : shape_(shape), data_(values) {
-        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
+        // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         computeStrides();
         assert(data_.size() == totalSize() && "Data size does not match shape");
     }
@@ -39,6 +39,10 @@ public:
         shape_ = new_shape;
         computeStrides();
     }
+
+    T& operator()(const size_t& indice) {
+        return data_[indice];
+    }    
 
     // 索引访问（通过向量索引）
     T& operator()(const std::vector<size_t>& indices) {
@@ -63,11 +67,14 @@ public:
     // 获取形状
     const std::vector<size_t>& shape() const { return shape_; }
 
+    const size_t size() const { return totalSize(); }
+
     // 获取数据
     const std::vector<T>& data() const { return data_; }
 
     // 加法
     Tensor<T> operator+(const Tensor<T>& other) const {
+        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         assert(shape_ == other.shape_ && "Shapes must match for addition");
         Tensor<T> result(shape_);
         for (size_t i = 0; i < data_.size(); ++i) {
@@ -78,6 +85,7 @@ public:
 
     // 减法
     Tensor<T> operator-(const Tensor<T>& other) const {
+        static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         assert(shape_ == other.shape_ && "Shapes must match for subtraction");
         Tensor<T> result(shape_);
         for (size_t i = 0; i < data_.size(); ++i) {
