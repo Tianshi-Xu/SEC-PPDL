@@ -112,44 +112,24 @@ class HEEvaluator {
         }else{
             //send the key
             KeyGenerator keygen(*context);
-            std::cout << "1";
             *secretKeys = keygen.secret_key();
-            std::cout << "2";
-            std::cout << "4";
             keygen.create_relin_keys(*relinKeys);
-            std::cout << "5";
             keygen.create_galois_keys(*galoisKeys);
-            std::cout << "6";
             keygen.create_public_key(*publicKeys);
             encryptor = new Encryptor(*context, *publicKeys);
-            std::cout << "3";
             decryptor = new Decryptor(*context, *secretKeys);
-            std::cout << "gen key success";
             slotCount = batchEncoder->slot_count();
-            std::cout << "7";
             rowSize = slotCount / 2;
-            std::cout << "8";
             uint64_t plain = parms.plain_modulus().value(); 
-            std::cout << "9";
             std::stringstream os;
-            std::cout << "a";
             publicKeys->save(os);
-            std::cout << "b";
-            //Encryptor encryptor(*context, public_key);
             uint64_t pk_sze = static_cast<uint64_t>(os.tellp());
-            std::cout << "c";
             galoisKeys->save(os);
-            std::cout << "d";
             uint64_t gk_size = (uint64_t)os.tellp() - pk_sze;
-            std::cout << "e";
             const std::string &keys_str = os.str();
-            std::cout << "f";
             this->IO->send_data(&pk_sze, sizeof(uint64_t));
-            std::cout << "g";
             this->IO->send_data(&gk_size,sizeof(uint64_t));
-            std::cout << "h";
             this->IO->send_data(keys_str.c_str(),pk_sze + gk_size);
-            std::cout << "i";
             std::cout << "Client send: " << keys_str.c_str() << "\n";
             std::cout << "Client send: " << pk_sze << "\n";
         }
