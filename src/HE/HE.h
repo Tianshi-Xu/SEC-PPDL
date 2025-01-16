@@ -24,7 +24,7 @@ class HEEvaluator {
     size_t rowSize = 0;
     bool server = false;
     NetIO *IO = nullptr;
-    size_t poly_modulus_degree = 8192;
+    size_t polyModulusDegree = 8192;
     uint64_t plain = 0;
     vector<int> COEFF_MODULI = {58, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 58};
 
@@ -80,19 +80,20 @@ class HEEvaluator {
         uint64_t slotCnt
     ){
         slotCount = slotCnt;
-        poly_modulus_degree = slotCount;
+        polyModulusDegree = slotCount;
         publicKeys = new PublicKey();
         secretKeys = new SecretKey();
         relinKeys  = new RelinKeys();
         galoisKeys = new GaloisKeys();
         EncryptionParameters parms(scheme_type::bfv);
-        parms.set_poly_modulus_degree(poly_modulus_degree);
-        parms.set_coeff_modulus(CoeffModulus::BFVDefault(poly_modulus_degree));
-        parms.set_plain_modulus(PlainModulus::Batching(poly_modulus_degree, 20));
+        parms.set_poly_modulus_degree(polyModulusDegree);
+        parms.set_coeff_modulus(CoeffModulus::BFVDefault(polyModulusDegree));
+        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 20));
         context = new SEALContext(parms);
         encoder = new BatchEncoder(*context);
         evaluator = new Evaluator(*context);
         batchEncoder = new  BatchEncoder(*context);
+        plain = parms.plain_modulus().value();
         if (server){
             uint64_t pk_sze{0};
             uint64_t gk_sze{0};

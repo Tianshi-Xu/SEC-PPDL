@@ -1,6 +1,7 @@
 #include <seal/seal.h>
 #include "datatype/Tensor.h"
 #include "layer/Module.h"
+#include "HE/HE.h"
 
 class Linear : public Module{
     public:

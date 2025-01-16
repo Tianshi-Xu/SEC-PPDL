@@ -57,5 +57,6 @@ int main() {
     std::cout << "float Tensor:\n";
     tensor_float.print();
 
+
     return 0;
 }
