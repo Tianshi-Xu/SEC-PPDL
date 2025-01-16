@@ -29,6 +29,8 @@ public:
     unsigned long Wprime;
     unsigned long HWprime;
     unsigned long WWprime;
+    size_t polyModulusDegree;
+    uint64_t plain;
 
     int div_upper(
         int a,
@@ -77,7 +79,7 @@ public:
             int optimal_Hw = 0, optimal_Ww = 0;
             find_optimal_partition(H, W, h, C, N, &optimal_Hw, &optimal_Ww);
             HW = optimal_Hw;
-            WW = 4;
+            WW = optimal_Ww;
             CW = 2;
             MW = 2;
             dM = div_upper(M,MW);
@@ -89,11 +91,13 @@ public:
             Wprime = (W - h + s) / s;
             HWprime = (HW - h + s) / s;
             WWprime = (WW - h + s) / s;
+            auto polyModulusDegree = he->polyModulusDegree;
+            auto plain = he->plain;
 
         };
         
 
-    Tensor<Plaintext> PackTensor(Tensor<int> x) {
+    Tensor<Ciphertext> PackTensor(Tensor<int> x) {
         std::vector<std::vector<std::vector<seal::Plaintext>>> Talphabeta (
             dC, std::vector<std::vector<seal::Plaintext>>(
                 dH, std::vector<seal::Plaintext>(
@@ -115,8 +119,7 @@ public:
                 dC, seal::Plaintext()
             }
         );
-        auto polyModulusDegree = he->polyModulusDegree;
-        auto plain = he->plain;
+        
 
         int len = CW * HW * WW;
         Tensor<uint64_t> Tsub ({ CW, HW, WW});
@@ -175,5 +178,80 @@ public:
                 }
             }
         }
+        //return??
     }
+
+    Tensor<Plaintext> PackKernel(Tensor<int> x){
+        std::vector<std::vector<seal::Plaintext>> Ktg (
+            dM, std::vector<seal::Plaintext>{
+                dC, seal::Plaintext()
+            }
+        );
+
+        Tensor<uint64_t> Ksub ({ MW, CW, h, h});
+        int len = MW * CW * h * h;
+
+        for (unsigned long theta = 0; theta < dM; theta++){
+            for (unsigned long gama = 0; gama < dC; gama++){
+                for (unsigned long it = 0; it < MW; it++){
+                    for (unsigned long jg = 0; jg < CW; jg++){
+                        if (((theta * MW + it) >= M) || ((gama * CW + jg) >= C)){
+                            for (unsigned hr = 0; hr < h; hr++){
+                                for (unsigned hc = 0; hc < h; hc++){
+                                    Ksub({it,jg,hr,hc}) = 0;
+                                }
+                            }
+                        }else{
+                            for (unsigned hr = 0; hr < h; hr++){
+                                for (unsigned hc = 0; hc < h; hc++){
+                                    int64_t element = kernel({theta * MW + it, gama * CW + jg, hr, hc});
+                                    Ksub({it,jg,hr,hc}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
+                                }
+                            }
+                        }
+                    }
+                }
+                Tensor<uint64_t> Ksubflatten = Ksub;
+                Ksubflatten.flatten();
+                //std::cout<< "1234567" << std::endl;
+                vector<uint64_t> Tsubv = Ksubflatten.data(); 
+                // vector<uint64_t> tmp(poly_modulus_degree);
+                // std::transform(Tsubv.data(), Tsubv.end(),tmp.begin(),[plain](uint64_t u) { return u > 0 ? plain - u : 0; });
+                //std::cout<< "1234567" << std::endl;
+                Ktg[theta][gama].resize(polyModulusDegree);
+                //batch_encoder.encode(vecIni, Talphabeta[gama][alpha][beta]);
+                seal::util::modulo_poly_coeffs(Tsubv, len, plain, Ktg[theta][gama].data());
+                //std::cout<< "1234567" << std::endl;
+                //Talphabeta[gama][alpha][beta].resize(poly_modulus_degree);
+                //batch_encoder.encode(vecIni, Talphabeta[gama][alpha][beta]);
+                std::fill_n(Ktg[theta][gama].data() + len, polyModulusDegree - len, 0);
+                //std::cout<< "1234567" << std::endl;
+            }
+        }
+    }; 
+
+    //暂时先不区分Alice和Bob，先只做密文向量和明文kernel。
+
+    Tensor<Ciphertext> Conv(){
+        std::vector<std::vector<std::vector<seal::Ciphertext>>> ConvResult (
+            dM, std::vector<std::vector<seal::Ciphertext>>(
+                dH, std::vector<seal::Ciphertext>(
+                    dW, seal::Ciphertext()
+                )
+            )
+        );
+
+        seal::Ciphertext interm;
+        for (size_t theta = 0; theta < dM; theta++){
+            for (size_t alpha = 0; alpha < dH; alpha++){
+                for (size_t beta = 0; beta < dW; beta++){
+                    evaluator.multiply_plain(TalphabetaCipher[0][alpha][beta],Ktg[theta][0],ConvResult[theta][alpha][beta]);
+                    for (size_t gama = 1; gama < dC; gama++){
+                        evaluator.multiply_plain(TalphabetaCipher[gama][alpha][beta],Ktg[theta][gama],interm);
+                        evaluator.add_inplace(ConvResult[theta][alpha][beta],interm);
+                    }       
+                }
+            }
+        }
+    };
 };
