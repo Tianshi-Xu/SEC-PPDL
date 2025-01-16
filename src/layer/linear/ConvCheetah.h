@@ -95,32 +95,27 @@ public:
             auto plain = he->plain;
 
         };
-        
 
-    Tensor<Ciphertext> PackTensor(Tensor<int> x) {
-        std::vector<std::vector<std::vector<seal::Plaintext>>> Talphabeta (
-            dC, std::vector<std::vector<seal::Plaintext>>(
-                dH, std::vector<seal::Plaintext>(
-                    dW, seal::Plaintext()
-                )
-            )
-        );
-
-        std::vector<std::vector<std::vector<seal::Ciphertext>>> TalphabetaCipher (
-            dC, std::vector<std::vector<seal::Ciphertext>>(
-                dH, std::vector<seal::Ciphertext>(
-                    dW, seal::Ciphertext()
-                )
-            )
-        );
-
-        std::vector<std::vector<seal::Plaintext>> Ktg (
-            dM, std::vector<seal::Plaintext>{
-                dC, seal::Plaintext()
+    Tensor<seal::Ciphertext> EncryptTensor(Tensor<seal::Plaintext> plainTensor){
+        std::vector<size_t> shapeTab = {dC, dH, dW};
+        Tensor<seal::Ciphertext> TalphabetaCipher(shapeTab);
+        int len = CW * HW * WW;
+        Tensor<uint64_t> Tsub ({ CW, HW, WW});
+        for (unsigned long gama = 0; gama < dC; gama++){
+            for (unsigned long alpha = 0; alpha < dH; alpha++){
+                for (unsigned long beta = 0; beta < dW; beta++){
+                    he->encryptor->encrypt(plainTensor({gama,alpha,beta}),TalphabetaCipher({gama,alpha,beta}));
+                }
             }
-        );
+        }
+        return TalphabetaCipher;
+    };
         
 
+    Tensor<seal::Plaintext> PackTensor(Tensor<int> x) {
+        std::vector<size_t> shapeTab = {dC, dH, dW};
+        Tensor<seal::Plaintext> Talphabeta(shapeTab);
+        //Tensor<seal::Ciphertext> TalphabetaCipher(shapeTab);
         int len = CW * HW * WW;
         Tensor<uint64_t> Tsub ({ CW, HW, WW});
         for (unsigned long gama = 0; gama < dC; gama++){
@@ -165,20 +160,22 @@ public:
                         // vector<uint64_t> tmp(poly_modulus_degree);
                         // std::transform(Tsubv.data(), Tsubv.end(),tmp.begin(),[plain](uint64_t u) { return u > 0 ? plain - u : 0; });
                         //std::cout<< "1234567" << std::endl;
-                        Talphabeta[gama][alpha][beta].resize(polyModulusDegree);
+                        Talphabeta({gama,alpha,beta}).resize(polyModulusDegree);
+                        //Talphabeta[gama][alpha][beta].resize(polyModulusDegree);
                         //batch_encoder.encode(vecIni, Talphabeta[gama][alpha][beta]);
-                        seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta[gama][alpha][beta].data());
+                        //seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta[gama][alpha][beta].data());
+                        seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta({gama,alpha,beta}).data());
                         //std::cout<< "1234567" << std::endl;
                         //Talphabeta[gama][alpha][beta].resize(poly_modulus_degree);
                         //batch_encoder.encode(vecIni, Talphabeta[gama][alpha][beta]);
-                        std::fill_n(Talphabeta[gama][alpha][beta].data() + len, polyModulusDegree - len, 0);
+                        std::fill_n(Talphabeta({gama,alpha,beta}).data() + len, polyModulusDegree - len, 0);
                         //std::cout<< "1234567" << std::endl;
-                        he->encryptor->encrypt(Talphabeta[gama][alpha][beta],TalphabetaCipher[gama][alpha][beta]);
+                        //he->encryptor->encrypt(Talphabeta({gama,alpha,beta}),TalphabetaCipher[gama][alpha][beta]);
                     }
                 }
             }
         }
-        //return??
+        return Talphabeta;
     }
 
     Tensor<Plaintext> PackKernel(Tensor<int> x){
@@ -232,23 +229,18 @@ public:
 
     //暂时先不区分Alice和Bob，先只做密文向量和明文kernel。
 
-    Tensor<Ciphertext> Conv(){
-        std::vector<std::vector<std::vector<seal::Ciphertext>>> ConvResult (
-            dM, std::vector<std::vector<seal::Ciphertext>>(
-                dH, std::vector<seal::Ciphertext>(
-                    dW, seal::Ciphertext()
-                )
-            )
-        );
+    Tensor<Ciphertext> Conv(Tensor<seal::Ciphertext> T, Tensor<seal::Plaintext> K){
+        std::vector<size_t> shapeTab = {dM, dH, dW};
+        Tensor<seal::Ciphertext> ConvRe(shapeTab);
 
         seal::Ciphertext interm;
         for (size_t theta = 0; theta < dM; theta++){
             for (size_t alpha = 0; alpha < dH; alpha++){
                 for (size_t beta = 0; beta < dW; beta++){
-                    evaluator.multiply_plain(TalphabetaCipher[0][alpha][beta],Ktg[theta][0],ConvResult[theta][alpha][beta]);
+                    he->evaluator->multiply_plain(T({0,alpha,beta}),K({theta,0}),ConvRe({theta,alpha,beta}));
                     for (size_t gama = 1; gama < dC; gama++){
-                        evaluator.multiply_plain(TalphabetaCipher[gama][alpha][beta],Ktg[theta][gama],interm);
-                        evaluator.add_inplace(ConvResult[theta][alpha][beta],interm);
+                        he->evaluator->multiply_plain(T({gama,alpha,beta}),K({theta,gama}),interm);
+                        he->evaluator->add_inplace(ConvRe({theta,alpha,beta}),interm);
                     }       
                 }
             }
