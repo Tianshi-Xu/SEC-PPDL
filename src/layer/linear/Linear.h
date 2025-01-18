@@ -1,4 +1,9 @@
 #include <seal/seal.h>
+#include <seal/secretkey.h>
+#include <seal/util/polyarithsmallmod.h>
+#include <seal/util/rlwe.h>
+#include <seal/secretkey.h>
+#include <seal/serializable.h>
 #include "datatype/Tensor.h"
 #include "layer/Module.h"
 #include "HE/HE.h"
@@ -9,9 +14,13 @@ class Linear : public Module{
         int out_features;
         Tensor<int> weight;
         Tensor<int> bias;
-    Linear(int in_features, int out_features){
-        this->in_features = in_features;
-        this->out_features = out_features;
-    };
+        HEEvaluator* he;
+
+    Linear(int in_features, int out_features, Tensor<int> weightMatrix, HEEvaluator* HE, Tensor<int> biasVec)
+        : in_features(in_features), 
+          out_features(out_features), 
+          weight(weightMatrix), 
+          bias(biasVec), 
+          he(HE) {}
     Tensor<int> operator()(Tensor<int> x);
 };
