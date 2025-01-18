@@ -2,13 +2,13 @@
 
 class matCheetah : public Linear{
     public:
-        int64_t ni = 0;
-        int64_t no = 0;
-        int64_t niw = 0;
-        int64_t now = 0;
+        unsigned long ni = 0;
+        unsigned long no = 0;
+        unsigned long niw = 0;
+        unsigned long now = 0;
 
-    void encodeInputVector(
-    const std::vector<int64_t> &input_vector, std::vector<seal::Plaintext> &encoded_polynomial_vector,uint64_t plain)
+    Tensor<seal::Plaintext> encodeInputVector(
+    Tensor<int64_t> input_vector)
     {
         auto niprime = ((ni + niw - 1) / niw);
         //this is ni' in paper,这里是用到了上取整
@@ -18,8 +18,11 @@ class matCheetah : public Linear{
         //make sure the polynomial vector's size is OK.
         std::cout<< "ni prime" << niprime << std::endl;
         std::cout<< "no prime" << noprime << std::endl;
-        for (int i = 0; i < 4; ++i) {
-            std::cout << input_vector[i] << " ";
+        int plain = this->he->plain;
+        std::vector<size_t> shape = {(ni + niw - 1) / niw}; 
+        Tensor<seal::Plaintext> encoded_polynomial_vector(shape);
+        for (unsigned long i = 0; i < 4; ++i) {
+            std::cout << input_vector({i}) << " ";
         }
         std::cout <<std::endl;
         std::vector<uint64_t> tmp(this->he->polyModulusDegree);
@@ -28,18 +31,19 @@ class matCheetah : public Linear{
             auto start = i * niw;
             auto end = std::min<size_t>(ni, start + niw);
             auto len = end - start;
-            std::transform(input_vector.data()+start,input_vector.data() + end,tmp.begin(),[plain](uint64_t u){return u;});
+            std::transform(input_vector.data().data()+start,input_vector.data().data() + end,tmp.begin(),[plain](uint64_t u){return u;});
             if (len < tmp.size()){
                 std::fill_n(tmp.begin() + len, tmp.size() - len - 1, 0);
             }
             std::cout<<"start: " << start << "end: " << end << "len: " << len << std::endl;
             //then we have to switch the vector to the polynomial.
             //vec2poly
-            seal::util::modulo_poly_coeffs(tmp, len, plain, encoded_polynomial_vector.at(i).data());
-            std::fill_n(encoded_polynomial_vector.at(i).data() + len, encoded_polynomial_vector.at(i).coeff_count() - len, 0);
+            seal::util::modulo_poly_coeffs(tmp, len, plain, encoded_polynomial_vector({i}).data());
+            std::fill_n(encoded_polynomial_vector({i}).data() + len, encoded_polynomial_vector({i}).coeff_count() - len, 0);
         }   
-        std::cout<< "poly coeff" << *encoded_polynomial_vector.at(0).data() << *(encoded_polynomial_vector.at(0).data() + 1);
+        std::cout<< "poly coeff" << *encoded_polynomial_vector({0}).data() << *(encoded_polynomial_vector({0}).data() + 1);
         //std::cout<< "poly coeff" << *encoded_polynomial_vector.at(1).data() << *(encoded_polynomial_vector.at(1).data() + 1);
+        return encoded_polynomial_vector;
     };
 
     void encodeWeightMatrix(
