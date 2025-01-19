@@ -63,5 +63,6 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "iomanip": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/root/IOTest/SEC-PPDL/src"
 }

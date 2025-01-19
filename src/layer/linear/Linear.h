@@ -4,9 +4,9 @@
 #include <seal/util/rlwe.h>
 #include <seal/secretkey.h>
 #include <seal/serializable.h>
-#include "datatype/Tensor.h"
-#include "layer/Module.h"
-#include "HE/HE.h"
+#include "Tensor.h"
+#include "Module.h"
+#include "HE.h"
 
 class Linear : public Module{
     public:
