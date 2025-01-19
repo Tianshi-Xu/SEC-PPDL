@@ -6,6 +6,7 @@ class matCheetah : public Linear{
         unsigned long no = 4;
         unsigned long niw = 2;
         unsigned long now = 2;
+        Tensor<seal::Plaintext> encWeight;
 
 
     matCheetah (int in_features, int out_features, Tensor<int> weightMatrix, HEEvaluator* HE, Tensor<int> biasVec, unsigned long ni, unsigned long no, unsigned long niw, unsigned long now)
@@ -14,6 +15,7 @@ class matCheetah : public Linear{
             this->no = no;
             this->niw = niw;
             this->now = now;
+            this->encWeight = this->encodeWeightMatrix();
         };
 
     Tensor<seal::Plaintext> encodeInputVector(

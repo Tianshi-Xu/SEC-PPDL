@@ -11,6 +11,8 @@ template <typename T>
 class Tensor {
 public:
     // 构造函数
+    Tensor() = default;
+    
     Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
         // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
