@@ -53,13 +53,14 @@ int main(int argc, char* argv[]) {
         std::cout<< "poly coeff" << *encodedInput({0}).data() << *(encodedInput({0}).data() + 1);
         std::cout<< "poly coeff" << *encodedInput({1}).data() << *(encodedInput({1}).data() + 1);
 
-        // // 测试 encodeWeightMatrix
-        // std::vector<std::vector<int64_t>> weightMatrixVec(4, std::vector<int64_t>(4));
-        // for (int i = 0; i < 4; ++i) {
-        //     for (int j = 0; j < 4; ++j) {
-        //         weightMatrixVec[i][j] = i * 4 + j;
-        //     }
-        // }
+        // 测试 encodeWeightMatrix
+        std::vector<std::vector<int64_t>> weightMatrixVec(4, std::vector<int64_t>(4));
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                weightMatrixVec[i][j] = i * 4 + j;
+            }
+        }
+        mat.encodeWeightMatrix();
 
         // std::vector<std::vector<seal::Plaintext>> encodedWeightMatrix(4);
         // mat.encodeWeightMatrix(weightMatrixVec, encodedWeightMatrix, HE.plain);

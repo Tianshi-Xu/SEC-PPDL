@@ -57,8 +57,7 @@ class matCheetah : public Linear{
         return encoded_polynomial_vector;
     };
 
-    void encodeWeightMatrix(
-        const std::vector<std::vector<int64_t>> &weight_matrix, std::vector<std::vector<seal::Plaintext>> &encoded_matrix,uint64_t plain)
+    Tensor<seal::Plaintext> encodeWeightMatrix()
     {
         std::cout<< "start encode weight matrix" << std::endl;
         auto niprime = ((ni + niw - 1) / niw);
@@ -68,8 +67,10 @@ class matCheetah : public Linear{
         std::vector<uint64_t> tmp(this->he->polyModulusDegree);
         std::cout << "noprime" << noprime << std::endl;
         std::cout << "niprime" << niprime << std::endl;
+        std::vector<size_t> shape = {noprime,niprime};
+        Tensor<seal::Plaintext> encodeWeight(shape);
         for (size_t r_blk = 0; r_blk < noprime; ++r_blk){
-            encoded_matrix[r_blk].resize(niprime);
+            //encoded_matrix[r_blk].resize(niprime);
             //它的行确定下来了以后再resize它的列。
             auto up_row = r_blk * now;
         //   起点的行位置数
@@ -93,12 +94,12 @@ class matCheetah : public Linear{
                             tmp[r * niw + c] = 0;
                         }
                         for (size_t c = 0; c < col_extent; ++c){
-                            tmp[nzero_pad + r * niw + c] = weight_matrix[up_row + r][left_col + col_extent - 1 - c];
+                            tmp[nzero_pad + r * niw + c] = this->weight({up_row + r, left_col + col_extent - 1 - c});
                             // For the right-most submatrtix, we might need zero-padding.
                         }
                     }else{
                         for (size_t c = 0; c < col_extent; ++c){
-                            tmp[r * niw + c] = weight_matrix[up_row + r][left_col + col_extent - 1 - c];
+                            tmp[r * niw + c] = this->weight({up_row + r, left_col + col_extent - 1 - c});
                             // For the right-most submatrtix, we might need zero-padding.
                         }
                     }
@@ -110,10 +111,11 @@ class matCheetah : public Linear{
                 for (size_t i = 0; i < now * niw; i++){
                     std::cout << tmp[i] <<" ";
                 }
-                seal::util::modulo_poly_coeffs(tmp, tmp.size(), plain, encoded_matrix.at(r_blk).at(c_blk).data());
+                encodeWeight({r_blk,c_blk}).resize(this->he->polyModulusDegree);
+                seal::util::modulo_poly_coeffs(tmp, tmp.size(), this->he->plain, encodeWeight({r_blk,c_blk}).data());
             }
         }
-
+        return encodeWeight;
     }
 
     int div_upper(
