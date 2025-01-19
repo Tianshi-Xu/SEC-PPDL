@@ -2,10 +2,19 @@
 
 class matCheetah : public Linear{
     public:
-        unsigned long ni = 0;
-        unsigned long no = 0;
-        unsigned long niw = 0;
-        unsigned long now = 0;
+        unsigned long ni = 4;
+        unsigned long no = 4;
+        unsigned long niw = 2;
+        unsigned long now = 2;
+
+
+    matCheetah (int in_features, int out_features, Tensor<int> weightMatrix, HEEvaluator* HE, Tensor<int> biasVec, unsigned long ni, unsigned long no, unsigned long niw, unsigned long now)
+        : Linear(in_features, out_features, weightMatrix, HE, biasVec){
+            this->ni = ni;
+            this->no = no;
+            this->niw = niw;
+            this->now = now;
+        };
 
     Tensor<seal::Plaintext> encodeInputVector(
     Tensor<int64_t> input_vector)

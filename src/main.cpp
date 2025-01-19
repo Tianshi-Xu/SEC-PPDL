@@ -27,38 +27,51 @@ int main(int argc, char* argv[]) {
     HE.GenerateNewKey(8192);
     std::cout << "gen";
     if (!is_server){
-        print_line(__LINE__);
-        uint64_t x = 6;
-        Plaintext x_plain(uint64_to_hex_string(x));
-        cout << "Express x = " + to_string(x) + " as a plaintext polynomial 0x" + x_plain.to_string() + "." << endl;
-        print_line(__LINE__);
-        Ciphertext x_encrypted;
-        cout << "Encrypt x_plain to x_encrypted." << endl;
-        
-        HE.encryptor->encrypt(x_plain, x_encrypted);
-        cout << "    + size of freshly encrypted x: " << x_encrypted.size() << endl;
-        cout << "    + noise budget in freshly encrypted x: " << HE.decryptor->invariant_noise_budget(x_encrypted) << " bits"
-            << endl;
-        Plaintext x_decrypted;
-        cout << "    + decryption of x_encrypted: ";
-        HE.decryptor->decrypt(x_encrypted, x_decrypted);
-        cout << "0x" << x_decrypted.to_string() << " ...... Correct." << endl;
-        print_line(__LINE__);
-        cout << "Compute x_sq_plus_one (x^2+1)." << endl;
-        Ciphertext x_sq_plus_one;
-        HE.evaluator->square(x_encrypted, x_sq_plus_one);
-        Plaintext plain_one("1");
-        HE.evaluator->add_plain_inplace(x_sq_plus_one, plain_one);
+        int in_features = 4; // 输入特征维度
+        int out_features = 4; // 输出特征维度
+        Tensor<int> weightMatrix({4, 4}); // 创建权重矩阵
+        Tensor<int> biasVec({4}); // 创建偏置向量
+        unsigned long ni = 4, no = 4, niw = 2, now = 2;
+        // // 初始化权重矩阵和偏置向量
+        for (size_t i = 0; i < 4; ++i) {
+            biasVec({i}) = i;
+            for (size_t j = 0; j < 4; ++j) {
+                weightMatrix({i, j}) = i * 4 + j;
+            }
+        }
+        // 创建 MatCheetah 对象
+        matCheetah mat(in_features, out_features, weightMatrix, &HE, biasVec, ni, no, niw, now);
 
-        Plaintext plain_poly("1");
-        plain_poly.resize(HE.polyModulusDegree);
-        std::vector<uint64_t> origin{1,2,3,4,5,6,7,8,9,10};
-        const uint64_t plain = HE.plain;
-        int len = 10;
-        seal::util::modulo_poly_coeffs(origin, len, plain, plain_poly.data());
-        std::fill_n(plain_poly.data() + len, HE.polyModulusDegree - len, 0);
-        Ciphertext x_enc;
-        HE.encryptor->encrypt(plain_poly,x_enc);
+        // 测试 encodeInputVector
+        Tensor<int64_t> inputVector({4});
+        for (size_t i = 0; i < 4; ++i) {
+            inputVector({i}) = i + 1; // 简单初始化
+        }
+
+        std::cout << "Testing encodeInputVector..." << std::endl;
+        Tensor<seal::Plaintext> encodedInput = mat.encodeInputVector(inputVector);
+
+        // 测试 encodeWeightMatrix
+        std::vector<std::vector<int64_t>> weightMatrixVec(4, std::vector<int64_t>(4));
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                weightMatrixVec[i][j] = i * 4 + j;
+            }
+        }
+
+        std::vector<std::vector<seal::Plaintext>> encodedWeightMatrix(4);
+        mat.encodeWeightMatrix(weightMatrixVec, encodedWeightMatrix, HE.plain);
+
+        // // 测试 matrix_multiplication
+        // std::vector<seal::Ciphertext> vec(4);       // 输入密文向量
+        // std::vector<seal::Ciphertext> output(4);    // 输出密文向量
+        // seal::Evaluator evaluator(nullptr);         // 需要实际初始化
+        // seal::Decryptor decryptor(nullptr, nullptr); // 需要实际初始化
+
+        // std::cout << "Testing matrix_multiplication..." << std::endl;
+        // mat.matrix_multiplication(encodedWeightMatrix, vec, output, HE.plain, evaluator, decryptor);
+
+        // std::cout << "Tests completed." << std::endl;
     }
 
     

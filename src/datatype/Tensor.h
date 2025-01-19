@@ -16,6 +16,7 @@ public:
         // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         // computeStrides();
         data_.resize(totalSize(), T(0));
+        computeStrides();
     }
 
     // 从初始化列表构造
