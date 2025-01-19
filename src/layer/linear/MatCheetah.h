@@ -30,6 +30,9 @@ class matCheetah : public Linear{
         int plain = this->he->plain;
         std::vector<size_t> shape = {(ni + niw - 1) / niw}; 
         Tensor<seal::Plaintext> encoded_polynomial_vector(shape);
+        for (size_t i = 0; i < shape[0]; ++i) {
+            encoded_polynomial_vector({i}).resize(he->polyModulusDegree); // 调用 resize
+        }
         for (unsigned long i = 0; i < 4; ++i) {
             std::cout << input_vector({i}) << " ";
         }
@@ -51,7 +54,6 @@ class matCheetah : public Linear{
             std::fill_n(encoded_polynomial_vector({i}).data() + len, encoded_polynomial_vector({i}).coeff_count() - len, 0);
         }   
         std::cout<< "poly coeff" << *encoded_polynomial_vector({0}).data() << *(encoded_polynomial_vector({0}).data() + 1);
-        //std::cout<< "poly coeff" << *encoded_polynomial_vector.at(1).data() << *(encoded_polynomial_vector.at(1).data() + 1);
         return encoded_polynomial_vector;
     };
 
