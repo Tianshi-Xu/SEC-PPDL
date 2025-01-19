@@ -1,0 +1,1 @@
+/usr/bin/c++     CMakeFiles/test.dir/main.cpp.o CMakeFiles/test.dir/HE/NetIO.cpp.o  -o test /root/IOTest/seal/SEAL/build/lib/libseal-4.1.a -pthread 

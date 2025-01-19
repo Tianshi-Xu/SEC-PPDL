@@ -1,0 +1,35 @@
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /root/IOTest/SEC-PPDL/src/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_894b9/fast"
+/usr/bin/make -f CMakeFiles/cmTC_894b9.dir/build.make CMakeFiles/cmTC_894b9.dir/build
+make[1]: Entering directory '/root/IOTest/SEC-PPDL/src/build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_894b9.dir/CheckSymbolExists.cxx.o
+/usr/bin/c++     -o CMakeFiles/cmTC_894b9.dir/CheckSymbolExists.cxx.o -c /root/IOTest/SEC-PPDL/src/build/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx
+Linking CXX executable cmTC_894b9
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_894b9.dir/link.txt --verbose=1
+/usr/bin/c++       CMakeFiles/cmTC_894b9.dir/CheckSymbolExists.cxx.o  -o cmTC_894b9 
+CMakeFiles/cmTC_894b9.dir/CheckSymbolExists.cxx.o: In function `main':
+CheckSymbolExists.cxx:(.text+0x1b): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_894b9.dir/build.make:86: recipe for target 'cmTC_894b9' failed
+make[1]: *** [cmTC_894b9] Error 1
+make[1]: Leaving directory '/root/IOTest/SEC-PPDL/src/build/CMakeFiles/CMakeTmp'
+Makefile:121: recipe for target 'cmTC_894b9/fast' failed
+make: *** [cmTC_894b9/fast] Error 2
+
+File /root/IOTest/SEC-PPDL/src/build/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
