@@ -63,6 +63,7 @@ Tensor<int> HEToSS(Tensor<Ciphertext> out_ct) {
                 pos_mask[j] = distrib(gen);
                 neg_mask[j] = HE.prime_mod - pos_mask[j];
             }
+            // TODO: noise flooding (add freshly encrypted zero), refer to Cheetah
             Plaintext temp_buffer_pos, temp_buffer_neg;
             HE.batch_encoder.encode(pos_mask, temp_buffer_pos);
             HE.batch_encoder.encode(neg_mask, temp_buffer_neg);

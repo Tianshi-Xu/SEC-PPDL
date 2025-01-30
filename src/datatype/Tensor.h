@@ -66,7 +66,7 @@ public:
 
     // 获取形状
     const std::vector<size_t>& shape() const { return shape_; }
-
+    
     const size_t size() const { return totalSize(); }
 
     // 获取数据
