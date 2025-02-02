@@ -1,2 +1,4 @@
-/extern/SEAL/
+src/HE/build/
+src/build/
+extern/SEAL/
 /build/

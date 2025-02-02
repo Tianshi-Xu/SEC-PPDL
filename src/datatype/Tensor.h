@@ -11,11 +11,16 @@ template <typename T>
 class Tensor {
 public:
     // 构造函数
+    Tensor() = default;
+    
     Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
         // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         computeStrides();
-        data_.resize(totalSize(), T(0));
+        if (std::is_arithmetic<T>::value) {
+            data_.resize(totalSize(), T(0));
+        }
+        computeStrides();
     }
 
     // 从初始化列表构造
@@ -76,6 +81,7 @@ public:
     Tensor<T> operator+(const Tensor<T>& other) const {
         static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         assert(shape_ == other.shape_ && "Shapes must match for addition");
+        //TODO only support arithmetic types
         Tensor<T> result(shape_);
         for (size_t i = 0; i < data_.size(); ++i) {
             result.data_[i] = data_[i] + other.data_[i];
