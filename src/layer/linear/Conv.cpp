@@ -69,6 +69,8 @@ Tensor<Plaintext> Conv2DNest::PackWeight() {
             }
         }
     }
+
+    return weight_pt;
 }
 
 Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
@@ -95,9 +97,9 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
 }
 
 Tensor<Ciphertext> Conv2DNest::HECompute(Tensor<Plaintext> weight_pt, Tensor<Ciphertext> ac_ct) {
-    Tensor<Ciphertext> out_ct({tiled_out_channels});
-    Tensor<Ciphertext> ac_rot_ct({input_rot, tiled_in_channels});
-    Tensor<Ciphertext> int_ct({tiled_out_channels, tile_size});
+    Tensor<Ciphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext());
+    Tensor<Ciphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext());
+    Tensor<Ciphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
     GaloisKeys* keys = HE->galoisKeys;
 
     // First complete the input rotation

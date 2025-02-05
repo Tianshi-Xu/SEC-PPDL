@@ -1,1 +1,0 @@
-void send_ciphertests(Tensor<Ciphertext>);

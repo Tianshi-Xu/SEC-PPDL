@@ -1,14 +1,11 @@
 #include <seal/seal.h>
-// #include <seal/secretkey.h>
-// #include <seal/util/polyarithsmallmod.h>
-// #include <seal/util/rlwe.h>
-// #include <seal/secretkey.h>
-// #include <seal/serializable.h>
 #include "datatype/Tensor.h"
 #include "layer/Module.h"
 #include "HE/HE.h"
+
+
 using namespace seal;
-class Conv2D : public Module{
+class Conv2D : public Module {
     public:
         uint64_t in_channels;
         uint64_t out_channels;

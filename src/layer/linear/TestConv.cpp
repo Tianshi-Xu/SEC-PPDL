@@ -1,10 +1,12 @@
 #include "Conv.h"
 
-void main(int argc, char **argv){
-    bool party = argv[1];
+int main(int argc, char **argv){
+    bool party = std::stoi(argv[1]);
     const char* address = "127.0.0.1";
     int port = 32000;
+    std::cout << party << std::endl;
     NetIO netio(address, port, party);
+    std::cout << "netio generated" << std::endl;
     HEEvaluator HE(netio, party);
     HE.GenerateNewKey();
     
@@ -16,10 +18,8 @@ void main(int argc, char **argv){
     for (uint64_t i = 0; i < Co * Ci * k * k; i++) {
         weight(i) = i / (Ci * k * k);
     }
-    if (party) {
-        for (uint64_t i = 0; i < Ci * H * W ; i++){
-        input(i) = 1;
-        }
+    for (uint64_t i = 0; i < Ci * H * W ; i++){
+        input(i) = party;
     }
 
     Conv2DNest conv(H, s, p, weight, bias, &HE);
@@ -34,5 +34,5 @@ void main(int argc, char **argv){
         }
     }
 
-    return;
+    return 0;
 }

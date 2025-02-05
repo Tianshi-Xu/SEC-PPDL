@@ -5,6 +5,9 @@
 #include <functional>
 #include <initializer_list>
 #include <type_traits>
+#include <seal/seal.h>
+
+#pragma once
 
 // Tensor类定义
 template <typename T>
@@ -15,11 +18,15 @@ public:
     
     Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
-        // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
         computeStrides();
-        if (std::is_arithmetic<T>::value) {
-            data_.resize(totalSize(), T(0));
-        }
+        data_.resize(totalSize(), T(0));
+        computeStrides();
+    }
+
+    Tensor(const std::vector<size_t>& shape, seal::Ciphertext zeros_ct)
+        : shape_(shape) {
+        computeStrides();
+        data_.resize(totalSize(), zeros_ct);
         computeStrides();
     }
 
