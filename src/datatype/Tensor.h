@@ -16,16 +16,11 @@ public:
     Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
         // static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");
-<<<<<<< HEAD
         computeStrides();
         if (std::is_arithmetic<T>::value) {
             data_.resize(totalSize(), T(0));
         }
         computeStrides();
-=======
-        // computeStrides();
-        data_.resize(totalSize(), T(0));
->>>>>>> origin/main
     }
 
     // 从初始化列表构造

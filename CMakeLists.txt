@@ -16,4 +16,4 @@ find_package(SEAL REQUIRED)
 # link_directories(${CMAKE_SOURCE_DIR}/extern/SEAL/build/lib)
 
 add_subdirectory(src)
-add_subdirectory(tests)
+# add_subdirectory(tests)

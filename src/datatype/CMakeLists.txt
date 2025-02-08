@@ -1,4 +1,4 @@
-find_package(SEAL 4.1.1)
+find_package(SEAL 4.1.2)
 
 add_library(LINEAR
     BatchNorm.cpp
