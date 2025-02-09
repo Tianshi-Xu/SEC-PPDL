@@ -2,7 +2,7 @@
 #include <cassert>
 
 using namespace seal;
-
+using namespace LinearLayer;
 // Extract shared parameters. Let dim(w) = {Co, Ci, H, W}
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : in_feature_size(in_feature_size), 
