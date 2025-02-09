@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.10)
+project(Model_test LANGUAGES CXX)
+
+
+
+file(GLOB_RECURSE srcs CONFIGURE_DEPENDS src/*.cpp include/*.h)
+add_library(Model STATIC ${srcs})
+target_include_directories(Model PUBLIC include)
+
+target_link_libraries(Model PUBLIC
+    LinearLayer
+    NonlinearLayer
+)
+
+message(STATUS "Model_FOUND: ${Model_FOUND}")

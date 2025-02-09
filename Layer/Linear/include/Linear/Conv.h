@@ -1,33 +1,37 @@
 #include <seal/seal.h>
 #include <Datatype/Tensor.h>
 #include <HE/HE.h>
-#include "../../Layer/Module.h"
-
+#include <Operator/Conversion.h>
+#include "../../../Layer/Module.h"
 
 using namespace seal;
 using namespace HE;
 using namespace Datatype;
+using namespace Operator;
+
+namespace LinearLayer {
+
 class Conv2D : public Module {
     public:
         uint64_t in_channels;
-        uint64_t out_channels;
-        uint64_t tiled_in_channels;
-        uint64_t tiled_out_channels;
-        uint64_t tile_size;
-        uint64_t in_feature_size;
-        uint64_t padded_feature_size;
-        uint64_t out_feature_size;
-        uint64_t input_rot;
-        uint64_t kernel_size;
-        uint64_t stride;
-        uint64_t padding;
-        Tensor<uint64_t> weight;
-        Tensor<Plaintext> weight_pt;  // We denote all plaintext(ciphertext) variables with suffix '_pt'('_ct')
-        Tensor<uint64_t> bias;
-        HEEvaluator* HE;
+    uint64_t out_channels;
+    uint64_t tiled_in_channels;
+    uint64_t tiled_out_channels;
+    uint64_t tile_size;
+    uint64_t in_feature_size;
+    uint64_t padded_feature_size;
+    uint64_t out_feature_size;
+    uint64_t input_rot;
+    uint64_t kernel_size;
+    uint64_t stride;
+    uint64_t padding;
+    Tensor<uint64_t> weight;
+    Tensor<Plaintext> weight_pt;  // We denote all plaintext(ciphertext) variables with suffix '_pt'('_ct')
+    Tensor<uint64_t> bias;
+    HEEvaluator* HE;
 
-        Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE);
-        virtual Tensor<uint64_t> operator()(Tensor<uint64_t> x) = 0; // manual merging required
+    Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE);
+    virtual Tensor<uint64_t> operator()(Tensor<uint64_t> x) = 0; // manual merging required
 
     private:
         virtual Tensor<Plaintext> PackWeight() = 0;
@@ -48,3 +52,5 @@ class Conv2DNest : public Conv2D {
         Tensor<Ciphertext> HECompute(Tensor<Plaintext> weight_pt, Tensor<Ciphertext> ac_ct);
         Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
 };
+
+}

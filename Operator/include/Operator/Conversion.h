@@ -4,7 +4,7 @@
 
 using namespace HE;
 using namespace Datatype;
-
+namespace Operator {
 // let the last dimension of x be N, the polynomial degree
 Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
@@ -96,3 +96,5 @@ Tensor<uint64_t> HEToSS(Tensor<Ciphertext> out_ct, HEEvaluator* HE) {
     x.reshape(scalar_shape);
     return x;
 };
+
+}

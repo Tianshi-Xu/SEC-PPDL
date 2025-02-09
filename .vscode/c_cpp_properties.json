@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/*",
+                "${workspaceFolder}/Extern/SEAL/build/native/src",
+                "${workspaceFolder}/Datatype/include",
+                "${workspaceFolder}/Extern/SEAL/native/src"
+            ],
+            "defines": [],
+            "compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
+        }
+    ],
+    "version": 4
+}

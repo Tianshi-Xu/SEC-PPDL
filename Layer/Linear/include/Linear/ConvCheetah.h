@@ -1,6 +1,9 @@
 #include "Conv.h"
 
-class Conv2DCheetah : public Conv2D{
+using namespace LinearLayer;
+
+namespace LinearLayer {
+class Conv2DCheetah : public LinearLayer::Conv2D{
 public:
 
     unsigned long M = 3;
@@ -247,3 +250,5 @@ public:
         }
     };
 };
+
+}

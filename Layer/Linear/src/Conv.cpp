@@ -1,5 +1,4 @@
-#include "Linear/Conv.h"
-#include "Operator/Conversion.h"
+#include <Linear/Conv.h>
 #include <cassert>
 
 using namespace seal;
