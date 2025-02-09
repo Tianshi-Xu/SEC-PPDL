@@ -2,7 +2,6 @@
 #include <Layer/Module.h>
 
 using namespace Datatype;
-using namespace Layer;
 
 class ReLU : public Module{
     public:
