@@ -4,9 +4,9 @@
 #include <seal/util/rlwe.h>
 #include <seal/secretkey.h>
 #include <seal/serializable.h>
-#include "Tensor.h"
-#include "Module.h"
-#include "HE.h"
+#include <Datatype/Tensor.h>
+#include <Layer/Module.h>
+#include <HE/HE.h>
 
 class Linear : public Module{
     public:
@@ -14,9 +14,9 @@ class Linear : public Module{
         int out_features;
         Tensor<int> weight;
         Tensor<int> bias;
-        HEEvaluator* he;
+        HE::HEEvaluator* he;
 
-    Linear(int in_features, int out_features, Tensor<int> weightMatrix, HEEvaluator* HE, Tensor<int> biasVec)
+    Linear(int in_features, int out_features, Tensor<int> weightMatrix, HE::HEEvaluator* HE, Tensor<int> biasVec)
         : in_features(in_features), 
           out_features(out_features), 
           weight(weightMatrix), 

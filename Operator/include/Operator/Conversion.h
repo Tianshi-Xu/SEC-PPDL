@@ -6,7 +6,7 @@ using namespace HE;
 using namespace Datatype;
 namespace Operator {
 // let the last dimension of x be N, the polynomial degree
-Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HEEvaluator* HE) {
+Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);

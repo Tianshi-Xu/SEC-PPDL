@@ -1,4 +1,4 @@
-#include "Conv.h"
+#include <LinearLayer/Conv.h>
 
 using namespace LinearLayer;
 

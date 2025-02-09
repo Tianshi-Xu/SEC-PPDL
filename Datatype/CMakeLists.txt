@@ -13,7 +13,7 @@ target_link_libraries(Datatype
 )
 message(STATUS "Datatype_FOUND: ${Datatype_FOUND}")
 
-add_executable(Datatype_test ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp)
+# add_executable(Datatype_test ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp)
 
-message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(Datatype_test Datatype)
+# message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
+# target_link_libraries(Datatype_test Datatype)

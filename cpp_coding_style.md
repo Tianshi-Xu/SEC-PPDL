@@ -4,7 +4,6 @@
 #### 单个子项目目录结构
 - 目录结构
 ```
-├── CMakeLists.txt
 ├── 项目名字
 │   ├── CMakeLists.txt
 │   ├── include
@@ -62,7 +61,6 @@ add_subdirectory(Test)
 #### 项目内引用
 - 例如子项目目录结构如下
 ```
-├── CMakeLists.txt
 ├── LinearLayer
 │   ├── CMakeLists.txt
 │   ├── include
