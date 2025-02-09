@@ -1,9 +1,10 @@
 #include <seal/seal.h>
-#include <seal/util/uintarith.h>
+#include <vector>
+// #include <seal/util/uintarith.h>
 #include "datatype/Tensor.h"
 #include "NetIO.h"
 
-#include <vector>
+#pragma once
 
 using namespace std;
 using namespace seal;
@@ -146,5 +147,16 @@ class HEEvaluator {
         for (size_t i = 0; i < vec_size; ++i){
             ReceiveCipherText(ct_vec({i}));
         }
+    }
+
+    seal::Ciphertext GenerateZeroCiphertext() {
+        seal::Plaintext zeros_pt;
+        seal::Ciphertext zeros_ct;
+
+        std::vector<uint64_t> zeros(this->polyModulusDegree, 0);
+        this->batchEncoder->encode(zeros, zeros_pt);
+        this->encryptor->encrypt(zeros_pt, zeros_ct);
+
+        return zeros_ct;
     }
 };

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include "seal/seal.h"
 // #include <seal/secretkey.h>
 // #include <seal/util/polyarithsmallmod.h>
@@ -8,8 +9,16 @@
 // #include "datatype/Tensor.h"
 // #include "layer/Module.h"
 // #include "HE/HE.h"
+=======
+#include <seal/seal.h>
+#include "datatype/Tensor.h"
+#include "layer/Module.h"
+#include "HE/HE.h"
+
+
+>>>>>>> 3af4f7a94698e32a771a5201010b31886702b23c
 using namespace seal;
-class Conv2D : public Module{
+class Conv2D : public Module {
     public:
         uint64_t in_channels;
         uint64_t out_channels;

@@ -9,6 +9,7 @@ if (NOT SEAL_FOUND)
 endif()
 
 
+find_package(SEAL 4.1.1 REQUIRED)
 add_library(LINEAR ${CMAKE_SOURCE_DIR}/layer/linear/Conv.cpp)
 target_link_libraries(LINEAR SEAL::seal)
 
@@ -17,5 +18,10 @@ target_include_directories(LINEAR PRIVATE ${CMAKE_SOURCE_DIR}/datatype)
 # target_include_directories(test_conv PRIVATE ${CMAKE_SOURCE_DIR}/layer)
 target_include_directories(LINEAR PRIVATE ${CMAKE_SOURCE_DIR}/HE)
 
-add_executable(test_conv ${CMAKE_SOURCE_DIR}/layer/linear/TestConv.cpp)
-target_link_libraries(test_conv LINEAR)
+add_executable(test_conv ${CMAKE_SOURCE_DIR}/layer/linear/TestConv.cpp ${CMAKE_SOURCE_DIR}/HE/NetIO.cpp)
+
+include_directories(test_conv PRIVATE ${CMAKE_SOURCE_DIR})
+include_directories(test_conv PRIVATE ${CMAKE_SOURCE_DIR}/operator)
+include_directories(test_conv PRIVATE ${CMAKE_SOURCE_DIR}/layer/linear)
+include_directories(test_conv PRIVATE ${CMAKE_SOURCE_DIR}/../extern/SEAL/native/src)
+target_link_libraries(test_conv SEAL::seal LINEAR)

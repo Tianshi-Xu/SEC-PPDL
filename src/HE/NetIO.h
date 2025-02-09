@@ -6,6 +6,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#pragma once
+
 class NetIO {
 private:
     int sockfd;  // 套接字文件描述符

@@ -1,7 +1,6 @@
 #include <seal/seal.h>
 #include "datatype/Tensor.h"
 #include "HE/HE.h"
-#include "utils/io.h"
 
 
 // let the last dimension of x be N, the polynomial degree
@@ -10,7 +9,7 @@ Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HEEvaluator* HE) {
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);
     Tensor<Plaintext> ac_pt(poly_shape);
-    Tensor<Ciphertext> ac_ct(poly_shape);
+    Tensor<Ciphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext());
     std::vector<uint64_t> tmp_vec(poly_degree);
 
     // encoding
@@ -62,7 +61,7 @@ Tensor<uint64_t> HEToSS(Tensor<Ciphertext> out_ct, HEEvaluator* HE) {
             Plaintext tmp_pos, tmp_neg;
             HE->batchEncoder->encode(pos_mask, tmp_pos);
             HE->batchEncoder->encode(neg_mask, tmp_neg);
-            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);
+            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         HE->SendEncVec(out_ct);
