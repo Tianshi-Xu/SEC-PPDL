@@ -1,2 +1,0 @@
-/opt/rh/devtoolset-11/root/bin/ar qc libDatatype.a CMakeFiles/Datatype.dir/src/test.cpp.o
-/opt/rh/devtoolset-11/root/bin/ranlib libDatatype.a
