@@ -165,11 +165,146 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
 }
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci, H, W}
-    Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    Tensor<Ciphertext> ac_ct = SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
-    Tensor<Ciphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    Tensor<uint64_t> out_msg = HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
-    Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
-
-    return y;
+    //Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
+    //Tensor<Ciphertext> ac_ct = SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
+    //Tensor<Ciphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
+    //Tensor<uint64_t> out_msg = HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
+    //Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
+    //mistake
+    return x;
 };
+
+
+
+
+
+
+// // 计算上取整除法
+// int Conv2DCheetah::div_upper(int a, int b) {
+//     return ((a + b - 1) / b);
+// }
+
+// // 计算计算开销
+// int Conv2DCheetah::calculate_cost(int H, int W, int h, int Hw, int Ww, int C, int N) {
+//     return (int)ceil((double)C / (N / (Hw * Ww))) *
+//            (int)ceil((double)(H - h + 1) / (Hw - h + 1)) *
+//            (int)ceil((double)(W - h + 1) / (Ww - h + 1));
+// }
+
+// // 查找最佳分块方式
+// void Conv2DCheetah::find_optimal_partition(int H, int W, int h, int C, int N, int* optimal_Hw, int* optimal_Ww) {
+//     int min_cost = (1 << 30);
+//     for (int Hw = h; Hw <= H; Hw++) {
+//         for (int Ww = h; Ww <= W; Ww++) {
+//             if (Hw * Ww > N) continue;
+//             int cost = calculate_cost(H, W, h, Hw, Ww, C, N);
+//             if (cost < min_cost) {
+//                 min_cost = cost;
+//                 *optimal_Hw = Hw;
+//                 *optimal_Ww = Ww;
+//             }
+//         }
+//     }
+// }
+
+// // 构造函数
+// Conv2DCheetah::Conv2DCheetah(int in_channels, int out_channels, int kernel_size, int stride, int padding, HEEvaluator* he, Tensor<int> inputTensor, Tensor<int> kernel)
+//     : Conv2D(in_channels, out_channels, kernel_size, stride, padding, he, inputTensor, kernel) {
+
+//     C = out_channels;
+//     M = in_channels;
+//     s = stride;
+//     h = kernel_size;
+
+//     const std::vector<size_t>& inputTensorShape = inputTensor.shape();
+//     H = inputTensorShape[0];
+//     W = inputTensorShape[1];
+
+//     int optimal_Hw = 0, optimal_Ww = 0;
+//     find_optimal_partition(H, W, h, C, N, &optimal_Hw, &optimal_Ww);
+    
+//     HW = optimal_Hw;
+//     WW = optimal_Ww;
+//     CW = 2;
+//     MW = 2;
+//     dM = div_upper(M, MW);
+//     dC = div_upper(C, CW);
+//     dH = div_upper(H - h + 1, HW - h + 1);
+//     dW = div_upper(W - h + 1, WW - h + 1);
+//     OW = HW * WW * (MW * CW - 1) + WW * (h - 1) + h - 1;
+//     Hprime = (H - h + s) / s;
+//     Wprime = (W - h + s) / s;
+//     HWprime = (HW - h + s) / s;
+//     WWprime = (WW - h + s) / s;
+//     polyModulusDegree = he->polyModulusDegree;
+//     plain = he->plain;
+// }
+
+// // 加密张量
+// Tensor<seal::Ciphertext> Conv2DCheetah::EncryptTensor(Tensor<seal::Plaintext> plainTensor) {
+//     std::vector<size_t> shapeTab = {dC, dH, dW};
+//     Tensor<seal::Ciphertext> TalphabetaCipher(shapeTab);
+
+//     for (unsigned long gama = 0; gama < dC; gama++) {
+//         for (unsigned long alpha = 0; alpha < dH; alpha++) {
+//             for (unsigned long beta = 0; beta < dW; beta++) {
+//                 he->encryptor->encrypt(plainTensor({gama, alpha, beta}), TalphabetaCipher({gama, alpha, beta}));
+//             }
+//         }
+//     }
+//     return TalphabetaCipher;
+// }
+
+// // 计算输入张量的 Pack 版本
+// Tensor<seal::Plaintext> Conv2DCheetah::PackTensor(Tensor<int> x) {
+//     std::vector<size_t> shapeTab = {dC, dH, dW};
+//     Tensor<seal::Plaintext> Talphabeta(shapeTab);
+    
+//     for (unsigned long gama = 0; gama < dC; gama++) {
+//         for (unsigned long alpha = 0; alpha < dH; alpha++) {
+//             for (unsigned long beta = 0; beta < dW; beta++) {
+//                 Talphabeta({gama, alpha, beta}).resize(polyModulusDegree);
+//                 seal::util::modulo_poly_coeffs(x.flatten().data(), CW * HW * WW, plain, Talphabeta({gama, alpha, beta}).data());
+//                 std::fill_n(Talphabeta({gama, alpha, beta}).data() + CW * HW * WW, polyModulusDegree - CW * HW * WW, 0);
+//             }
+//         }
+//     }
+//     return Talphabeta;
+// }
+
+// // 计算卷积核的 Pack 版本
+// Tensor<seal::Plaintext> Conv2DCheetah::PackKernel(Tensor<int> x) {
+//     std::vector<size_t> shapeTab = {dM, dC};
+//     Tensor<seal::Plaintext> Ktg(shapeTab);
+
+//     for (unsigned long theta = 0; theta < dM; theta++) {
+//         for (unsigned long gama = 0; gama < dC; gama++) {
+//             Ktg({theta, gama}).resize(polyModulusDegree);
+//             seal::util::modulo_poly_coeffs(x.flatten().data(), MW * CW * h * h, plain, Ktg({theta, gama}).data());
+//             std::fill_n(Ktg({theta, gama}).data() + MW * CW * h * h, polyModulusDegree - MW * CW * h * h, 0);
+//         }
+//     }
+//     return Ktg;
+// }
+
+// // 计算同态卷积
+// Tensor<seal::Ciphertext> Conv2DCheetah::Conv(Tensor<seal::Ciphertext> T, Tensor<seal::Plaintext> K) {
+//     std::vector<size_t> shapeTab = {dM, dH, dW};
+//     Tensor<seal::Ciphertext> ConvRe(shapeTab);
+//     seal::Ciphertext interm;
+
+//     for (size_t theta = 0; theta < dM; theta++) {
+//         for (size_t alpha = 0; alpha < dH; alpha++) {
+//             for (size_t beta = 0; beta < dW; beta++) {
+//                 he->evaluator->multiply_plain(T({0, alpha, beta}), K({theta, 0}), ConvRe({theta, alpha, beta}));
+//                 for (size_t gama = 1; gama < dC; gama++) {
+//                     he->evaluator->multiply_plain(T({gama, alpha, beta}), K({theta, gama}), interm);
+//                     he->evaluator->add_inplace(ConvRe({theta, alpha, beta}), interm);
+//                 }
+//             }
+//         }
+//     }
+//     return ConvRe;
+// }
+
+//  // namespace LinearLayer

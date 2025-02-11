@@ -61,7 +61,14 @@
         "streambuf": "cpp",
         "thread": "cpp",
         "cinttypes": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "pointers": "cpp",
+        "bitset": "cpp",
+        "regex": "cpp",
+        "set": "cpp",
+        "future": "cpp",
+        "iomanip": "cpp"
     },
-    "C_Cpp.default.compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc"
+    "C_Cpp.default.compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc",
+    "C_Cpp.errorSquiggles": "disabled"
 }

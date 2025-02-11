@@ -1,4 +1,10 @@
 #include <seal/seal.h>
+#include <seal/util/uintarith.h>
+#include <seal/secretkey.h>
+#include <seal/util/polyarithsmallmod.h>
+#include <seal/util/rlwe.h>
+#include <seal/secretkey.h>
+#include <seal/serializable.h>
 #include <vector>
 #include <Datatype/Tensor.h>
 #include <HE/NetIO.h>
@@ -33,6 +39,7 @@ class HEEvaluator {
     ){
         this->IO = &IO;
         this->server = server;
+        polyModulusDegree = 8192;
     }
 
     void GenerateNewKey() {
@@ -87,6 +94,7 @@ class HEEvaluator {
             std::cout << "Client send: " << keys_str.c_str() << "\n";
             std::cout << "Client send: " << pk_sze << "\n";
         }
+        std::cout << "poly modulus degree:" << polyModulusDegree <<std::endl;
     }
 
     void FreeKey(){
