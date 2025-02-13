@@ -15,13 +15,13 @@ class Conv2D : public Module {
     public:
         uint64_t in_channels;
     uint64_t out_channels;
-    uint64_t tiled_in_channels;
-    uint64_t tiled_out_channels;
-    uint64_t tile_size;
+    uint64_t tiled_in_channels; // no need
+    uint64_t tiled_out_channels; // no need
+    uint64_t tile_size; // no need
     uint64_t in_feature_size;
-    uint64_t padded_feature_size;
-    uint64_t out_feature_size;
-    uint64_t input_rot;
+    uint64_t padded_feature_size; // no need
+    uint64_t out_feature_size; 
+    uint64_t input_rot; // no need
     uint64_t kernel_size;
     uint64_t stride;
     uint64_t padding;

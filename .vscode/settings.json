@@ -61,7 +61,14 @@
         "streambuf": "cpp",
         "thread": "cpp",
         "cinttypes": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "pointers": "cpp",
+        "bitset": "cpp",
+        "set": "cpp",
+        "regex": "cpp",
+        "iomanip": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc"
 }

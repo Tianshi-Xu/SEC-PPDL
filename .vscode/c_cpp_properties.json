@@ -7,7 +7,8 @@
                 "${workspaceFolder}/*",
                 "${workspaceFolder}/Extern/SEAL/build/native/src",
                 "${workspaceFolder}/Datatype/include",
-                "${workspaceFolder}/Extern/SEAL/native/src"
+                "${workspaceFolder}/Extern/SEAL/native/src",
+                "${workspaceFolder}/OT/include"
             ],
             "defines": [],
             "compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc",
