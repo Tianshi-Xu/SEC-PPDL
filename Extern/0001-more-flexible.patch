@@ -1,0 +1,680 @@
+From 0e577b3cefc16d2c918ede1755fe318298fb9eb9 Mon Sep 17 00:00:00 2001
+From: cy <icy.2000@qq.com>
+Date: Thu, 2 Jan 2025 02:44:05 +0000
+Subject: [PATCH] more flexible
+
+---
+ .gitignore             |  1 +
+ CMakeLists.txt         |  9 ++++-
+ include/ciphertext.h   | 25 ++++++++++++
+ include/galois.cuh     |  4 ++
+ include/ntt.cuh        |  2 +-
+ include/plaintext.h    | 19 +++++++++
+ include/polymath.cuh   |  1 -
+ include/rns.cuh        |  2 +-
+ include/rns_base.cuh   |  2 +
+ include/rns_bconv.cuh  | 87 +----------------------------------------
+ include/rns_bconv_t.h  | 89 ++++++++++++++++++++++++++++++++++++++++++
+ include/secretkey.h    | 30 ++++++++++++++
+ include/uintmath.cuh   | 34 +---------------
+ include/uintmath_t.h   | 36 +++++++++++++++++
+ src/CMakeLists.txt     |  4 ++
+ src/ckks.cu            |  1 +
+ src/eval_key_switch.cu |  2 +-
+ src/evaluate.cu        |  4 +-
+ src/fft.cu             |  1 +
+ src/galois.cu          |  1 +
+ src/polymath.cu        |  1 +
+ src/rns.cu             |  2 +
+ src/rns_base.cu        |  2 +-
+ src/rns_bconv.cu       |  3 +-
+ 24 files changed, 235 insertions(+), 127 deletions(-)
+ create mode 100644 include/rns_bconv_t.h
+ create mode 100644 include/uintmath_t.h
+
+diff --git a/.gitignore b/.gitignore
+index 9f003f7..810b48a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,6 +8,7 @@
+ 
+ # Local History for Visual Studio Code
+ .history/
++.cache/
+ 
+ ### JetBrains template
+ # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 94adbeb..c87660e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,5 +1,7 @@
+ cmake_minimum_required(VERSION 3.20)
+ 
++set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
++
+ project(Phantom LANGUAGES CXX CUDA VERSION 2.1 DESCRIPTION "CUDA-Accelerated Homomorphic Encryption Library")
+ 
+ # [option] PHANTOM_USE_CUDA_PTX (default: ON)
+@@ -65,6 +67,11 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
+ endif ()
+ 
+ # config for installation
+-install(TARGETS Phantom EXPORT PhantomConfig)
++# NOTE: Why is it necessary to explicitly set the CMAKE-INSTALL_XX variable here ?
++set(CMAKE_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/lib")
++set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
++install(TARGETS Phantom
++        EXPORT PhantomConfig
++        INCLUDES DESTINATION include/phantom)
+ install(EXPORT PhantomConfig NAMESPACE phantom:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phantom)
+ install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/phantom)
+diff --git a/include/ciphertext.h b/include/ciphertext.h
+index c6716b3..9bb4977 100644
+--- a/include/ciphertext.h
++++ b/include/ciphertext.h
+@@ -154,6 +154,10 @@ public:
+         return scale_;
+     }
+ 
++    [[nodiscard]] auto &scale() noexcept {
++        return scale_;
++    }
++
+     [[nodiscard]] auto &correction_factor() const noexcept {
+         return correction_factor_;
+     }
+@@ -213,6 +217,27 @@ public:
+         cudaStreamSynchronize(cudaStreamPerThread);
+     }
+ 
++    void load(const uint64_t *h_src, const PhantomContext &context, size_t chain_index, size_t size, double scale, uint64_t correction_factor, std::size_t noiseScaleDeg, bool is_ntt_form, bool is_asymmetric) {
++        auto &context_data = context.get_context_data(chain_index);
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++
++        chain_index_ = chain_index;
++        size_ = size;
++        poly_modulus_degree_ = parms.poly_modulus_degree();
++        coeff_modulus_size_ = coeff_modulus.size();
++        scale_ = scale;
++        correction_factor_ = correction_factor;
++        noiseScaleDeg_ = noiseScaleDeg;
++        is_ntt_form_ = is_ntt_form;
++        is_asymmetric_ = is_asymmetric;
++        data_ = phantom::util::make_cuda_auto_ptr<uint64_t>(size_ * coeff_modulus_size_ * poly_modulus_degree_,
++                                                            cudaStreamPerThread);
++        cudaMemcpyAsync(data_.get(), h_src, size_ * coeff_modulus_size_ * poly_modulus_degree_ * sizeof(uint64_t),
++                        cudaMemcpyHostToDevice, cudaStreamPerThread);
++        cudaStreamSynchronize(cudaStreamPerThread);
++    }
++
+     void save_symmetric(std::ostream &stream) const {
+         if (is_asymmetric_)
+             throw std::runtime_error("Asymmetric ciphertext does not have seed.");
+diff --git a/include/galois.cuh b/include/galois.cuh
+index 89c0be8..d1cc06f 100644
+--- a/include/galois.cuh
++++ b/include/galois.cuh
+@@ -144,6 +144,10 @@ namespace phantom::util {
+             return galois_elts_;
+         }
+ 
++        void galois_elts(const std::vector<uint32_t> &galois_elts) {
++            galois_elts_ = galois_elts;
++        }
++
+         [[nodiscard]] inline std::vector<std::uint32_t> get_elts_from_steps(const std::vector<int> &steps) const {
+             std::vector<std::uint32_t> elts;
+             for (auto step: steps)
+diff --git a/include/ntt.cuh b/include/ntt.cuh
+index 03b307e..f5ca0a5 100644
+--- a/include/ntt.cuh
++++ b/include/ntt.cuh
+@@ -1,6 +1,6 @@
+ #pragma once
+ 
+-#include "uintmath.cuh"
++#include "uintmath_t.h"
+ #include "cuda_wrapper.cuh"
+ 
+ class DModulus {
+diff --git a/include/plaintext.h b/include/plaintext.h
+index 66df8d8..88811b8 100644
+--- a/include/plaintext.h
++++ b/include/plaintext.h
+@@ -58,6 +58,10 @@ public:
+         return scale_;
+     }
+ 
++     [[nodiscard]] auto &scale() noexcept {
++        return scale_;
++    }
++
+     [[nodiscard]] auto data() const noexcept {
+         return data_.get();
+     }
+@@ -96,4 +100,19 @@ public:
+                         cudaMemcpyHostToDevice, cudaStreamPerThread);
+         cudaFreeHost(h_data);
+     }
++
++    void load(const uint64_t *h_src, const PhantomContext &context, size_t chain_index, double scale) {
++        auto &context_data = context.get_context_data(chain_index);
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++
++        chain_index_ = chain_index;
++        poly_modulus_degree_ = parms.poly_modulus_degree();
++        coeff_modulus_size_ = coeff_modulus.size();
++        scale_ = scale;
++        data_ = phantom::util::make_cuda_auto_ptr<uint64_t>(coeff_modulus_size_ * poly_modulus_degree_,
++                                                            cudaStreamPerThread);
++        cudaMemcpyAsync(data_.get(), h_src, coeff_modulus_size_ * poly_modulus_degree_ * sizeof(uint64_t),
++                        cudaMemcpyHostToDevice, cudaStreamPerThread);
++    }
+ };
+diff --git a/include/polymath.cuh b/include/polymath.cuh
+index b385d8a..a16d679 100644
+--- a/include/polymath.cuh
++++ b/include/polymath.cuh
+@@ -1,6 +1,5 @@
+ #pragma once
+ 
+-#include "uintmodmath.cuh"
+ #include "ntt.cuh"
+ 
+ __global__ void negate_rns_poly(const uint64_t* operand,
+diff --git a/include/rns.cuh b/include/rns.cuh
+index 7958567..8eba584 100644
+--- a/include/rns.cuh
++++ b/include/rns.cuh
+@@ -2,7 +2,7 @@
+ 
+ #include "ntt.cuh"
+ #include "rns_base.cuh"
+-#include "rns_bconv.cuh"
++#include "rns_bconv_t.h"
+ #include "cuda_wrapper.cuh"
+ 
+ #include "host/encryptionparams.h"
+diff --git a/include/rns_base.cuh b/include/rns_base.cuh
+index 5f2e635..a3be304 100644
+--- a/include/rns_base.cuh
++++ b/include/rns_base.cuh
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <cuComplex.h>
++
+ #include "cuda_wrapper.cuh"
+ 
+ #include "host/rns.h"
+diff --git a/include/rns_bconv.cuh b/include/rns_bconv.cuh
+index 9ee9230..3aac421 100644
+--- a/include/rns_bconv.cuh
++++ b/include/rns_bconv.cuh
+@@ -1,90 +1,5 @@
+ #pragma once
+-
+-class DBaseConverter {
+-
+-private:
+-
+-    phantom::arith::DRNSBase ibase_;
+-    phantom::arith::DRNSBase obase_;
+-
+-    phantom::util::cuda_auto_ptr<uint64_t> qiHat_mod_pj_;
+-    phantom::util::cuda_auto_ptr<uint64_t> alpha_Q_mod_pj_;
+-    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_;
+-    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_shoup_;
+-    phantom::util::cuda_auto_ptr<uint64_t> QInvModp_;
+-    phantom::util::cuda_auto_ptr<uint64_t> PModq_;
+-    phantom::util::cuda_auto_ptr<uint64_t> PModq_shoup_;
+-
+-public:
+-
+-    DBaseConverter() = default;
+-
+-    explicit DBaseConverter(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
+-        init(cpu_base_converter, stream);
+-    }
+-
+-    void init(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
+-        ibase_.init(cpu_base_converter.ibase(), stream);
+-        obase_.init(cpu_base_converter.obase(), stream);
+-
+-        qiHat_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
+-        for (size_t idx = 0; idx < obase_.size(); idx++)
+-            cudaMemcpyAsync(qiHat_mod_pj_.get() + idx * ibase_.size(), cpu_base_converter.QHatModp(idx),
+-                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
+-
+-        alpha_Q_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>((ibase_.size() + 1) * obase_.size(), stream);
+-        for (size_t idx = 0; idx < ibase_.size() + 1; idx++)
+-            cudaMemcpyAsync(alpha_Q_mod_pj_.get() + idx * obase_.size(), cpu_base_converter.alphaQModp(idx),
+-                            obase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
+-
+-        negPQHatInvModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
+-        cudaMemcpyAsync(negPQHatInvModq_.get(), cpu_base_converter.negPQHatInvModq(),
+-                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
+-
+-        negPQHatInvModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
+-        cudaMemcpyAsync(negPQHatInvModq_shoup_.get(), cpu_base_converter.negPQHatInvModq_shoup(),
+-                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
+-
+-        QInvModp_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
+-        for (size_t idx = 0; idx < obase_.size(); idx++)
+-            cudaMemcpyAsync(QInvModp_.get() + idx * ibase_.size(), cpu_base_converter.QInvModp(idx),
+-                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
+-
+-        PModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
+-        cudaMemcpyAsync(PModq_.get(), cpu_base_converter.PModq(), ibase_.size() * sizeof(uint64_t),
+-                        cudaMemcpyHostToDevice, stream);
+-
+-        PModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
+-        cudaMemcpyAsync(PModq_shoup_.get(), cpu_base_converter.PModq_shoup(),
+-                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
+-    }
+-
+-    void bConv_BEHZ(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
+-
+-    void bConv_BEHZ_var1(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
+-
+-    void bConv_HPS(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
+-
+-    void exact_convert_array(uint64_t *dst, const uint64_t *src, uint64_t poly_degree, const cudaStream_t &stream) const;
+-
+-    __host__ inline auto &ibase() const { return ibase_; }
+-
+-    __host__ inline auto &obase() const { return obase_; }
+-
+-    __host__ inline uint64_t *QHatModp() const { return qiHat_mod_pj_.get(); }
+-
+-    __host__ inline uint64_t *alpha_Q_mod_pj() const { return alpha_Q_mod_pj_.get(); }
+-
+-    __host__ inline uint64_t *negPQHatInvModq() const { return negPQHatInvModq_.get(); }
+-
+-    __host__ inline uint64_t *negPQHatInvModq_shoup() const { return negPQHatInvModq_shoup_.get(); }
+-
+-    __host__ inline uint64_t *QInvModp() const { return QInvModp_.get(); }
+-
+-    __host__ inline uint64_t *PModq() const { return PModq_.get(); }
+-
+-    __host__ inline uint64_t *PModq_shoup() const { return PModq_shoup_.get(); }
+-};
++#include "uintmath.cuh"
+ 
+ __global__ void bconv_mult_kernel(uint64_t *dst, const uint64_t *src, const uint64_t *scale,
+                                   const uint64_t *scale_shoup, const DModulus *base, uint64_t base_size, uint64_t n);
+diff --git a/include/rns_bconv_t.h b/include/rns_bconv_t.h
+new file mode 100644
+index 0000000..e3f6ea5
+--- /dev/null
++++ b/include/rns_bconv_t.h
+@@ -0,0 +1,89 @@
++#pragma once
++
++#include "common.h"
++
++class DBaseConverter {
++
++private:
++
++    phantom::arith::DRNSBase ibase_;
++    phantom::arith::DRNSBase obase_;
++
++    phantom::util::cuda_auto_ptr<uint64_t> qiHat_mod_pj_;
++    phantom::util::cuda_auto_ptr<uint64_t> alpha_Q_mod_pj_;
++    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_;
++    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_shoup_;
++    phantom::util::cuda_auto_ptr<uint64_t> QInvModp_;
++    phantom::util::cuda_auto_ptr<uint64_t> PModq_;
++    phantom::util::cuda_auto_ptr<uint64_t> PModq_shoup_;
++
++public:
++
++    DBaseConverter() = default;
++
++    explicit DBaseConverter(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
++        init(cpu_base_converter, stream);
++    }
++
++    void init(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
++        ibase_.init(cpu_base_converter.ibase(), stream);
++        obase_.init(cpu_base_converter.obase(), stream);
++
++        qiHat_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
++        for (size_t idx = 0; idx < obase_.size(); idx++)
++            cudaMemcpyAsync(qiHat_mod_pj_.get() + idx * ibase_.size(), cpu_base_converter.QHatModp(idx),
++                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
++
++        alpha_Q_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>((ibase_.size() + 1) * obase_.size(), stream);
++        for (size_t idx = 0; idx < ibase_.size() + 1; idx++)
++            cudaMemcpyAsync(alpha_Q_mod_pj_.get() + idx * obase_.size(), cpu_base_converter.alphaQModp(idx),
++                            obase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
++
++        negPQHatInvModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
++        cudaMemcpyAsync(negPQHatInvModq_.get(), cpu_base_converter.negPQHatInvModq(),
++                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
++
++        negPQHatInvModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
++        cudaMemcpyAsync(negPQHatInvModq_shoup_.get(), cpu_base_converter.negPQHatInvModq_shoup(),
++                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
++
++        QInvModp_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
++        for (size_t idx = 0; idx < obase_.size(); idx++)
++            cudaMemcpyAsync(QInvModp_.get() + idx * ibase_.size(), cpu_base_converter.QInvModp(idx),
++                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
++
++        PModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
++        cudaMemcpyAsync(PModq_.get(), cpu_base_converter.PModq(), ibase_.size() * sizeof(uint64_t),
++                        cudaMemcpyHostToDevice, stream);
++
++        PModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
++        cudaMemcpyAsync(PModq_shoup_.get(), cpu_base_converter.PModq_shoup(),
++                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
++    }
++
++    void bConv_BEHZ(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
++
++    void bConv_BEHZ_var1(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
++
++    void bConv_HPS(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
++
++    void exact_convert_array(uint64_t *dst, const uint64_t *src, uint64_t poly_degree, const cudaStream_t &stream) const;
++
++    __host__ inline auto &ibase() const { return ibase_; }
++
++    __host__ inline auto &obase() const { return obase_; }
++
++    __host__ inline uint64_t *QHatModp() const { return qiHat_mod_pj_.get(); }
++
++    __host__ inline uint64_t *alpha_Q_mod_pj() const { return alpha_Q_mod_pj_.get(); }
++
++    __host__ inline uint64_t *negPQHatInvModq() const { return negPQHatInvModq_.get(); }
++
++    __host__ inline uint64_t *negPQHatInvModq_shoup() const { return negPQHatInvModq_shoup_.get(); }
++
++    __host__ inline uint64_t *QInvModp() const { return QInvModp_.get(); }
++
++    __host__ inline uint64_t *PModq() const { return PModq_.get(); }
++
++    __host__ inline uint64_t *PModq_shoup() const { return PModq_shoup_.get(); }
++};
+\ No newline at end of file
+diff --git a/include/secretkey.h b/include/secretkey.h
+index 0e18a21..5185a4d 100644
+--- a/include/secretkey.h
++++ b/include/secretkey.h
+@@ -92,6 +92,11 @@ public:
+         pk_.load(stream);
+         gen_flag_ = true;
+     }
++
++    void load(PhantomCiphertext &&pk) {
++        pk_ = std::move(pk);
++        gen_flag_ = true;
++    }
+ };
+ 
+ /** PhantomRelinKey contains the relinear key in RNS and NTT form
+@@ -155,6 +160,21 @@ public:
+ 
+         gen_flag_ = true;
+     }
++
++    void load(std::vector<PhantomPublicKey> &&pks) {
++        public_keys_ = std::move(pks);
++
++        size_t dnum = public_keys_.size();
++        std::vector<uint64_t *> pk_ptr(dnum);
++        for (size_t i = 0; i < dnum; i++)
++            pk_ptr[i] = public_keys_[i].pk_.data();
++        public_keys_ptr_ = phantom::util::make_cuda_auto_ptr<uint64_t *>(dnum, cudaStreamPerThread);
++        cudaMemcpyAsync(public_keys_ptr_.get(), pk_ptr.data(), sizeof(uint64_t *) * dnum,
++                        cudaMemcpyHostToDevice, cudaStreamPerThread);
++        cudaStreamSynchronize(cudaStreamPerThread);
++
++        gen_flag_ = true;
++    }
+ };
+ 
+ /** PhantomGaloisKey stores Galois keys.
+@@ -209,6 +229,16 @@ public:
+ 
+         gen_flag_ = true;
+     }
++
++    void load(std::vector<std::vector<PhantomPublicKey>> &pks) {
++        size_t rlk_num = pks.size();
++        relin_keys_.resize(rlk_num);
++        for (size_t i = 0;i < rlk_num;i ++) {
++            relin_keys_[i].load(std::move(pks[i]));
++        }
++
++        gen_flag_ = true;
++    }
+ };
+ 
+ /** PhantomSecretKey contains the secret key in RNS and NTT form
+diff --git a/include/uintmath.cuh b/include/uintmath.cuh
+index 93f6ba4..b996b03 100644
+--- a/include/uintmath.cuh
++++ b/include/uintmath.cuh
+@@ -1,40 +1,10 @@
+ #pragma once
+ 
+-#include <cuComplex.h>
+ #include "common.h"
++#include "uintmath_t.h"
++#include <cuComplex.h>
+ 
+ namespace phantom::arith {
+-    typedef struct uint128_t {
+-        uint64_t hi;
+-        uint64_t lo;
+-        // TODO: implement uint128_t basic operations
+-        //    __device__ uint128_t &operator+=(const uint128_t &op);
+-    } uint128_t;
+-
+-    struct uint128_t2 {
+-        uint128_t x;
+-        uint128_t y;
+-    };
+-
+-    struct uint128_t4 {
+-        uint128_t x;
+-        uint128_t y;
+-        uint128_t z;
+-        uint128_t w;
+-    };
+-
+-    struct double_t2 {
+-        double x;
+-        double y;
+-    };
+-
+-    struct double_t4 {
+-        double x;
+-        double y;
+-        double z;
+-        double w;
+-    };
+-
+     __forceinline__ __device__ void ld_two_uint64(uint64_t& x, uint64_t& y, const uint64_t* ptr) {
+ #ifdef PHANTOM_USE_CUDA_PTX
+         asm("ld.global.v2.u64 {%0,%1}, [%2];" : "=l"(x), "=l"(y) : "l"(ptr));
+diff --git a/include/uintmath_t.h b/include/uintmath_t.h
+new file mode 100644
+index 0000000..58c1574
+--- /dev/null
++++ b/include/uintmath_t.h
+@@ -0,0 +1,36 @@
++#pragma once
++
++#include <cstdint>
++
++namespace phantom::arith {
++typedef struct uint128_t {
++  uint64_t hi;
++  uint64_t lo;
++  // TODO: implement uint128_t basic operations
++  //    __device__ uint128_t &operator+=(const uint128_t &op);
++} uint128_t;
++
++struct uint128_t2 {
++  uint128_t x;
++  uint128_t y;
++};
++
++struct uint128_t4 {
++  uint128_t x;
++  uint128_t y;
++  uint128_t z;
++  uint128_t w;
++};
++
++struct double_t2 {
++  double x;
++  double y;
++};
++
++struct double_t4 {
++  double x;
++  double y;
++  double z;
++  double w;
++};
++} // namespace phantom::arith
+\ No newline at end of file
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 81c875c..ab103a7 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -36,6 +36,10 @@ add_library(Phantom SHARED
+         host/uintarithsmallmod.cu
+ )
+ 
++target_include_directories(Phantom PUBLIC
++    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
++    $<INSTALL_INTERFACE:include>
++)
+ target_compile_options(Phantom PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--default-stream per-thread>)
+ target_compile_options(Phantom PRIVATE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G;-src-in-ptx>)
+ target_compile_features(Phantom PUBLIC cxx_std_17 cuda_std_17)
+diff --git a/src/ckks.cu b/src/ckks.cu
+index d3c18be..089e9b7 100644
+--- a/src/ckks.cu
++++ b/src/ckks.cu
+@@ -1,5 +1,6 @@
+ #include "ckks.h"
+ #include "fft.h"
++#include "uintmath.cuh"
+ 
+ using namespace std;
+ using namespace phantom;
+diff --git a/src/eval_key_switch.cu b/src/eval_key_switch.cu
+index 9da8b80..d1263fe 100644
+--- a/src/eval_key_switch.cu
++++ b/src/eval_key_switch.cu
+@@ -1,8 +1,8 @@
+ #include "evaluate.cuh"
+ #include "ntt.cuh"
+-#include "polymath.cuh"
+ #include "rns.cuh"
+ #include "rns_bconv.cuh"
++#include "uintmodmath.cuh"
+ 
+ using namespace std;
+ using namespace phantom;
+diff --git a/src/evaluate.cu b/src/evaluate.cu
+index 48616c2..70fe8a5 100644
+--- a/src/evaluate.cu
++++ b/src/evaluate.cu
+@@ -1034,8 +1034,8 @@ Returns (f, e1, e2) such that
+             throw std::invalid_argument("encrypted1 and encrypted2 parameter mismatch");
+         if (encrypted1.is_ntt_form() != encrypted2.is_ntt_form())
+             throw std::invalid_argument("NTT form mismatch");
+-        if (!are_same_scale(encrypted1, encrypted2))
+-            throw std::invalid_argument("scale mismatch");
++        // if (!are_same_scale(encrypted1, encrypted2))
++        //     throw std::invalid_argument("scale mismatch");
+         if (encrypted1.size() != encrypted2.size())
+             throw std::invalid_argument("poly number mismatch");
+ 
+diff --git a/src/fft.cu b/src/fft.cu
+index 2609cc4..9440e78 100644
+--- a/src/fft.cu
++++ b/src/fft.cu
+@@ -2,6 +2,7 @@
+ 
+ #include "fft.h"
+ #include "context.cuh"
++#include "uintmath.cuh"
+ 
+ using namespace phantom::arith;
+ 
+diff --git a/src/galois.cu b/src/galois.cu
+index 92346e1..abb5c51 100644
+--- a/src/galois.cu
++++ b/src/galois.cu
+@@ -1,4 +1,5 @@
+ #include "galois.cuh"
++#include "common.h"
+ 
+ #include "host/numth.h"
+ 
+diff --git a/src/polymath.cu b/src/polymath.cu
+index 1b268af..dfec08a 100644
+--- a/src/polymath.cu
++++ b/src/polymath.cu
+@@ -1,4 +1,5 @@
+ #include "polymath.cuh"
++#include "uintmodmath.cuh"
+ 
+ //#include <rmm/device_scalar.hpp>
+ //#include <rmm/device_vector.hpp>
+diff --git a/src/rns.cu b/src/rns.cu
+index ab9de3a..ee27e73 100644
+--- a/src/rns.cu
++++ b/src/rns.cu
+@@ -1,6 +1,8 @@
+ #include "ntt.cuh"
+ #include "polymath.cuh"
+ #include "rns.cuh"
++#include "rns_bconv.cuh"
++#include "uintmodmath.cuh"
+ 
+ using namespace std;
+ using namespace phantom;
+diff --git a/src/rns_base.cu b/src/rns_base.cu
+index 05d25e9..265de1f 100644
+--- a/src/rns_base.cu
++++ b/src/rns_base.cu
+@@ -1,7 +1,7 @@
+ #include "ntt.cuh"
+-#include "polymath.cuh"
+ #include "rns.cuh"
+ #include "rns_base.cuh"
++#include "uintmodmath.cuh"
+ 
+ using namespace std;
+ using namespace phantom;
+diff --git a/src/rns_bconv.cu b/src/rns_bconv.cu
+index edab41a..144c931 100644
+--- a/src/rns_bconv.cu
++++ b/src/rns_bconv.cu
+@@ -1,8 +1,9 @@
+ #include "ntt.cuh"
+-#include "polymath.cuh"
+ #include "rns.cuh"
+ #include "rns_bconv.cuh"
++#include "rns_bconv_t.h"
+ #include "util.cuh"
++#include "uintmodmath.cuh"
+ 
+ using namespace std;
+ using namespace phantom;
+-- 
+2.17.1
+
