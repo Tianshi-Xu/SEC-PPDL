@@ -53,6 +53,7 @@ class HEEvaluator {
         encoder = new unified::UnifiedBatchEncoder(*context);
         evaluator = new unified::UnifiedEvaluator(*context);
         batchEncoder = new unified::UnifiedBatchEncoder(*context);
+        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 40));
         plain_mod = parms.plain_modulus().value();
         cout << "plain_mod: " << plain_mod << endl;
         if (server) {
