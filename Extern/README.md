@@ -8,6 +8,7 @@ cmake --build build
 #### HEXL
 ```
 git clone https://github.com/intel/hexl.git
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=hexl_build
 cmake --build build
+cmake --install build
 ```
