@@ -1,9 +1,8 @@
 #pragma once
 
-#include "HE/unified/Define.h"
+#include "HE/unified/UnifiedContext.h"
 #include <seal/plaintext.h>
 #ifdef USE_HE_GPU
-#include <phantom/context.cuh>
 #include <phantom/plaintext.h>
 #endif
 
@@ -54,6 +53,8 @@ public:
 
   operator seal::Plaintext &() { return hplain(); }
 
+  void to_device(const UnifiedContext &context);
+
 #ifdef USE_HE_GPU
   const PhantomPlaintext &dplain() const {
     if (on_device()) {
@@ -78,8 +79,6 @@ public:
                         const PhantomContext &dcontext,
                         PhantomPlaintext &dplain);
 
-  void to_device(const seal::SEALContext &hcontext,
-                 const PhantomContext &dcontext);
 #endif
 
   const double &scale() const;

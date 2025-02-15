@@ -2,6 +2,7 @@
 #include <cassert>
 
 using namespace seal;
+using namespace HE;
 using namespace HE::unified;
 using namespace LinearLayer;
 // Extract shared parameters. Let dim(w) = {Co, Ci, H, W}
@@ -43,9 +44,9 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
     }
 }
 
-Tensor<Plaintext> Conv2DNest::PackWeight() {
+Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     uint64_t offset = (kernel_size - 1) * (in_feature_size + 1);
-    Tensor<Plaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size});
+    Tensor<UnifiedPlaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size}, HE->evaluator->backend());
 
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
         for (uint64_t j = 0; j < tiled_out_channels; j++) {
@@ -96,10 +97,10 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
     return ac_msg;
 }
 
-Tensor<Ciphertext> Conv2DNest::HECompute(Tensor<Plaintext> weight_pt, Tensor<Ciphertext> ac_ct) {
-    Tensor<Ciphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext());
-    Tensor<Ciphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext());
-    Tensor<Ciphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
+Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct) {
+    Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext());
+    Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext());
+    Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
     UnifiedGaloisKeys* keys = HE->galoisKeys;
 
     // First complete the input rotation
@@ -117,7 +118,7 @@ Tensor<Ciphertext> Conv2DNest::HECompute(Tensor<Plaintext> weight_pt, Tensor<Cip
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
         for (uint64_t j = 0; j < tiled_out_channels; j++) {
             for (uint64_t k = 0; k < tile_size; k++) {
-                Ciphertext tmp_ct;
+                UnifiedCiphertext tmp_ct(HE->evaluator->backend());
                 HE->evaluator->multiply_plain(ac_rot_ct({input_rot - 1 - k % input_rot, i}), weight_pt({i, j, k}), tmp_ct);
                 if (i) {
                     HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
@@ -167,8 +168,8 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci, H, W}
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    Tensor<Ciphertext> ac_ct = SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
-    Tensor<Ciphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
+    Tensor<UnifiedCiphertext> ac_ct = SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
+    Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
     Tensor<uint64_t> out_msg = HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
 
