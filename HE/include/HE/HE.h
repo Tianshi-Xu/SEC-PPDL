@@ -54,6 +54,7 @@ class HEEvaluator {
         evaluator = new unified::UnifiedEvaluator(*context);
         batchEncoder = new unified::UnifiedBatchEncoder(*context);
         plain_mod = parms.plain_modulus().value();
+        cout << "plain_mod: " << plain_mod << endl;
         if (server) {
             uint64_t pk_sze{0};
             uint64_t gk_sze{0};
