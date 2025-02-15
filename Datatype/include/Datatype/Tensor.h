@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 #include <vector>
 #include <cassert>
@@ -5,10 +7,12 @@
 #include <functional>
 #include <initializer_list>
 #include <type_traits>
-#include <seal/seal.h>
 
-#pragma once
+
 namespace Datatype {
+
+enum LOCATION { HOST = 0, DEVICE, HOST_AND_DEVICE, UNDEF };
+
 // Tensor类定义
 template <typename T>
 class Tensor {
@@ -16,14 +20,22 @@ public:
     // 构造函数
     Tensor() = default;
     
-    Tensor(const std::vector<size_t>& shape)
+    explicit Tensor(const std::vector<size_t>& shape)
         : shape_(shape) {
         computeStrides();
         data_.resize(totalSize(), T(0));
         computeStrides();
     }
 
-    Tensor(const std::vector<size_t>& shape, seal::Ciphertext zeros_ct)
+    explicit Tensor(const std::vector<size_t>& shape, LOCATION loc)
+        : shape_(shape) {
+        computeStrides();
+        data_.resize(totalSize(), T(loc));
+        computeStrides();
+    }
+
+
+    Tensor(const std::vector<size_t>& shape, T zeros_ct)
         : shape_(shape) {
         computeStrides();
         data_.resize(totalSize(), zeros_ct);

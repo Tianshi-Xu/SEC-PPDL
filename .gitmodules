@@ -1,0 +1,3 @@
+[submodule "Extern/phantom"]
+	path = Extern/phantom
+	url = https://github.com/encryptorion-lab/phantom-fhe.git

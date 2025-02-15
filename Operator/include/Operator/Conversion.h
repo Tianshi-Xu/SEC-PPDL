@@ -1,18 +1,19 @@
 #include <seal/seal.h>
 #include <Datatype/Tensor.h>
 #include <HE/HE.h>
-#pragma once
+#include "HE/unified/UnifiedPlaintext.h"
+#include <HE/unified/UnifiedCiphertext.h>
 
-using namespace HE;
+using namespace HE::unified;
 using namespace Datatype;
 namespace Operator {
 // let the last dimension of x be N, the polynomial degree
-Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
+Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);
-    Tensor<Plaintext> ac_pt(poly_shape);
-    Tensor<Ciphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext());
+    Tensor<UnifiedPlaintext> ac_pt(poly_shape, HOST);
+    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext());
     std::vector<uint64_t> tmp_vec(poly_degree);
 
     // encoding
@@ -42,11 +43,11 @@ Tensor<Ciphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
 };
 
 
-Tensor<uint64_t> HEToSS(Tensor<Ciphertext> out_ct, HEEvaluator* HE) {
+Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
     Tensor<uint64_t> x(scalar_shape);
-    Tensor<Plaintext> out_share(out_ct.shape());
+    Tensor<UnifiedPlaintext> out_share(out_ct.shape(), HOST);
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<uint64_t> distrib(0, HE->plain_mod - 1);
@@ -61,7 +62,8 @@ Tensor<uint64_t> HEToSS(Tensor<Ciphertext> out_ct, HEEvaluator* HE) {
                 neg_mask[j] = HE->plain_mod - pos_mask[j];
             }
             // TODO: noise flooding (add freshly encrypted zero), refer to Cheetah
-            Plaintext tmp_pos, tmp_neg;
+            UnifiedPlaintext tmp_pos(HOST);
+            UnifiedPlaintext tmp_neg(HOST);
             HE->batchEncoder->encode(pos_mask, tmp_pos);
             HE->batchEncoder->encode(neg_mask, tmp_neg);
             HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
