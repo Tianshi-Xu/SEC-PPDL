@@ -154,6 +154,30 @@ public:
     complex_conjugate_inplace(destination, galois_key);
   }
 
+  inline void rotate_rows_inplace(PhantomCiphertext &encrypted, int step,
+                                  const PhantomGaloisKey &galois_key) const {
+    rotate_vector_inplace(encrypted, step, galois_key);
+  }
+
+  inline void rotate_rows(const PhantomCiphertext &encrypted, int step,
+                          const PhantomGaloisKey &galois_key,
+                          PhantomCiphertext &destination) const {
+    destination = encrypted;
+    rotate_rows_inplace(destination, step, galois_key);
+  }
+
+  inline void rotate_columns_inplace(PhantomCiphertext &encrypted,
+                                     const PhantomGaloisKey &galois_key) const {
+    complex_conjugate_inplace(encrypted, galois_key);
+  }
+
+  inline void rotate_columns(const PhantomCiphertext &encrypted,
+                             const PhantomGaloisKey &galois_key,
+                             PhantomCiphertext &destination) const {
+    destination = encrypted;
+    rotate_columns_inplace(destination, galois_key);
+  }
+
 private:
   const PhantomContext &context_;
 };

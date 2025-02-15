@@ -1,9 +1,11 @@
 #pragma once
 
 #include "HE/unified/Define.h"
+#include <seal/plaintext.h>
+#ifdef USE_HE_GPU
 #include <phantom/context.cuh>
 #include <phantom/plaintext.h>
-#include <seal/plaintext.h>
+#endif
 
 namespace HE {
 namespace unified {
@@ -16,9 +18,11 @@ public:
 
   UnifiedPlaintext(seal::Plaintext &&hplain);
 
+#ifdef USE_HE_GPU
   UnifiedPlaintext(const PhantomPlaintext &dplain);
 
   UnifiedPlaintext(PhantomPlaintext &&dplain);
+#endif
 
   ~UnifiedPlaintext() = default;
 
@@ -46,6 +50,11 @@ public:
     throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
   }
 
+  operator const seal::Plaintext &() const { return hplain(); }
+
+  operator seal::Plaintext &() { return hplain(); }
+
+#ifdef USE_HE_GPU
   const PhantomPlaintext &dplain() const {
     if (on_device()) {
       return device_plain_;
@@ -60,10 +69,6 @@ public:
     throw std::runtime_error("UnifiedPlaintext: NOT in DEVICE");
   }
 
-  operator const seal::Plaintext &() const { return hplain(); }
-
-  operator seal::Plaintext &() { return hplain(); }
-
   operator const PhantomPlaintext &() const { return dplain(); }
 
   operator PhantomPlaintext &() { return dplain(); }
@@ -75,6 +80,7 @@ public:
 
   void to_device(const seal::SEALContext &hcontext,
                  const PhantomContext &dcontext);
+#endif
 
   const double &scale() const;
 
@@ -82,8 +88,11 @@ public:
 
 private:
   LOCATION loc_ = UNDEF;
+
   seal::Plaintext host_plain_;
+#ifdef USE_HE_GPU
   PhantomPlaintext device_plain_;
+#endif
 };
 
 } // namespace unified

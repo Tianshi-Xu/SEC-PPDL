@@ -25,11 +25,15 @@ endif()
 
 # Set source files
 if(NOT USE_HE_GPU)
-    set(srcs src/NetIO.cpp)
+    set(srcs 
+        src/NetIO.cpp
+        src/UnifiedEvaluator.cpp
+        src/UnifiedHE.cpp)
 else()
     set(srcs 
         src/NetIO.cpp
         src/PhantomWrapper.cpp
+        src/UnifiedEvaluator.cpp
         src/UnifiedHE.cpp)
 endif()
 

@@ -1,4 +1,5 @@
 #include "HE/unified/UnifiedCiphertext.h"
+#include "HE/unified/UnifiedEvk.h"
 #include "HE/unified/UnifiedPlaintext.h"
 #include <seal/galoiskeys.h>
 
@@ -12,17 +13,18 @@ UnifiedPlaintext::UnifiedPlaintext(const seal::Plaintext &hplain)
 UnifiedPlaintext::UnifiedPlaintext(seal::Plaintext &&hplain)
     : loc_(HOST), host_plain_(std::move(hplain)) {}
 
-UnifiedPlaintext::UnifiedPlaintext(const PhantomPlaintext &dplain)
-    : loc_(DEVICE), device_plain_(dplain) {}
-
-UnifiedPlaintext::UnifiedPlaintext(PhantomPlaintext &&dplain)
-    : loc_(DEVICE), device_plain_(std::move(dplain)) {}
-
 UnifiedPlaintext &UnifiedPlaintext::operator=(seal::Plaintext &&other) {
   loc_ = HOST;
   host_plain_ = std::move(other);
   return *this;
 }
+
+#ifdef USE_HE_GPU
+UnifiedPlaintext::UnifiedPlaintext(const PhantomPlaintext &dplain)
+    : loc_(DEVICE), device_plain_(dplain) {}
+
+UnifiedPlaintext::UnifiedPlaintext(PhantomPlaintext &&dplain)
+    : loc_(DEVICE), device_plain_(std::move(dplain)) {}
 
 void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
                                  const seal::Plaintext &hplain,
@@ -49,15 +51,18 @@ void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
   host_plain_.release();
   loc_ = DEVICE;
 }
+#endif
 
 const double &UnifiedPlaintext::scale() const {
   switch (loc_) {
   case HOST_AND_DEVICE:
   case HOST:
     return host_plain_.scale();
+#ifdef USE_HE_GPU
   case DEVICE:
     return device_plain_.scale();
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedPlaintext");
   }
@@ -68,9 +73,11 @@ double &UnifiedPlaintext::scale() {
   case HOST_AND_DEVICE:
   case HOST:
     return host_plain_.scale();
+#ifdef USE_HE_GPU
   case DEVICE:
     return device_plain_.scale();
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedPlaintext");
   }
@@ -86,6 +93,7 @@ UnifiedCiphertext::UnifiedCiphertext(const seal::Ciphertext &cipher)
 UnifiedCiphertext::UnifiedCiphertext(seal::Ciphertext &&cipher)
     : loc_(HOST), host_cipher_(std::move(cipher)) {}
 
+#ifdef USE_HE_GPU
 UnifiedCiphertext::UnifiedCiphertext(const PhantomCiphertext &cipher)
     : loc_(DEVICE), device_cipher_(cipher) {}
 
@@ -162,6 +170,7 @@ void UnifiedCiphertext::to_host(const seal::SEALContext &hcontext,
   // device_cipher_.resize(0, 0, 0, cudaStreamPerThread);
   loc_ = HOST;
 }
+#endif
 
 void UnifiedCiphertext::save(std::ostream &stream) const {
   if (loc_ == UNDEF) {
@@ -173,26 +182,29 @@ void UnifiedCiphertext::save(std::ostream &stream) const {
   case HOST:
     host_cipher_.save(stream);
     break;
+#ifdef USE_HE_GPU
   case DEVICE:
     device_cipher_.save(stream);
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedCiphertext");
   }
 }
 
-void UnifiedCiphertext::load(const seal::SEALContext &hcontext,
-                             const PhantomContext &dcontext,
+void UnifiedCiphertext::load(const UnifiedContext &context,
                              std::istream &stream) {
   stream.read(reinterpret_cast<char *>(&loc_), sizeof(std::size_t));
   switch (loc_) {
   case HOST:
     // FIXME: why using unsafe_load
-    host_cipher_.unsafe_load(hcontext, stream);
+    host_cipher_.unsafe_load(context, stream);
     break;
+#ifdef USE_HE_GPU
   case DEVICE:
     device_cipher_.load(stream);
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedCiphertext");
   }
@@ -202,9 +214,11 @@ std::size_t UnifiedCiphertext::coeff_modulus_size() const {
   switch (loc_) {
   case HOST:
     return host_cipher_.coeff_modulus_size();
+#ifdef USE_HE_GPU
   case DEVICE:
     return device_cipher_.coeff_modulus_size();
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedCiphertext");
   }
@@ -214,9 +228,11 @@ const double &UnifiedCiphertext::scale() const {
   switch (loc_) {
   case HOST:
     return host_cipher_.scale();
+#ifdef USE_HE_GPU
   case DEVICE:
     return device_cipher_.scale();
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedCiphertext");
   }
@@ -226,14 +242,17 @@ double &UnifiedCiphertext::scale() {
   switch (loc_) {
   case HOST:
     return host_cipher_.scale();
+#ifdef USE_HE_GPU
   case DEVICE:
     return device_cipher_.scale();
     break;
+#endif
   default:
     throw std::invalid_argument("Invalid UnifiedCiphertext");
   }
 }
 
+#ifdef USE_HE_GPU
 void HE::unified::kswitchkey_to_device(const seal::SEALContext &hcontext,
                                        const std::vector<seal::PublicKey> &hksk,
                                        const PhantomContext &dcontext,
@@ -271,3 +290,90 @@ void HE::unified::galoiskeys_to_device(const seal::SEALContext &hcontext,
   const_cast<PhantomContext *>(&dcontext)->key_galois_tool_->galois_elts(
       galois_elts);
 }
+#endif
+
+// ******************** UnifiedRelinKeys ********************
+
+UnifiedRelinKeys::UnifiedRelinKeys(const seal::RelinKeys &key)
+    : loc_(HOST), host_relinkey_(key) {}
+
+UnifiedRelinKeys::UnifiedRelinKeys(seal::RelinKeys &&key)
+    : loc_(HOST), host_relinkey_(std::move(key)) {}
+
+void UnifiedRelinKeys::save(std::ostream &stream) const {
+  if (loc_ != HOST) {
+    throw std::runtime_error(
+        "UnifiedRelinKeys: Only supports HOST-side serialization");
+  }
+  host_relinkey_.save(stream);
+}
+
+void UnifiedRelinKeys::load(const UnifiedContext &context,
+                            std::istream &stream) {
+  if (loc_ != HOST) {
+    throw std::runtime_error(
+        "UnifiedRelinKeys: Only supports HOST-side serialization");
+  }
+  host_relinkey_.load(context, stream);
+}
+
+#ifdef USE_HE_GPU
+UnifiedRelinKeys::UnifiedRelinKeys(PhantomRelinKey &&key)
+    : loc_(DEVICE), device_relinkey_(std::move(key)) {}
+
+void UnifiedRelinKeys::to_device(const seal::SEALContext &hcontext,
+                                 const seal::RelinKeys &hrelin,
+                                 const PhantomContext &dcontext,
+                                 PhantomRelinKey &drelin) {
+  std::vector<PhantomPublicKey> drlk;
+  kswitchkey_to_device(hcontext, *hrelin.data().data(), dcontext, drlk);
+  drelin.load(std::move(drlk));
+}
+
+void UnifiedRelinKeys::to_device(const seal::SEALContext &hcontext,
+                                 const PhantomContext &dcontext) {
+  to_device(hcontext, host_relinkey_, dcontext, device_relinkey_);
+}
+#endif
+
+// ******************** UnifiedGaloisKeys ********************
+
+UnifiedGaloisKeys::UnifiedGaloisKeys(const seal::GaloisKeys &key)
+    : loc_(HOST), host_galoiskey_(key) {}
+
+UnifiedGaloisKeys::UnifiedGaloisKeys(seal::GaloisKeys &&key)
+    : loc_(HOST), host_galoiskey_(std::move(key)) {}
+
+void UnifiedGaloisKeys::save(std::ostream &stream) const {
+  if (loc_ != HOST) {
+    throw std::runtime_error(
+        "UnifiedRelinKeys: Only supports HOST-side serialization");
+  }
+  host_galoiskey_.save(stream);
+}
+
+void UnifiedGaloisKeys::load(const UnifiedContext &context,
+                             std::istream &stream) {
+  if (loc_ != HOST) {
+    throw std::runtime_error(
+        "UnifiedRelinKeys: Only supports HOST-side serialization");
+  }
+  host_galoiskey_.load(context, stream);
+}
+
+#ifdef USE_HE_GPU
+UnifiedGaloisKeys::UnifiedGaloisKeys(PhantomGaloisKey &&key)
+    : loc_(DEVICE), device_galoiskey_(std::move(key)) {}
+
+void UnifiedGaloisKeys::to_device(const seal::SEALContext &hcontext,
+                                  const seal::GaloisKeys &hgalois,
+                                  const PhantomContext &dcontext,
+                                  PhantomGaloisKey &dgalois) {
+  galoiskeys_to_device(hcontext, hgalois, dcontext, dgalois);
+}
+
+void UnifiedGaloisKeys::to_device(const seal::SEALContext &hcontext,
+                                  const PhantomContext &dcontext) {
+  to_device(hcontext, host_galoiskey_, dcontext, device_galoiskey_);
+}
+#endif

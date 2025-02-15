@@ -94,6 +94,25 @@ void UnifiedEvaluator::multiply_plain_inplace(
   }
 }
 
+void UnifiedEvaluator::rotate_vector_inplace(
+    UnifiedCiphertext &encrypted, int step,
+    const UnifiedGaloisKeys &galois_key) const {
+  if (backend_ == LOCATION::HOST) {
+    seal_eval_->rotate_vector_inplace(encrypted, step, galois_key);
+  } else {
+    phantom_eval_->rotate_vector_inplace(encrypted, step, galois_key);
+  }
+}
+
+void UnifiedEvaluator::complex_conjugate_inplace(
+    UnifiedCiphertext &encrypted, const UnifiedGaloisKeys &galois_key) const {
+  if (backend_ == LOCATION::HOST) {
+    seal_eval_->complex_conjugate_inplace(encrypted, galois_key);
+  } else {
+    phantom_eval_->complex_conjugate_inplace(encrypted, galois_key);
+  }
+}
+
 // function template specializations
 template void UnifiedEvaluator::relinearize_inplace<seal::RelinKeys>(
     UnifiedCiphertext &encrypted, const seal::RelinKeys &relin_keys) const;

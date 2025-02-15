@@ -2,6 +2,8 @@
 #include <vector>
 #include <Datatype/Tensor.h>
 #include <HE/NetIO.h>
+#include <HE/unified/UnifiedEvaluator.h>
+#include <HE/unified/UnifiedEvk.h>
 
 #pragma once
 
@@ -12,13 +14,14 @@ using namespace Datatype;
 namespace HE {
 class HEEvaluator {
     public:
-    SEALContext *context = nullptr;
+    unified::LOCATION backend = unified::LOCATION::UNDEF;
+    unified::UnifiedContext *context = nullptr;
     Encryptor *encryptor = nullptr;
     Decryptor *decryptor = nullptr;
     BatchEncoder *encoder = nullptr;
-    Evaluator *evaluator = nullptr;
+    unified::UnifiedEvaluator *evaluator = nullptr;
     RelinKeys *relinKeys = nullptr;
-    GaloisKeys *galoisKeys = nullptr;
+    unified::UnifiedGaloisKeys *galoisKeys = nullptr;
     BatchEncoder *batchEncoder = nullptr;
     PublicKey *publicKeys = nullptr;
     SecretKey *secretKeys= nullptr;
@@ -29,24 +32,26 @@ class HEEvaluator {
 
     HEEvaluator(
         NetIO &IO,
-        bool server
+        bool server,
+        unified::LOCATION backend = unified::LOCATION::HOST
     ){
         this->IO = &IO;
         this->server = server;
+        if (backend == unified::LOCATION::HOST_AND_DEVICE) {
+            throw std::invalid_argument("Currently not supported");
+        }
+        this->backend = backend;
     }
 
     void GenerateNewKey() {
         publicKeys = new PublicKey();
         secretKeys = new SecretKey();
         relinKeys  = new RelinKeys();
-        galoisKeys = new GaloisKeys();
+        galoisKeys = new unified::UnifiedGaloisKeys();
         EncryptionParameters parms(scheme_type::bfv);
-        parms.set_poly_modulus_degree(polyModulusDegree);
-        parms.set_coeff_modulus(CoeffModulus::BFVDefault(polyModulusDegree));
-        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 20));
-        context = new SEALContext(parms);
+        context = new unified::UnifiedContext(polyModulusDegree, 20, backend);
         encoder = new BatchEncoder(*context);
-        evaluator = new Evaluator(*context);
+        evaluator = new unified::UnifiedEvaluator(*context);
         batchEncoder = new BatchEncoder(*context);
         plain_mod = parms.plain_modulus().value();
         if (server) {
@@ -61,6 +66,20 @@ class HEEvaluator {
             publicKeys->load(*context,is);
             is.write(key_buf + pk_sze, gk_sze);
             galoisKeys->load(*context,is);
+
+            if (IsGPUenable()) {
+                // Load RelinKey to GPU
+                // vector<PhantomPublicKey> drlk;
+                // kswitchkey_to_device(*context, *relinKeys->data().data(), drlk);
+                // drelin_keys = new PhantomRelinKey();
+                // drelin_keys->load(std::move(drlk));
+    
+
+                // Load GaliosKey to GPU
+                // dgal_keys = new PhantomGaloisKey();
+                // galoiskeys_to_device(*context, *gal_keys, *dcontext, *dgal_keys);
+            }
+
             std::cout << "Server received: " << key_buf << "\n";
             std::cout << "Server received: " << pk_sze << "\n";
             encryptor = new Encryptor(*context, *publicKeys);
@@ -158,6 +177,10 @@ class HEEvaluator {
         this->encryptor->encrypt(zeros_pt, zeros_ct);
 
         return zeros_ct;
+    }
+
+    bool IsGPUenable() {
+        return evaluator->backend() == unified::LOCATION::DEVICE;
     }
 };
 

@@ -2,6 +2,7 @@
 #include <cassert>
 
 using namespace seal;
+using namespace HE::unified;
 using namespace LinearLayer;
 // Extract shared parameters. Let dim(w) = {Co, Ci, H, W}
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
@@ -99,7 +100,7 @@ Tensor<Ciphertext> Conv2DNest::HECompute(Tensor<Plaintext> weight_pt, Tensor<Cip
     Tensor<Ciphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext());
     Tensor<Ciphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext());
     Tensor<Ciphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
-    GaloisKeys* keys = HE->galoisKeys;
+    UnifiedGaloisKeys* keys = HE->galoisKeys;
 
     // First complete the input rotation
     for (uint64_t i = 0; i < input_rot; i++) {
