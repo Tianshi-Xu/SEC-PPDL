@@ -1,9 +1,4 @@
 #include <seal/seal.h>
-#include <seal/secretkey.h>
-#include <seal/util/polyarithsmallmod.h>
-#include <seal/util/rlwe.h>
-#include <seal/secretkey.h>
-#include <seal/serializable.h>
 #include <Datatype/Tensor.h>
 #include <Layer/Module.h>
 #include <HE/HE.h>

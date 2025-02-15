@@ -5,9 +5,9 @@ int main(int argc, char **argv){
     const char* address = "127.0.0.1";
     int port = 32000;
     std::cout << party << std::endl;
-    NetIO netio(address, port, party);
+    HE::NetIO netio(address, port, party);
     std::cout << "netio generated" << std::endl;
-    HEEvaluator HE(netio, party);
+    HE::HEEvaluator HE(netio, party);
     HE.GenerateNewKey();
     Ciphertext ct = Ciphertext();
     
@@ -16,13 +16,23 @@ int main(int argc, char **argv){
     Tensor<uint64_t> input({Ci, H, W}); 
     Tensor<uint64_t> weight({Co, Ci, k, k});
     Tensor<uint64_t> bias({Co});
-    for (uint64_t i = 0; i < Co * Ci * k * k; i++) {
-        weight(i) = i / (Ci * k * k);
+    for(uint32_t i = 0; i < Co; i++){
+        for(uint32_t j = 0; j < Ci; j++){
+            for(uint32_t k = 0; k < k; k++){
+                for(uint32_t l = 0; l < k; l++){
+                    weight({i, j, k, l}) = party;
+                }
+            }
+        }
     }
-    for (uint64_t i = 0; i < Ci * H * W ; i++){
-        input(i) = party;
+    for(uint32_t i = 0; i < Ci; i++){
+        for(uint32_t j = 0; j < H; j++){
+            for(uint32_t k = 0; k < W; k++){
+                input({i, j, k}) = party;
+            }
+        }
     }
-
+    cout << "input generated" << endl;
     LinearLayer::Conv2DNest conv(H, s, p, weight, bias, &HE);
     Tensor<uint64_t> output = conv(input);
     for (uint64_t i = 0; i < Co; i++){

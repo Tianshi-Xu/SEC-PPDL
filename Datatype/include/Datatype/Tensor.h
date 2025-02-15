@@ -55,7 +55,6 @@ public:
         shape_ = { data_.size() };
         strides_ = { 1 };
     }
-
     // Reshape操作
     void reshape(const std::vector<size_t>& new_shape) {
         size_t new_size = std::accumulate(new_shape.begin(), new_shape.end(), size_t(1), std::multiplies<size_t>());
@@ -119,6 +118,14 @@ public:
         return result;
     }
 
+    void print_shape() const {
+        std::cout << "Shape: [";
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            std::cout << shape_[i];
+            if (i != shape_.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
     // 打印张量（仅支持打印数据和形状）
     void print() const {
         std::cout << "Shape: [";
