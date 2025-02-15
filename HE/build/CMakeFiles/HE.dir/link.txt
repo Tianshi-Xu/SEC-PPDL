@@ -1,0 +1,2 @@
+/opt/rh/devtoolset-11/root/bin/ar qc libHE.a CMakeFiles/HE.dir/src/NetIO.cpp.o CMakeFiles/HE.dir/src/test.cpp.o
+/opt/rh/devtoolset-11/root/bin/ranlib libHE.a

@@ -1,0 +1,2 @@
+/opt/rh/devtoolset-11/root/bin/ar qc libOperator.a CMakeFiles/Operator.dir/src/Compare.cpp.o
+/opt/rh/devtoolset-11/root/bin/ranlib libOperator.a

@@ -1,0 +1,1 @@
+/opt/rh/devtoolset-11/root/bin/c++ CMakeFiles/HE_test.dir/src/test.cpp.o -o HE_test  libHE.a /home/xts/code/SEC-PPDL/Extern/SEAL/build/lib/libseal-4.1.a -pthread -lDatatype
