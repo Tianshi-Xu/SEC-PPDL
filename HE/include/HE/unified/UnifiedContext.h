@@ -1,11 +1,13 @@
 #pragma once
 
-#include "HE/unified/Define.h"
+#include <Datatype/Tensor.h>
 #include <seal/context.h>
 
 #ifdef USE_HE_GPU
-#include <context.cuh>
+#include <phantom/context.cuh>
 #endif
+
+using namespace Datatype;
 
 namespace HE {
 namespace unified {
@@ -20,8 +22,8 @@ public:
       throw std::invalid_argument("Non GPU version");
     }
 #else
-    if (backend != LOCATION::HOST || backend != LOCATION::DEVICE) {
-      throw std::invalid_argument("Invalid backend");
+    if (backend != LOCATION::HOST && backend != LOCATION::DEVICE) {
+      throw std::invalid_argument("UnifiedContext: Invalid backend");
     }
 #endif
     seal::EncryptionParameters parms(seal::scheme_type::bfv);

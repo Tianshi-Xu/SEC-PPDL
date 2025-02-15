@@ -19,6 +19,17 @@ UnifiedPlaintext &UnifiedPlaintext::operator=(seal::Plaintext &&other) {
   return *this;
 }
 
+void UnifiedPlaintext::to_device(const UnifiedContext &context) {
+  if (loc_ != HOST) {
+    throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
+  }
+#ifdef USE_HE_GPU
+  to_device(context, host_plain_, context, device_plain_);
+  host_plain_.release();
+  loc_ = DEVICE;
+#endif
+}
+
 #ifdef USE_HE_GPU
 UnifiedPlaintext::UnifiedPlaintext(const PhantomPlaintext &dplain)
     : loc_(DEVICE), device_plain_(dplain) {}
@@ -40,16 +51,6 @@ void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
   auto phantom_chain_idx = full_data_modulus_size - curr_data_modulus_size + 1;
 
   dplain.load(hplain.data(), dcontext, phantom_chain_idx, hplain.scale());
-}
-
-void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
-                                 const PhantomContext &dcontext) {
-  if (loc_ != HOST) {
-    throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
-  }
-  to_device(hcontext, host_plain_, dcontext, device_plain_);
-  host_plain_.release();
-  loc_ = DEVICE;
 }
 #endif
 
@@ -119,16 +120,6 @@ void UnifiedCiphertext::to_device(const seal::SEALContext &hcontext,
                hcipher.is_ntt_form(), true);
 }
 
-void UnifiedCiphertext::to_device(const seal::SEALContext &hcontext,
-                                  const PhantomContext &dcontext) {
-  if (loc_ != HOST) {
-    throw std::runtime_error("UnifiedCiphertext: NOT in HOST");
-  }
-  to_device(hcontext, host_cipher_, dcontext, device_cipher_);
-  host_cipher_.release();
-  loc_ = DEVICE;
-}
-
 void UnifiedCiphertext::to_host(const PhantomContext &dcontext,
                                 const PhantomCiphertext &dcipher,
                                 const seal::SEALContext &hcontext,
@@ -158,19 +149,30 @@ void UnifiedCiphertext::to_host(const PhantomContext &dcontext,
              size * coeff_modulus_size * poly_modulus_degree * sizeof(uint64_t),
              cudaMemcpyDeviceToHost);
 }
+#endif
 
-void UnifiedCiphertext::to_host(const seal::SEALContext &hcontext,
-                                const PhantomContext &dcontext) {
+void UnifiedCiphertext::to_device(const UnifiedContext &context) {
+  if (loc_ != HOST) {
+    throw std::runtime_error("UnifiedCiphertext: NOT in HOST");
+  }
+#ifdef USE_HE_GPU
+  to_device(context, host_cipher_, context, device_cipher_);
+  host_cipher_.release();
+  loc_ = DEVICE;
+#endif
+}
+
+void UnifiedCiphertext::to_host(const UnifiedContext &context) {
   if (loc_ != DEVICE) {
     throw std::runtime_error("UnifiedCiphertext: NOT in DEVICE");
   }
+#ifdef USE_HE_GPU
   const auto chain_idx = device_cipher_.chain_index();
-
-  to_host(dcontext, device_cipher_, hcontext, host_cipher_);
+  to_host(context, device_cipher_, context, host_cipher_);
   // device_cipher_.resize(0, 0, 0, cudaStreamPerThread);
   loc_ = HOST;
-}
 #endif
+}
 
 void UnifiedCiphertext::save(std::ostream &stream) const {
   if (loc_ == UNDEF) {
@@ -317,6 +319,16 @@ void UnifiedRelinKeys::load(const UnifiedContext &context,
   host_relinkey_.load(context, stream);
 }
 
+void UnifiedRelinKeys::to_device(const UnifiedContext &context) {
+  if (loc_ != HOST) {
+    throw std::runtime_error("UnifiedRelinKeys: NOT in HOST");
+  }
+#ifdef USE_HE_GPU
+  to_device(context, host_relinkey_, context, device_relinkey_);
+  loc_ = HOST_AND_DEVICE;
+#endif
+}
+
 #ifdef USE_HE_GPU
 UnifiedRelinKeys::UnifiedRelinKeys(PhantomRelinKey &&key)
     : loc_(DEVICE), device_relinkey_(std::move(key)) {}
@@ -328,11 +340,6 @@ void UnifiedRelinKeys::to_device(const seal::SEALContext &hcontext,
   std::vector<PhantomPublicKey> drlk;
   kswitchkey_to_device(hcontext, *hrelin.data().data(), dcontext, drlk);
   drelin.load(std::move(drlk));
-}
-
-void UnifiedRelinKeys::to_device(const seal::SEALContext &hcontext,
-                                 const PhantomContext &dcontext) {
-  to_device(hcontext, host_relinkey_, dcontext, device_relinkey_);
 }
 #endif
 
@@ -361,6 +368,16 @@ void UnifiedGaloisKeys::load(const UnifiedContext &context,
   host_galoiskey_.load(context, stream);
 }
 
+void UnifiedGaloisKeys::to_device(const UnifiedContext &context) {
+  if (loc_ != HOST) {
+    throw std::runtime_error("UnifiedGaloisKeys: NOT in HOST");
+  }
+#ifdef USE_HE_GPU
+  to_device(context, host_galoiskey_, context, device_galoiskey_);
+  loc_ = HOST_AND_DEVICE;
+#endif
+}
+
 #ifdef USE_HE_GPU
 UnifiedGaloisKeys::UnifiedGaloisKeys(PhantomGaloisKey &&key)
     : loc_(DEVICE), device_galoiskey_(std::move(key)) {}
@@ -370,10 +387,5 @@ void UnifiedGaloisKeys::to_device(const seal::SEALContext &hcontext,
                                   const PhantomContext &dcontext,
                                   PhantomGaloisKey &dgalois) {
   galoiskeys_to_device(hcontext, hgalois, dcontext, dgalois);
-}
-
-void UnifiedGaloisKeys::to_device(const seal::SEALContext &hcontext,
-                                  const PhantomContext &dcontext) {
-  to_device(hcontext, host_galoiskey_, dcontext, device_galoiskey_);
 }
 #endif

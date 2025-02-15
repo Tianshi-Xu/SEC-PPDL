@@ -1,6 +1,5 @@
 #pragma once
 
-#include "HE/unified/Define.h"
 #include "HE/unified/UnifiedContext.h"
 #include <seal/galoiskeys.h>
 #include <seal/relinkeys.h>
@@ -43,6 +42,8 @@ class UnifiedRelinKeys {
 public:
   UnifiedRelinKeys() = default;
 
+  UnifiedRelinKeys(LOCATION loc = UNDEF) : loc_(loc) {}
+
   UnifiedRelinKeys(const seal::RelinKeys &key);
 
   UnifiedRelinKeys(seal::RelinKeys &&key);
@@ -63,14 +64,14 @@ public:
   bool is_device() const { return loc_ == DEVICE; }
 
   const seal::RelinKeys &hrelin() const {
-    if (loc_ != HOST) {
+    if (loc_ != HOST && loc_ != HOST_AND_DEVICE) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in HOST");
     }
     return host_relinkey_;
   }
 
   seal::RelinKeys &hrelin() {
-    if (loc_ != HOST) {
+    if (loc_ != HOST && loc_ != HOST_AND_DEVICE) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in HOST");
     }
     return host_relinkey_;
@@ -80,16 +81,18 @@ public:
 
   operator seal::RelinKeys &() { return hrelin(); }
 
+  void to_device(const UnifiedContext &context);
+
 #ifdef USE_HE_GPU
   const PhantomRelinKey &drelin() const {
-    if (loc_ != DEVICE) {
+    if (loc_ != DEVICE && loc_ != HOST_AND_DEVICE) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in DEVICE");
     }
     return device_relinkey_;
   }
 
   PhantomRelinKey &drelin() {
-    if (loc_ != DEVICE) {
+    if (loc_ != DEVICE && loc_ != HOST_AND_DEVICE) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in DEVICE");
     }
     return device_relinkey_;
@@ -99,13 +102,6 @@ public:
                         const seal::RelinKeys &hrelin,
                         const PhantomContext &dcontext,
                         PhantomRelinKey &drelin);
-
-  void to_device(const seal::SEALContext &hcontext,
-                 const PhantomContext &dcontext);
-
-  inline void to_device(const UnifiedContext &context) {
-    to_device(context, context);
-  }
 
   operator const PhantomRelinKey &() const { return drelin(); }
 
@@ -131,6 +127,8 @@ private:
 class UnifiedGaloisKeys {
 public:
   UnifiedGaloisKeys() = default;
+
+  UnifiedGaloisKeys(LOCATION loc = UNDEF) : loc_(loc) {}
 
   UnifiedGaloisKeys(const seal::GaloisKeys &key);
 
@@ -166,6 +164,8 @@ public:
 
   operator seal::GaloisKeys &() { return hgalois(); }
 
+  void to_device(const UnifiedContext &context);
+
 #ifdef USE_HE_GPU
   const PhantomGaloisKey &dgalois() const {
     if (loc_ != DEVICE) {
@@ -185,13 +185,6 @@ public:
                         const seal::GaloisKeys &hrelin,
                         const PhantomContext &dcontext,
                         PhantomGaloisKey &drelin);
-
-  void to_device(const seal::SEALContext &hcontext,
-                 const PhantomContext &dcontext);
-
-  inline void to_device(const UnifiedContext &context) {
-    to_device(context, context);
-  }
 
   operator const PhantomGaloisKey &() const { return dgalois(); }
 

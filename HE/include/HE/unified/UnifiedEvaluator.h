@@ -1,14 +1,13 @@
 #pragma once
 
-#include "HE/unified/Define.h"
+#include "HE/unified/UnifiedCiphertext.h"
 #include "HE/unified/UnifiedEvk.h"
+#include "HE/unified/UnifiedPlaintext.h"
 #include <HE/unified/UnifiedContext.h>
 #include <seal/evaluator.h>
 
 #ifdef USE_HE_GPU
 #include "HE/unified/PhantomWrapper.h"
-#include "HE/unified/UnifiedCiphertext.h"
-#include "HE/unified/UnifiedPlaintext.h"
 #endif
 
 namespace HE {

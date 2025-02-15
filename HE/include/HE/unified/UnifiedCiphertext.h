@@ -1,6 +1,5 @@
 #pragma once
 
-#include "HE/unified/Define.h"
 #include "HE/unified/UnifiedContext.h"
 #include <seal/ciphertext.h>
 
@@ -53,14 +52,15 @@ public:
 
   operator seal::Ciphertext &() { return hcipher(); }
 
+  void to_host(const UnifiedContext &context);
+
+  void to_device(const UnifiedContext &context);
+
 #ifdef USE_HE_GPU
   static void to_host(const PhantomContext &dcontext,
                       const PhantomCiphertext &dcipher,
                       const seal::SEALContext &hcontext,
                       seal::Ciphertext &hcipher);
-
-  void to_host(const seal::SEALContext &hcontext,
-               const PhantomContext &dcontext);
 
   const PhantomCiphertext &dcipher() const {
     if (loc_ != DEVICE) {
@@ -80,9 +80,6 @@ public:
                         const seal::Ciphertext &hcipher,
                         const PhantomContext &dcontext,
                         PhantomCiphertext &dcipher);
-
-  void to_device(const seal::SEALContext &hcontext,
-                 const PhantomContext &dcontext);
 
   operator const PhantomCiphertext &() const { return dcipher(); }
 
