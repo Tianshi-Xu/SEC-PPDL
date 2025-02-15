@@ -1,6 +1,7 @@
 #include <seal/seal.h>
 #include <Datatype/Tensor.h>
 #include <HE/HE.h>
+#pragma once
 
 using namespace HE;
 using namespace Datatype;

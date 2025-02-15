@@ -9,6 +9,7 @@ int main(int argc, char **argv){
     std::cout << "netio generated" << std::endl;
     HEEvaluator HE(netio, party);
     HE.GenerateNewKey();
+    Ciphertext ct = Ciphertext();
     
     uint64_t Ci = 16; uint64_t Co = 16; uint64_t H = 19; uint64_t W = 19;
     uint64_t p = 1; uint64_t s = 2; uint64_t k = 5; uint64_t Ho = 9; uint64_t Wo = 9;
@@ -22,7 +23,7 @@ int main(int argc, char **argv){
         input(i) = party;
     }
 
-    Conv2DNest conv(H, s, p, weight, bias, &HE);
+    LinearLayer::Conv2DNest conv(H, s, p, weight, bias, &HE);
     Tensor<uint64_t> output = conv(input);
     for (uint64_t i = 0; i < Co; i++){
         std::cout << i << std::endl;

@@ -2,7 +2,7 @@
 #include <cassert>
 
 using namespace seal;
-using namespace LinearLayer;
+namespace LinearLayer {
 // Extract shared parameters. Let dim(w) = {Co, Ci, H, W}
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : in_feature_size(in_feature_size), 
@@ -166,10 +166,12 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci, H, W}
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    Tensor<Ciphertext> ac_ct = SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
+    Tensor<Ciphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
     Tensor<Ciphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    Tensor<uint64_t> out_msg = HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
+    Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
 
     return y;
 };
+
+} // namespace LinearLayer

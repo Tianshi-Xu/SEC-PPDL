@@ -14,6 +14,8 @@ using namespace HE;
 
 
 int main(int argc, char* argv[]) {
+    Ciphertext ct = Ciphertext();
+    cout << ct.size() << endl;
     if (argc != 4) {
         std::cerr << "Usage: " << argv[0] << " <server/client> <IP> <port>\n";
         return 1;
@@ -25,6 +27,7 @@ int main(int argc, char* argv[]) {
     NetIO netio(ip, port, is_server);
     std::cout << "start test" << std::endl;
     HEEvaluator HE(netio, is_server);
+    
     std::cout << "build";
     HE.GenerateNewKey();
     std::cout << "gen";

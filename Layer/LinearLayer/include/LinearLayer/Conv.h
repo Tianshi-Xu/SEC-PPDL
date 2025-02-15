@@ -7,7 +7,6 @@
 using namespace seal;
 using namespace HE;
 using namespace Datatype;
-using namespace Operator;
 
 namespace LinearLayer {
 
