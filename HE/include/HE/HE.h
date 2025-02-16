@@ -1,11 +1,12 @@
+#pragma once
+
 #include <seal/seal.h>
 #include <vector>
+#include <Datatype/Tensor.h>
 #include <HE/NetIO.h>
 #include <HE/unified/UnifiedEvk.h>
 #include "HE/unified/UnifiedEncoder.h"
 #include <HE/unified/UnifiedEvaluator.h>
-
-#pragma once
 
 using namespace std;
 using namespace seal;
@@ -14,7 +15,6 @@ using namespace Datatype;
 namespace HE {
 class HEEvaluator {
     public:
-    LOCATION backend = LOCATION::UNDEF;
     unified::UnifiedContext *context = nullptr;
     Encryptor *encryptor = nullptr;
     Decryptor *decryptor = nullptr;
@@ -22,7 +22,6 @@ class HEEvaluator {
     unified::UnifiedEvaluator *evaluator = nullptr;
     RelinKeys *relinKeys = nullptr;
     unified::UnifiedGaloisKeys *galoisKeys = nullptr;
-    unified::UnifiedBatchEncoder *batchEncoder = nullptr;
     PublicKey *publicKeys = nullptr;
     SecretKey *secretKeys= nullptr;
     bool server = false;
@@ -43,6 +42,8 @@ class HEEvaluator {
         this->backend = backend;
     }
 
+    ~HEEvaluator() = default;
+
     void GenerateNewKey() {
         publicKeys = new PublicKey();
         secretKeys = new SecretKey();
@@ -52,7 +53,6 @@ class HEEvaluator {
         context = new unified::UnifiedContext(polyModulusDegree, 20, backend);
         encoder = new unified::UnifiedBatchEncoder(*context);
         evaluator = new unified::UnifiedEvaluator(*context);
-        batchEncoder = new unified::UnifiedBatchEncoder(*context);
         parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 40));
         plain_mod = parms.plain_modulus().value();
         cout << "plain_mod: " << plain_mod << endl;
@@ -72,6 +72,7 @@ class HEEvaluator {
             if (IsGPUenable()) {
                 // Load Galois Keys to GPU
                 galoisKeys->to_device(*context);
+                std::cout << "Load Galois Keys to GPU: " << galoisKeys->location() << std::endl;
             }
 
             std::cout << "Server received: " << key_buf << "\n";
@@ -110,8 +111,6 @@ class HEEvaluator {
             }
         };
 
-        safe_delete(batchEncoder);
-        safe_delete(context);
         safe_delete(encryptor);
         safe_delete(decryptor);
         safe_delete(encoder);
@@ -120,18 +119,11 @@ class HEEvaluator {
         safe_delete(galoisKeys);
         safe_delete(publicKeys);
         safe_delete(secretKeys);
+        safe_delete(context);
     }
 
-    void SendCipherText(const unified::UnifiedCiphertext &ct){
+    void SendCipherText(const Ciphertext &ct){
         std::stringstream os;
-        if (ct.is_device()) {
-            /**
-               [Important]:
-               1. There are two forms of ciphertext bit streams (SEAL and Phantom).
-               2. Forms of ciphertext bit streams are dependent on evaluator->backend()
-             */
-            throw std::invalid_argument("SendCipherText: Need to explicitly transfer `ct` to HOST");
-        }
         ct.save(os);
         uint64_t ct_sze = static_cast<uint64_t>(os.tellp());
         const std::string &ct_str = os.str();
@@ -149,45 +141,54 @@ class HEEvaluator {
         }
     }
 
-    void ReceiveCipherText(unified::UnifiedCiphertext &ct){
+    void ReceiveCipherText(Ciphertext &ct){
         uint64_t ct_sze{0};
         this->IO->recv_data(&ct_sze,sizeof(uint64_t));
         char *char_buf = new char[ct_sze];
         this->IO->recv_data(char_buf,ct_sze);
         std::stringstream is;
-        is.write(char_buf,ct_sze);
-        ct.load(*context,is);
+        is.write(char_buf, ct_sze);
+        ct.load(*context, is);
         delete[] char_buf;
     }
 
     void ReceiveEncVec(Tensor<unified::UnifiedCiphertext> &ct_vec){
+        // Get # of ciphertext
         uint64_t vec_size{0};
         this->IO->recv_data(&vec_size,sizeof(uint64_t));
         assert(vec_size == ct_vec.size() && "Number of ciphertexts does not match.");
 
+        // Receive ciphertexts
         for (size_t i = 0; i < vec_size; ++i){
-            ReceiveCipherText(ct_vec({i}));
+            Ciphertext recv;
+            ReceiveCipherText(recv);
+            ct_vec({i}) = std::move(recv);
         }
     }
 
-    unified::UnifiedCiphertext GenerateZeroCiphertext() {
+    unified::UnifiedCiphertext GenerateZeroCiphertext(LOCATION loc) {
         unified::UnifiedPlaintext zeros_pt(HOST);
         unified::UnifiedCiphertext zeros_ct(HOST);
 
         std::vector<uint64_t> zeros(this->polyModulusDegree, 0);
-        this->batchEncoder->encode(zeros, zeros_pt);
+        this->encoder->encode(zeros, zeros_pt);
         this->encryptor->encrypt(zeros_pt, zeros_ct);
 
-        if (IsGPUenable()) {
+        if (loc == DEVICE) {
             zeros_ct.to_device(*context);
         }
 
         return zeros_ct;
     }
 
-    bool IsGPUenable() {
-        return evaluator->backend() == LOCATION::DEVICE;
+    inline bool IsGPUenable() {
+        return backend == LOCATION::DEVICE;
     }
+
+    inline auto Backend() const { return backend; }
+
+    private:
+        LOCATION backend = LOCATION::UNDEF;
 };
 
 }

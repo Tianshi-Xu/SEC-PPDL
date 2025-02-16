@@ -16,11 +16,13 @@ public:
   UnifiedBatchEncoder(const UnifiedContext &context)
       : seal::BatchEncoder::BatchEncoder(context), context_(context) {
 #ifdef USE_HE_GPU
-    if (context.backend() == DEVICE) {
+    if (context.is_gpu_enable()) {
       device_encoder_ = std::make_unique<PhantomBatchEncoder>(context);
     }
 #endif
   }
+
+  ~UnifiedBatchEncoder() = default;
 
   void encode(const std::vector<std::uint64_t> &values,
               UnifiedPlaintext &destination) const {
@@ -37,7 +39,7 @@ public:
 private:
   const UnifiedContext &context_;
 #ifdef USE_HE_GPU
-  std::unique_ptr<PhantomBatchEncoder> device_encoder_;
+  std::unique_ptr<PhantomBatchEncoder> device_encoder_ = nullptr;
 #endif
 };
 

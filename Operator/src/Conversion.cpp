@@ -1,16 +1,19 @@
 #include <Operator/Conversion.h>
 
+using namespace HE::unified;
+
 namespace Operator {
 
-Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
+Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);
-    Tensor<UnifiedPlaintext> ac_pt(poly_shape, HOST);
-    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext());
     std::vector<uint64_t> tmp_vec(poly_degree);
     // cout << "OK 1" << endl;
     // encoding
+    const auto target = HE->server ? HE->Backend() : HOST;
+    Tensor<UnifiedPlaintext> ac_pt(poly_shape, target);
+    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext(target));
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             // cout << "i: " << i << " j: " << j << endl;
@@ -18,7 +21,7 @@ Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
             tmp_vec[j] = x(i * poly_degree + j);
         }
         // cout << "i: " << i << endl;
-        HE->batchEncoder->encode(tmp_vec, ac_pt(i));
+        HE->encoder->encode(tmp_vec, ac_pt(i));
     }
     // cout << "OK 2" << endl;
     // communication and addition
@@ -29,13 +32,12 @@ Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
             HE->evaluator->add_plain_inplace(ac_ct(i), ac_pt(i));
         }
     } 
-    else{
+    else { /* client */
         for (size_t i = 0; i < ac_pt.size(); i++) {
             HE->encryptor->encrypt(ac_pt(i), ac_ct(i));
         }
         HE->SendEncVec(ac_ct);
     }
-
     return ac_ct;
 };
 
@@ -64,8 +66,8 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             // TODO: noise flooding (add freshly encrypted zero), refer to Cheetah
             UnifiedPlaintext tmp_pos(HOST);
             UnifiedPlaintext tmp_neg(HOST);
-            HE->batchEncoder->encode(pos_mask, tmp_pos);
-            HE->batchEncoder->encode(neg_mask, tmp_neg);
+            HE->encoder->encode(pos_mask, tmp_pos);
+            HE->encoder->encode(neg_mask, tmp_neg);
             // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
@@ -89,7 +91,7 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
         for (size_t i = 0; i < out_ct.size(); i++) {
             Plaintext out_pt;
             HE->decryptor->decrypt(out_ct(i), out_pt);
-            HE->batchEncoder->decode(out_pt, tmp_vec);
+            HE->encoder->decode(out_pt, tmp_vec);
             for (size_t j = 0; j < HE->polyModulusDegree; j++) {
                 x(i * HE->polyModulusDegree + j) = tmp_vec[j];
             }

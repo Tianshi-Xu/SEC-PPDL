@@ -9,7 +9,7 @@
 namespace HE {
 namespace unified {
 
-class UnifiedPlaintext {
+class UnifiedPlaintext : public UnifiedBase {
 public:
   UnifiedPlaintext(LOCATION loc = UNDEF) : loc_(loc) {}
 
@@ -27,11 +27,11 @@ public:
 
   UnifiedPlaintext &operator=(seal::Plaintext &&);
 
-  inline bool on_host() const {
+  bool on_host() const override {
     return loc_ == HOST || loc_ == HOST_AND_DEVICE;
   }
 
-  inline bool on_device() const {
+  bool on_device() const override {
     return loc_ == DEVICE || loc_ == HOST_AND_DEVICE;
   }
 

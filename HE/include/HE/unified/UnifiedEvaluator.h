@@ -27,59 +27,39 @@ public:
 
 class UnifiedEvaluator {
 public:
-  explicit UnifiedEvaluator(const UnifiedContext &context)
-      : backend_(context.backend()) {
-    switch (backend_) {
-    case LOCATION::HOST:
-      register_evaluator(context.hcontext());
-      break;
-    case LOCATION::DEVICE:
+  explicit UnifiedEvaluator(const UnifiedContext &context) {
+    register_evaluator(context.hcontext());
+    if (context.is_gpu_enable()) {
       register_evaluator(context.dcontext());
-      break;
-    default:
-      throw std::invalid_argument("Invalid backend");
     }
   }
 
-  explicit UnifiedEvaluator(const seal::SEALContext &context)
-      : backend_(LOCATION::HOST) {
-    register_evaluator(context);
-  }
-
-  explicit UnifiedEvaluator(const PhantomContext &context)
-      : backend_(LOCATION::DEVICE) {
-    register_evaluator(context);
-  }
-
-  inline LOCATION backend() const { return backend_; }
+  ~UnifiedEvaluator() = default;
 
   template <typename context_t>
   void register_evaluator(const context_t &context) {
     if constexpr (std::is_same_v<context_t, seal::SEALContext>) {
       seal_eval_ = std::make_unique<seal::Evaluator>(context);
-    } else if constexpr (std::is_same_v<context_t, PhantomEvaluator>) {
+    } else if constexpr (std::is_same_v<context_t, PhantomContext>) {
       phantom_eval_ = std::make_unique<PhantomEvaluator>(context);
+    } else {
+      static_assert(std::is_same_v<context_t, void>,
+                    "UnifiedEvaluator: Invalid context");
     }
   }
 
-  void activate_backend(LOCATION backend) {
-    switch (backend) {
-    case LOCATION::HOST:
-      if (seal_eval_ == nullptr) {
-        throw std::runtime_error(
-            "Evaluator on the HOST side is not registered");
-      }
-      break;
-    case LOCATION::DEVICE:
-      if (seal_eval_ == nullptr) {
-        throw std::runtime_error(
-            "Evaluator on the HOST side is not registered");
-      }
-      break;
-    default:
-      throw std::invalid_argument("Invalid backend");
+  template <typename unified_data_t>
+  inline void backend_check(const unified_data_t &data) const {
+    if (data.on_device() && !phantom_eval_) {
+      throw std::invalid_argument("Unregistered GPU backend");
     }
-    backend_ = backend;
+  }
+
+  template <typename T1, typename T2>
+  inline void backend_check(const T1 &x, const T2 &y) const {
+    if (x.on_device() && y.on_device() && !phantom_eval_) {
+      throw std::invalid_argument("Unregistered GPU backend");
+    }
   }
 
   void negate_inplace(UnifiedCiphertext &encrypted) const;
@@ -210,10 +190,8 @@ public:
     complex_conjugate_inplace(destination, galois_key);
   }
 
-  inline void rotate_rows_inplace(UnifiedCiphertext &encrypted, int step,
-                                  const UnifiedGaloisKeys &galois_key) const {
-    rotate_vector_inplace(encrypted, step, galois_key);
-  }
+  void rotate_rows_inplace(UnifiedCiphertext &encrypted, int step,
+                           const UnifiedGaloisKeys &galois_key) const;
 
   inline void rotate_rows(const UnifiedCiphertext &encrypted, int step,
                           const UnifiedGaloisKeys &galois_key,
@@ -222,11 +200,8 @@ public:
     rotate_rows_inplace(destination, step, galois_key);
   }
 
-  inline void
-  rotate_columns_inplace(UnifiedCiphertext &encrypted,
-                         const UnifiedGaloisKeys &galois_key) const {
-    complex_conjugate_inplace(encrypted, galois_key);
-  }
+  void rotate_columns_inplace(UnifiedCiphertext &encrypted,
+                              const UnifiedGaloisKeys &galois_key) const;
 
   inline void rotate_columns(const UnifiedCiphertext &encrypted,
                              const UnifiedGaloisKeys &galois_key,
@@ -236,9 +211,8 @@ public:
   }
 
 private:
-  LOCATION backend_;
-  std::unique_ptr<seal::Evaluator> seal_eval_;
-  std::unique_ptr<PhantomEvaluator> phantom_eval_;
+  std::unique_ptr<seal::Evaluator> seal_eval_ = nullptr;
+  std::unique_ptr<PhantomEvaluator> phantom_eval_ = nullptr;
 };
 #endif
 

@@ -7,11 +7,9 @@
 #include <functional>
 #include <initializer_list>
 #include <type_traits>
-
+#include "Datatype/UnifiedType.h"
 
 namespace Datatype {
-
-enum LOCATION { HOST = 0, DEVICE, HOST_AND_DEVICE, UNDEF };
 
 // Tensor类定义
 template <typename T>
@@ -62,6 +60,10 @@ public:
         shape_ = new_shape;
         computeStrides();
     }
+
+    const T& operator()(const size_t& indice) const {
+        return data_[indice];
+    }  
 
     T& operator()(const size_t& indice) {
         return data_[indice];

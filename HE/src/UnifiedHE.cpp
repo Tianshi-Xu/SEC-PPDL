@@ -167,7 +167,6 @@ void UnifiedCiphertext::to_host(const UnifiedContext &context) {
     throw std::runtime_error("UnifiedCiphertext: NOT in DEVICE");
   }
 #ifdef USE_HE_GPU
-  const auto chain_idx = device_cipher_.chain_index();
   to_host(context, device_cipher_, context, host_cipher_);
   // device_cipher_.resize(0, 0, 0, cudaStreamPerThread);
   loc_ = HOST;
@@ -196,11 +195,12 @@ void UnifiedCiphertext::save(std::ostream &stream) const {
 
 void UnifiedCiphertext::load(const UnifiedContext &context,
                              std::istream &stream) {
-  stream.read(reinterpret_cast<char *>(&loc_), sizeof(std::size_t));
+  std::size_t loc;
+  stream.read(reinterpret_cast<char *>(&loc), sizeof(std::size_t));
+  loc_ = static_cast<LOCATION>(loc);
   switch (loc_) {
   case HOST:
-    // FIXME: why using unsafe_load
-    host_cipher_.unsafe_load(context, stream);
+    host_cipher_.load(context, stream);
     break;
 #ifdef USE_HE_GPU
   case DEVICE:

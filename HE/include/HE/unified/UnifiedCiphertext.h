@@ -12,7 +12,7 @@
 namespace HE {
 namespace unified {
 
-class UnifiedCiphertext {
+class UnifiedCiphertext : public UnifiedBase {
 public:
   UnifiedCiphertext(LOCATION loc = UNDEF);
 
@@ -29,10 +29,6 @@ public:
   ~UnifiedCiphertext() = default;
 
   LOCATION location() const { return loc_; }
-
-  bool is_host() const { return loc_ == HOST; }
-
-  bool is_device() const { return loc_ == DEVICE; }
 
   const seal::Ciphertext &hcipher() const {
     if (loc_ != HOST) {
