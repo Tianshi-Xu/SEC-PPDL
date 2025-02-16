@@ -53,7 +53,7 @@ void NetIO::send_data(const void* data, int nbyte) {
         }
         sent += res;
     }
-    std::cout << "Sent " << nbyte << " bytes, total: " << counter << " bytes\n";
+    std::cout << "Sent " << nbyte / 1024576 << " MB, total: " << counter / 1024576 << " MB\n";
 }
 
 
@@ -69,5 +69,5 @@ void NetIO::recv_data(void* data, int nbyte) {
         received += res;
     }
     counter += nbyte;
-    std::cout << "Received " << nbyte << " bytes, total: " << counter << " bytes\n";
+    std::cout << "Received " << nbyte / 1024576 << " MB, total: " << counter / 1024576 << " MB\n";
 }

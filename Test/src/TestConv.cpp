@@ -3,7 +3,7 @@
 int main(int argc, char **argv){
     bool party = std::stoi(argv[1]);
     const char* address = "127.0.0.1";
-    int port = 32004;
+    int port = 32000;
     HE::NetIO netio(address, port, party);
     std::cout << "netio generated" << std::endl;
     HE::HEEvaluator HE(netio, party);
