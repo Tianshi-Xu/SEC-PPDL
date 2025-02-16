@@ -1,11 +1,8 @@
-<<<<<<< HEAD
-src/HE/build/
-src/build/
 .cache
-Extern/SEAL/
-build/
-=======
-extern/SEAL/
-build/
 .vscode/
->>>>>>> origin/yeyu_dev
+build/
+Extern/SEAL/
+Extern/hexl/
+
+*.zip
+*.tar.gz
