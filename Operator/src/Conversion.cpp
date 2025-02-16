@@ -14,7 +14,7 @@ Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             // cout << "i: " << i << " j: " << j << endl;
-            x.print_shape();    
+            // x.print_shape();    
             tmp_vec[j] = x(i * poly_degree + j);
         }
         // cout << "i: " << i << endl;
@@ -57,13 +57,16 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             for (size_t j = 0; j < pos_mask.size(); j++) {
                 pos_mask[j] = distrib(gen);
                 neg_mask[j] = HE->plain_mod - pos_mask[j];
+                if (HE->server) {
+                    x(i * HE->polyModulusDegree + j) = pos_mask[j];
+                }
             }
             // TODO: noise flooding (add freshly encrypted zero), refer to Cheetah
             UnifiedPlaintext tmp_pos(HOST);
             UnifiedPlaintext tmp_neg(HOST);
             HE->batchEncoder->encode(pos_mask, tmp_pos);
             HE->batchEncoder->encode(neg_mask, tmp_neg);
-            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
+            // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         HE->SendEncVec(out_ct);
@@ -75,12 +78,12 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     // decoding and decryption
     std::vector<uint64_t> tmp_vec(HE->polyModulusDegree);
     if (HE->server) {
-        for (size_t i = 0; i < out_share.size(); i++) {
-            HE->batchEncoder->decode(out_share(i), tmp_vec);
-            for (size_t j = 0; j < HE->polyModulusDegree; j++) {
-                x(i * HE->polyModulusDegree + j) = tmp_vec[j];
-            }
-        }
+        // for (size_t i = 0; i < out_share.size(); i++) {
+        //     // HE->batchEncoder->decode(out_share(i), tmp_vec);     * SEAL does not allow adjacent encoding and decoding?
+        //     for (size_t j = 0; j < HE->polyModulusDegree; j++) {
+        //         x(i * HE->polyModulusDegree + j) = tmp_vec[j];
+        //     }
+        // }
     }
     else {
         for (size_t i = 0; i < out_ct.size(); i++) {

@@ -6,9 +6,10 @@ using namespace HE;
 using namespace HE::unified;
 using namespace LinearLayer;
 namespace LinearLayer {
-// Extract shared parameters. Let dim(w) = {Co, Ci, H, W}
+// Extract shared parameters. Let dim(w) = {Co, Ci, k, k}
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : in_feature_size(in_feature_size), 
+      stride(stride),
       weight(weight), 
       bias(bias), 
       HE(HE)
@@ -89,11 +90,7 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
 }
 
 Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
-    cout << "OK here0" << endl;
-    cout << "HE->plain_mod: " << HE->plain_mod << endl;
-    cout << "padded_feature_size: " << padded_feature_size << endl;
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
-    cout << "OK here0.5" << endl;
     Tensor<uint64_t> ac_msg({tiled_in_channels, HE->polyModulusDegree});
 
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
@@ -116,9 +113,7 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
                 tmp_ntt[j] = ac_msg({i, j * padded_feature_size * padded_feature_size + k});
             }
-            cout << "OK here" << endl;
             ntt.ComputeForward(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
-            cout << "OK here2" << endl;
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
                 ac_msg({i, j * padded_feature_size * padded_feature_size + k}) = tmp_ntt[j];
             }
@@ -134,41 +129,43 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_
     Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
     UnifiedGaloisKeys* keys = HE->galoisKeys;
 
-    // First complete the input rotation
-    for (uint64_t i = 0; i < input_rot; i++) {
-        for (uint64_t j = 0; j < tiled_in_channels; j++) {
-            if (i) {
-                HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_feature_size * padded_feature_size, *keys, ac_rot_ct({i, j}));
-            }
-            else {
-                ac_rot_ct({i, j}) = ac_ct(j);
-            }
-        }
-    }
-    // Complete all the multiplication, and reduce along the input channel dimension
-    for (uint64_t i = 0; i < tiled_in_channels; i++) {
-        for (uint64_t j = 0; j < tiled_out_channels; j++) {
-            for (uint64_t k = 0; k < tile_size; k++) {
-                UnifiedCiphertext tmp_ct(HE->evaluator->backend());
-                HE->evaluator->multiply_plain(ac_rot_ct({input_rot - 1 - k % input_rot, i}), weight_pt({i, j, k}), tmp_ct);
+    if (HE->server) {
+        // First complete the input rotation
+        for (uint64_t i = 0; i < input_rot; i++) {
+            for (uint64_t j = 0; j < tiled_in_channels; j++) {
                 if (i) {
-                    HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
+                    HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_feature_size * padded_feature_size, *keys, ac_rot_ct({i, j}));
+                }
+                else {
+                    ac_rot_ct({i, j}) = ac_ct(j);
                 }
             }
         }
-    }
-    for (uint64_t i = 0; i < tiled_out_channels; i++) {
-        // Reduce along the input rotation dimension, since it has been completed
-        for (uint64_t j = 0; j < tile_size; j++) {
-            if (j % input_rot) {
-                HE->evaluator->add_inplace(int_ct({i, j - j % input_rot}), int_ct({i, j}));
+        // Complete all the multiplication, and reduce along the input channel dimension
+        for (uint64_t i = 0; i < tiled_in_channels; i++) {
+            for (uint64_t j = 0; j < tiled_out_channels; j++) {
+                for (uint64_t k = 0; k < tile_size; k++) {
+                    UnifiedCiphertext tmp_ct(HE->evaluator->backend());
+                    HE->evaluator->multiply_plain(ac_rot_ct({input_rot - 1 - k % input_rot, i}), weight_pt({i, j, k}), tmp_ct);
+                    if (i) {
+                        HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
+                    }
+                }
             }
         }
-        out_ct(i) = int_ct({i, 0});
-        // Complete output rotation to reduce along this dimension
-        for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
-            HE->evaluator->rotate_rows(out_ct(i), padded_feature_size * padded_feature_size * input_rot, *keys, out_ct(i));
-            HE->evaluator->add_inplace(out_ct(i), int_ct({i, j}));
+        for (uint64_t i = 0; i < tiled_out_channels; i++) {
+            // Reduce along the input rotation dimension, since it has been completed
+            for (uint64_t j = 0; j < tile_size; j++) {
+                if (j % input_rot) {
+                    HE->evaluator->add_inplace(int_ct({i, j - j % input_rot}), int_ct({i, j}));
+                }
+            }
+            out_ct(i) = int_ct({i, 0});
+            // Complete output rotation to reduce along this dimension
+            for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
+                HE->evaluator->rotate_rows(out_ct(i), padded_feature_size * padded_feature_size * input_rot, *keys, out_ct(i));
+                HE->evaluator->add_inplace(out_ct(i), int_ct({i, j}));
+            }
         }
     }
 
@@ -196,7 +193,7 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
     for (uint64_t i = 0; i < out_channels; i++) {
         for (uint64_t j = 0; j < out_feature_size; j++) {
             for (uint64_t k = 0; k < out_feature_size; k++) {
-                uint64_t offset = stride * out_feature_size * j + stride * k + (kernel_size - 1) * (out_feature_size + 1);
+                uint64_t offset = stride * padded_feature_size * j + stride * k + (kernel_size - 1) * (padded_feature_size + 1);
                 if (i < out_channels / 2) {
                     y({i, j, k}) = out_msg({i / tile_size, ((tile_size * out_channels - i) % tile_size) * padded_feature_size * padded_feature_size + offset});
                 }
