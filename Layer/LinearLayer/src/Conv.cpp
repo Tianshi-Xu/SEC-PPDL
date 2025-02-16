@@ -4,7 +4,7 @@
 using namespace seal;
 using namespace HE;
 using namespace HE::unified;
-using namespace LinearLayer;
+
 namespace LinearLayer {
 // Extract shared parameters. Let dim(w) = {Co, Ci, k, k}
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
@@ -27,11 +27,10 @@ Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, cons
     out_feature_size = (in_feature_size + 2 * padding - kernel_size) / stride + 1;
 };
 
-
 Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : Conv2D(in_feature_size, stride, padding, weight, bias, HE)
 {
-    assert(padded_feature_size * padded_feature_size > HE->polyModulusDegree / 2 && "Input feature map is too big, please use Cheetah instead.");
+    // assert(padded_feature_size * padded_feature_size > HE->polyModulusDegree / 2 && "Input feature map is too big, please use Cheetah instead.");
     
     int tmp_size = in_feature_size + 2 * padding - 1;
     for (int i = 0; i < 5; i++) {
@@ -82,7 +81,7 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         tmp_vec[l * padded_feature_size * padded_feature_size + m] = tmp_ntt[m];
                     }
                 }
-                HE->batchEncoder->encode(tmp_vec, weight_pt({i, j, k}));
+                HE->encoder->encode(tmp_vec, weight_pt({i, j, k}));
             }
         }
     }
@@ -124,13 +123,20 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
     return ac_msg;
 }
 
-Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct) {
-    Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext());
-    Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext());
-    Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext());
-    UnifiedGaloisKeys* keys = HE->galoisKeys;
+Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct) {
+    /** 
+     *  NOTE:
+     *  Server computes on HE->Backend()
+     *  Client does nothing
+     */
+    const auto target = HE->server ? HE->Backend() : HOST;
+    Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext(target));
 
     if (HE->server) {
+        Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext(target));
+        Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext(target));
+        UnifiedGaloisKeys* keys = HE->galoisKeys;
+
         // First complete the input rotation
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_in_channels; j++) {
@@ -146,7 +152,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_
         for (uint64_t i = 0; i < tiled_in_channels; i++) {
             for (uint64_t j = 0; j < tiled_out_channels; j++) {
                 for (uint64_t k = 0; k < tile_size; k++) {
-                    UnifiedCiphertext tmp_ct(HE->evaluator->backend());
+                    UnifiedCiphertext tmp_ct(target);
                     HE->evaluator->multiply_plain(ac_rot_ct({input_rot - 1 - k % input_rot, i}), weight_pt({i, j, k}), tmp_ct);
                     if (i) {
                         HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
@@ -217,7 +223,7 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci,
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
     cout << "ac_ct generated" << endl;
     Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    cout << "out_ct generated" << endl;
+    cout << "out_ct generated: " << out_ct(0).location() << endl;
     Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
     cout << "out_msg generated" << endl;
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}

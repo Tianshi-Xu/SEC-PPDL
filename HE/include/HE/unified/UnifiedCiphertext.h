@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Datatype/UnifiedType.h"
 #include "HE/unified/UnifiedContext.h"
 #include <seal/ciphertext.h>
 
@@ -12,9 +13,9 @@
 namespace HE {
 namespace unified {
 
-class UnifiedCiphertext {
+class UnifiedCiphertext : public UnifiedBase {
 public:
-  UnifiedCiphertext(LOCATION loc = UNDEF);
+  UnifiedCiphertext(LOCATION loc = UNDEF) : UnifiedBase(loc) {}
 
   UnifiedCiphertext(const seal::Ciphertext &cipher);
 
@@ -28,11 +29,13 @@ public:
 
   ~UnifiedCiphertext() = default;
 
-  LOCATION location() const { return loc_; }
+  UnifiedCiphertext(const UnifiedCiphertext &) = default;
 
-  bool is_host() const { return loc_ == HOST; }
+  UnifiedCiphertext &operator=(const UnifiedCiphertext &) = default;
 
-  bool is_device() const { return loc_ == DEVICE; }
+  UnifiedCiphertext(UnifiedCiphertext &&) = default;
+
+  UnifiedCiphertext &operator=(UnifiedCiphertext &&) = default;
 
   const seal::Ciphertext &hcipher() const {
     if (loc_ != HOST) {
@@ -98,8 +101,6 @@ public:
   double &scale();
 
 private:
-  LOCATION loc_ = UNDEF;
-
   seal::Ciphertext host_cipher_;
 #ifdef USE_HE_GPU
   PhantomCiphertext device_cipher_;

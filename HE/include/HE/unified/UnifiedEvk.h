@@ -38,7 +38,7 @@ inline void galoiskeys_to_device(const UnifiedContext &context,
 
 // ******************** UnifiedRelinKeys ********************
 
-class UnifiedRelinKeys {
+class UnifiedRelinKeys : public UnifiedBase {
 public:
   UnifiedRelinKeys() = default;
 
@@ -57,21 +57,29 @@ public:
 
   ~UnifiedRelinKeys() = default;
 
+  UnifiedRelinKeys(UnifiedRelinKeys &&) = default;
+
+  UnifiedRelinKeys &operator=(UnifiedRelinKeys &&) = default;
+
   LOCATION location() const { return loc_; }
 
-  bool is_host() const { return loc_ == HOST; }
+  bool on_host() const override {
+    return loc_ == HOST || loc_ == HOST_AND_DEVICE;
+  }
 
-  bool is_device() const { return loc_ == DEVICE; }
+  bool on_device() const override {
+    return loc_ == DEVICE || loc_ == HOST_AND_DEVICE;
+  }
 
   const seal::RelinKeys &hrelin() const {
-    if (loc_ != HOST && loc_ != HOST_AND_DEVICE) {
+    if (!on_host()) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in HOST");
     }
     return host_relinkey_;
   }
 
   seal::RelinKeys &hrelin() {
-    if (loc_ != HOST && loc_ != HOST_AND_DEVICE) {
+    if (!on_host()) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in HOST");
     }
     return host_relinkey_;
@@ -85,14 +93,14 @@ public:
 
 #ifdef USE_HE_GPU
   const PhantomRelinKey &drelin() const {
-    if (loc_ != DEVICE && loc_ != HOST_AND_DEVICE) {
+    if (!on_device()) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in DEVICE");
     }
     return device_relinkey_;
   }
 
   PhantomRelinKey &drelin() {
-    if (loc_ != DEVICE && loc_ != HOST_AND_DEVICE) {
+    if (!on_device()) {
       throw std::runtime_error("UnifiedRelinKeys: NOT in DEVICE");
     }
     return device_relinkey_;
@@ -124,11 +132,11 @@ private:
 
 // ******************** UnifiedGaloisKeys ********************
 
-class UnifiedGaloisKeys {
+class UnifiedGaloisKeys : public UnifiedBase {
 public:
   UnifiedGaloisKeys() = default;
 
-  UnifiedGaloisKeys(LOCATION loc = UNDEF) : loc_(loc) {}
+  UnifiedGaloisKeys(LOCATION loc = UNDEF) : UnifiedBase(loc) {}
 
   UnifiedGaloisKeys(const seal::GaloisKeys &key);
 
@@ -140,21 +148,29 @@ public:
 
   ~UnifiedGaloisKeys() = default;
 
+  UnifiedGaloisKeys(UnifiedGaloisKeys &&) = default;
+
+  UnifiedGaloisKeys &operator=(UnifiedGaloisKeys &&) = default;
+
   LOCATION location() const { return loc_; }
 
-  bool is_host() const { return loc_ == HOST; }
+  bool on_host() const override {
+    return loc_ == HOST || loc_ == HOST_AND_DEVICE;
+  }
 
-  bool is_device() const { return loc_ == DEVICE; }
+  bool on_device() const override {
+    return loc_ == DEVICE || loc_ == HOST_AND_DEVICE;
+  }
 
   const seal::GaloisKeys &hgalois() const {
-    if (loc_ != HOST) {
+    if (!on_host()) {
       throw std::runtime_error("UnifiedGaloisKeys: NOT in HOST");
     }
     return host_galoiskey_;
   }
 
   seal::GaloisKeys &hgalois() {
-    if (loc_ != HOST) {
+    if (!on_host()) {
       throw std::runtime_error("UnifiedGaloisKeys: NOT in HOST");
     }
     return host_galoiskey_;
@@ -168,14 +184,14 @@ public:
 
 #ifdef USE_HE_GPU
   const PhantomGaloisKey &dgalois() const {
-    if (loc_ != DEVICE) {
+    if (!on_device()) {
       throw std::runtime_error("UnifiedGaloisKeys: NOT in DEVICE");
     }
     return device_galoiskey_;
   }
 
   PhantomGaloisKey &dgalois() {
-    if (loc_ != DEVICE) {
+    if (!on_device()) {
       throw std::runtime_error("UnifiedGaloisKeys: NOT in DEVICE");
     }
     return device_galoiskey_;
@@ -197,8 +213,6 @@ public:
   void load(const UnifiedContext &context, std::istream &stream);
 
 private:
-  LOCATION loc_ = UNDEF;
-
   seal::GaloisKeys host_galoiskey_;
 #ifdef USE_HE_GPU
   PhantomGaloisKey device_galoiskey_;

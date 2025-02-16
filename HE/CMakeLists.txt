@@ -27,7 +27,6 @@ endif()
 if(NOT USE_HE_GPU)
     set(srcs 
         src/NetIO.cpp
-        src/UnifiedEvaluator.cpp
         src/UnifiedHE.cpp)
 else()
     set(srcs 
