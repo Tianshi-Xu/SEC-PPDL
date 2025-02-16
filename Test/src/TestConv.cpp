@@ -3,7 +3,7 @@
 int main(int argc, char **argv){
     bool party = std::stoi(argv[1]);
     const char* address = "127.0.0.1";
-    int port = 32001;
+    int port = 32004;
     std::cout << party << std::endl;
     HE::NetIO netio(address, port, party);
     std::cout << "netio generated" << std::endl;
@@ -18,17 +18,17 @@ int main(int argc, char **argv){
     Tensor<uint64_t> bias({Co});
     for(uint32_t i = 0; i < Co; i++){
         for(uint32_t j = 0; j < Ci; j++){
-            for(uint32_t k = 0; k < k; k++){
-                for(uint32_t l = 0; l < k; l++){
-                    weight({i, j, k, l}) = party;
+            for(uint32_t p = 0; p < k; p++){
+                for(uint32_t q = 0; q < k; q++){
+                    weight({i, j, p, q}) = party;
                 }
             }
         }
     }
     for(uint32_t i = 0; i < Ci; i++){
         for(uint32_t j = 0; j < H; j++){
-            for(uint32_t k = 0; k < W; k++){
-                input({i, j, k}) = party;
+            for(uint32_t p = 0; p < W; p++){
+                input({i, j, p}) = party;
             }
         }
     }
