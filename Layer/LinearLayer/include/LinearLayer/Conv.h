@@ -44,6 +44,7 @@ class Conv2DNest : public Conv2D {
         uint64_t tile_size;
         uint64_t padded_feature_size;
         uint64_t input_rot;
+        vector<uint64_t> tmp_w;
 
         Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE);
         Tensor<uint64_t> operator()(Tensor<uint64_t> x);

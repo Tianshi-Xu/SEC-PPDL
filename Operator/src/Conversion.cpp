@@ -9,19 +9,13 @@ Tensor<UnifiedCiphertext> SSToHE(Tensor<uint64_t> x, HE::HEEvaluator* HE) {
     Tensor<UnifiedPlaintext> ac_pt(poly_shape, HOST);
     Tensor<UnifiedCiphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext());
     std::vector<uint64_t> tmp_vec(poly_degree);
-    // cout << "OK 1" << endl;
-    // encoding
+
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
-            // cout << "i: " << i << " j: " << j << endl;
-            // x.print_shape();    
             tmp_vec[j] = x(i * poly_degree + j);
         }
-        // cout << "i: " << i << endl;
         HE->batchEncoder->encode(tmp_vec, ac_pt(i));
     }
-    // cout << "OK 2" << endl;
-    // communication and addition
     if (HE->server){
         HE->ReceiveEncVec(ac_ct);
         assert(ac_pt.size() == ac_ct.size() && "Number of polys does not match.");

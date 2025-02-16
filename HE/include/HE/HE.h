@@ -53,7 +53,7 @@ class HEEvaluator {
         encoder = new unified::UnifiedBatchEncoder(*context);
         evaluator = new unified::UnifiedEvaluator(*context);
         batchEncoder = new unified::UnifiedBatchEncoder(*context);
-        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 40));
+        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 20));
         plain_mod = parms.plain_modulus().value();
         cout << "plain_mod: " << plain_mod << endl;
         if (server) {
@@ -74,8 +74,8 @@ class HEEvaluator {
                 galoisKeys->to_device(*context);
             }
 
-            std::cout << "Server received: " << key_buf << "\n";
-            std::cout << "Server received: " << pk_sze << "\n";
+            // std::cout << "Server received: " << key_buf << "\n";
+            // std::cout << "Server received: " << pk_sze << "\n";
             encryptor = new Encryptor(*context, *publicKeys);
             delete[] key_buf;
         } else {
@@ -97,8 +97,8 @@ class HEEvaluator {
             this->IO->send_data(&pk_sze, sizeof(uint64_t));
             this->IO->send_data(&gk_size,sizeof(uint64_t));
             this->IO->send_data(keys_str.c_str(),pk_sze + gk_size);
-            std::cout << "Client send: " << keys_str.c_str() << "\n";
-            std::cout << "Client send: " << pk_sze << "\n";
+            // std::cout << "Client send: " << keys_str.c_str() << "\n";
+            // std::cout << "Client send: " << pk_sze << "\n";
         }
     }
 
@@ -122,16 +122,16 @@ class HEEvaluator {
         safe_delete(secretKeys);
     }
 
-    void SendCipherText(const unified::UnifiedCiphertext &ct){
+    void SendCipherText(const Ciphertext &ct){
         std::stringstream os;
-        if (ct.is_device()) {
-            /**
-               [Important]:
-               1. There are two forms of ciphertext bit streams (SEAL and Phantom).
-               2. Forms of ciphertext bit streams are dependent on evaluator->backend()
-             */
-            throw std::invalid_argument("SendCipherText: Need to explicitly transfer `ct` to HOST");
-        }
+        // if (ct.is_device()) {
+        //     /**
+        //        [Important]:
+        //        1. There are two forms of ciphertext bit streams (SEAL and Phantom).
+        //        2. Forms of ciphertext bit streams are dependent on evaluator->backend()
+        //      */
+        //     throw std::invalid_argument("SendCipherText: Need to explicitly transfer `ct` to HOST");
+        // }
         ct.save(os);
         uint64_t ct_sze = static_cast<uint64_t>(os.tellp());
         const std::string &ct_str = os.str();
@@ -149,7 +149,7 @@ class HEEvaluator {
         }
     }
 
-    void ReceiveCipherText(unified::UnifiedCiphertext &ct){
+    void ReceiveCipherText(Ciphertext &ct){
         uint64_t ct_sze{0};
         this->IO->recv_data(&ct_sze,sizeof(uint64_t));
         char *char_buf = new char[ct_sze];

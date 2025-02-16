@@ -10,6 +10,7 @@ namespace LinearLayer {
 Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : in_feature_size(in_feature_size), 
       stride(stride),
+      padding(padding),
       weight(weight), 
       bias(bias), 
       HE(HE)
@@ -43,14 +44,57 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
     tiled_out_channels = out_channels / tile_size + (out_channels % tile_size != 0);
     input_rot = std::sqrt(tile_size);  // to be checked
 
-    if (HE->server) {
+    if (1) {
         weight_pt = PackWeight();
     }
+    intel::hexl::NTT ntt_test(4, 17);
+    vector<uint64_t> a = {1, 2, 3, 0};
+    vector<uint64_t> b = {1, 1, 0, 0};
+    ntt_test.ComputeForward(a.data(), a.data(), 1, 1);
+    for (int i = 0; i < 4; i++) {
+        cout << a[i] << " ";  // should be (-3, 1, -2, -5)
+    }
+    cout << "a ntt" << endl;
+    ntt_test.ComputeForward(b.data(), b.data(), 1, 1);
+    for (int i = 0; i < 4; i++) {
+        cout << b[i] << " ";  // should be (2, 6, -1, -2)
+    }
+    cout << "b ntt" << endl;
+    vector<uint64_t> c(4, 0);
+    for (int i = 0; i < 4; i++) {
+        c[i] = (a[i] * b[i]) % 17;
+    }
+    for (int i = 0; i < 4; i++) {
+        cout << c[i] << " ";  // should be (-6, 6, 2, -3)
+    }
+    cout << "c pre ntt" << endl;
+    ntt_test.ComputeInverse(c.data(), c.data(), 1, 1);
+    for (int i = 0; i < 4; i++) {
+        cout << c[i] << " ";  // should be (5, 3, 5, 7)
+    }
+    cout << "c post ntt" << endl;  
+
+    // else {
+    //     vector<uint64_t> a(HE->polyModulusDegree, 0);
+    //     a[1] = 1; a[2] = 2;
+    //     UnifiedPlaintext apt(HOST);
+    //     UnifiedCiphertext act(HE->evaluator->backend());
+    //     UnifiedGaloisKeys* keys = HE->galoisKeys;
+    //     HE->batchEncoder->encode(a, apt);
+    //     HE->encryptor->encrypt(apt, act);
+    //     HE->evaluator->multiply_plain(act, apt, act);
+    //     HE->evaluator->rotate_rows(act, 1, *keys, act);
+    //     HE->decryptor->decrypt(act, apt);
+    //     HE->batchEncoder->decode(apt, a);
+    //     for (int i = 0; i < HE->polyModulusDegree; i++) {
+    //         cout << a[i] << " ";
+    //     }
+    // }
 }
 
 Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
-    uint64_t offset = (kernel_size - 1) * (in_feature_size + 1);
+    uint64_t offset = (kernel_size - 1) * (padded_feature_size + 1);
     Tensor<UnifiedPlaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size}, HE->evaluator->backend());
 
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
@@ -59,7 +103,7 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                 std::vector<uint64_t> tmp_vec(HE->polyModulusDegree, 0);
                 for (uint64_t l = 0; l < tile_size; l++) {
                     uint64_t in_channel_idx = i * tile_size + (l + (input_rot - k % input_rot - 1)) % tile_size;
-                    uint64_t out_channel_idx = j * tile_size + (3 * tile_size - l - k - (input_rot - k % input_rot - 1)) % tile_size;
+                    uint64_t out_channel_idx = j * tile_size + (3 * tile_size - l - k - (input_rot - k % input_rot)) % tile_size;
                     if (in_channel_idx < in_channels && out_channel_idx < out_channels) {
                         for (uint64_t m = 0; m < kernel_size; m++) {
                             for (uint64_t n = 0; n < kernel_size; n++) {
@@ -70,9 +114,15 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         }
                     }
                 }
+                if (!i && !j && !k) {
+                    for (int p = 0; p < padded_feature_size * padded_feature_size; p++) {
+                        cout << tmp_vec[p] << " ";
+                    }
+                    cout << "weight before ntt" << endl;
+                }
                 
-                std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
                 for (uint64_t l = 0; l < 2 * tile_size; l++) {
+                    std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
                     for (uint64_t m = 0; m < padded_feature_size * padded_feature_size; m++) {
                         tmp_ntt[m] = tmp_vec[l * padded_feature_size * padded_feature_size + m];
                     }
@@ -80,6 +130,13 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                     for (uint64_t m = 0; m < padded_feature_size * padded_feature_size; m++) {
                         tmp_vec[l * padded_feature_size * padded_feature_size + m] = tmp_ntt[m];
                     }
+                }
+                if (!i && !j && !k) {
+                    for (int p = 0; p < padded_feature_size * padded_feature_size; p++) {
+                        cout << tmp_vec[p] << " ";
+                    }
+                    cout << "weight after ntt" << endl;
+                    tmp_w = tmp_vec;
                 }
                 HE->batchEncoder->encode(tmp_vec, weight_pt({i, j, k}));
             }
@@ -107,18 +164,44 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
                 }
             }
         }
+        if (!i) {
+            for (uint64_t p = 0; p < padded_feature_size * padded_feature_size; p++) {
+                cout << ac_msg({i, p}) << " ";
+            }
+            cout << "act before ntt" << endl;
+        }
 
-        std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
         for (uint64_t j = 0; j < 2 * tile_size; j++) {
+            std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
-                tmp_ntt[j] = ac_msg({i, j * padded_feature_size * padded_feature_size + k});
+                tmp_ntt[k] = ac_msg({i, j * padded_feature_size * padded_feature_size + k});
             }
             ntt.ComputeForward(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
-                ac_msg({i, j * padded_feature_size * padded_feature_size + k}) = tmp_ntt[j];
+                ac_msg({i, j * padded_feature_size * padded_feature_size + k}) = tmp_ntt[k];
             }
         }
+        if (!i) {
+            for (uint64_t p = 0; p < padded_feature_size * padded_feature_size; p++) {
+                cout << ac_msg({i, p}) << " ";
+            }
+            cout << "act after ntt" << endl;
+        }
     }
+    vector<uint64_t> prod(padded_feature_size * padded_feature_size, 0);
+    for (uint64_t i = 0; i < padded_feature_size * padded_feature_size; i++) {
+        prod[i] = (tmp_w[i] * ac_msg({0, i})) % (HE->plain_mod);
+    }
+    for (int i = 0; i < padded_feature_size * padded_feature_size; i++) {
+        cout << prod[i] << " ";
+    }
+    cout << "prod before intt" << endl;
+    ntt.ComputeInverse(prod.data(), prod.data(), 1, 1);
+    for (int i = 0; i < padded_feature_size * padded_feature_size; i++) {
+        cout << prod[i] << " ";
+    }
+    cout << "prod after intt" << endl;
+    cout << HE->plain_mod << endl;
 
     return ac_msg;
 }
@@ -150,6 +233,9 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_
                     if (i) {
                         HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
                     }
+                    else {
+                        int_ct({j, k}) = tmp_ct;
+                    }
                 }
             }
         }
@@ -173,19 +259,27 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_
 }
 
 Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
+    if (!HE->server) {
+    for (int j = 0; j < tiled_out_channels; j++) {
+            for (int i = 0; i < padded_feature_size * padded_feature_size; i++) {
+                cout << out_msg(j * HE->polyModulusDegree + i) << " ";
+            }
+            cout << endl;
+        }
+    }
     out_channels *= 2;
     Tensor<uint64_t> y({out_channels, out_feature_size, out_feature_size});
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
 
-    std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
     for (uint64_t i = 0; i < tiled_out_channels; i++) {
+        std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
         for (uint64_t j = 0; j < 2 * tile_size; j++) {
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
-                tmp_ntt[j] = out_msg({i, j * padded_feature_size * padded_feature_size + k});
+                tmp_ntt[k] = out_msg({i, j * padded_feature_size * padded_feature_size + k});
             }
             ntt.ComputeInverse(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
             for (uint64_t k = 0; k < padded_feature_size * padded_feature_size; k++) {
-                out_msg({i, j * padded_feature_size * padded_feature_size + k}) = tmp_ntt[j];
+                out_msg({i, j * padded_feature_size * padded_feature_size + k}) = tmp_ntt[k];
             }
         }
     }
