@@ -160,9 +160,7 @@ class HEEvaluator {
 
         // Receive ciphertexts
         for (size_t i = 0; i < vec_size; ++i){
-            Ciphertext recv;
-            ReceiveCipherText(recv);
-            ct_vec({i}) = std::move(recv);
+            ReceiveCipherText(ct_vec({i}));
         }
     }
 

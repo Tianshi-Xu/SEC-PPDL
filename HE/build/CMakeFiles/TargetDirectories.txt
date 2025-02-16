@@ -1,4 +1,0 @@
-/home/xts/code/SEC-PPDL/HE/build/CMakeFiles/HE.dir
-/home/xts/code/SEC-PPDL/HE/build/CMakeFiles/HE_test.dir
-/home/xts/code/SEC-PPDL/HE/build/CMakeFiles/edit_cache.dir
-/home/xts/code/SEC-PPDL/HE/build/CMakeFiles/rebuild_cache.dir

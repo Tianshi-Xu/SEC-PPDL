@@ -122,13 +122,20 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
     return ac_msg;
 }
 
-Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct, LOCATION target) {
+Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct) {
+    /** 
+     *  NOTE:
+     *  Server computes on HE->Backend()
+     *  Client does nothing
+     */
+    const auto target = HE->server ? HE->Backend() : HOST;
     Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext(target));
-    Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext(target));
-    Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext(target));
-    UnifiedGaloisKeys* keys = HE->galoisKeys;
 
     if (HE->server) {
+        Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_in_channels}, HE->GenerateZeroCiphertext(target));
+        Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext(target));
+        UnifiedGaloisKeys* keys = HE->galoisKeys;
+
         // First complete the input rotation
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_in_channels; j++) {
@@ -144,7 +151,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(Tensor<UnifiedPlaintext> weight_
         for (uint64_t i = 0; i < tiled_in_channels; i++) {
             for (uint64_t j = 0; j < tiled_out_channels; j++) {
                 for (uint64_t k = 0; k < tile_size; k++) {
-                    UnifiedCiphertext tmp_ct(HE->Backend());
+                    UnifiedCiphertext tmp_ct(target);
                     HE->evaluator->multiply_plain(ac_rot_ct({input_rot - 1 - k % input_rot, i}), weight_pt({i, j, k}), tmp_ct);
                     if (i) {
                         HE->evaluator->add_inplace(int_ct({j, k}), tmp_ct);
@@ -211,8 +218,7 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci,
     cout << "ac_msg generated" << endl;
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
     cout << "ac_ct generated" << endl;
-    const auto target = HE->server ? HE->Backend() : HOST; // TODO: remove this
-    Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct, target);  // out_ct.shape = {co}
+    Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
     cout << "out_ct generated: " << out_ct(0).location() << endl;
     Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
     cout << "out_msg generated" << endl;

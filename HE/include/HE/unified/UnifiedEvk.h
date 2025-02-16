@@ -57,6 +57,10 @@ public:
 
   ~UnifiedRelinKeys() = default;
 
+  UnifiedRelinKeys(UnifiedRelinKeys &&) = default;
+
+  UnifiedRelinKeys &operator=(UnifiedRelinKeys &&) = default;
+
   LOCATION location() const { return loc_; }
 
   bool on_host() const override {
@@ -132,7 +136,7 @@ class UnifiedGaloisKeys : public UnifiedBase {
 public:
   UnifiedGaloisKeys() = default;
 
-  UnifiedGaloisKeys(LOCATION loc = UNDEF) : loc_(loc) {}
+  UnifiedGaloisKeys(LOCATION loc = UNDEF) : UnifiedBase(loc) {}
 
   UnifiedGaloisKeys(const seal::GaloisKeys &key);
 
@@ -143,6 +147,10 @@ public:
 #endif
 
   ~UnifiedGaloisKeys() = default;
+
+  UnifiedGaloisKeys(UnifiedGaloisKeys &&) = default;
+
+  UnifiedGaloisKeys &operator=(UnifiedGaloisKeys &&) = default;
 
   LOCATION location() const { return loc_; }
 
@@ -205,8 +213,6 @@ public:
   void load(const UnifiedContext &context, std::istream &stream);
 
 private:
-  LOCATION loc_ = UNDEF;
-
   seal::GaloisKeys host_galoiskey_;
 #ifdef USE_HE_GPU
   PhantomGaloisKey device_galoiskey_;

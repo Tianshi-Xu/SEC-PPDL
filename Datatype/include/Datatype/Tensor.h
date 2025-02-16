@@ -97,6 +97,16 @@ public:
     // 获取数据
     const std::vector<T>& data() const { return data_; }
 
+    std::vector<T>& data(){ return data_; }
+
+    // Apply Element-wise function
+    template <typename Func>
+    void apply(Func func) {
+        for (auto& element : data_) {
+            func(element);
+        }
+    }
+
     // 加法
     Tensor<T> operator+(const Tensor<T>& other) const {
         static_assert(std::is_arithmetic<T>::value, "Tensor only supports arithmetic types.");

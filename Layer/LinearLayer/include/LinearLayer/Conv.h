@@ -33,7 +33,7 @@ class Conv2D : public Module {
     private:
         virtual Tensor<HE::unified::UnifiedPlaintext> PackWeight() = 0;
         virtual Tensor<uint64_t> PackActivation(Tensor<uint64_t> x) = 0;
-        virtual Tensor<HE::unified::UnifiedCiphertext> HECompute(Tensor<HE::unified::UnifiedPlaintext> weight_pt, Tensor<HE::unified::UnifiedCiphertext> ac_ct, LOCATION target) = 0;
+        virtual Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> ac_ct) = 0;
         virtual Tensor<uint64_t> DepackResult(Tensor<uint64_t> out) = 0;    
 };
 
@@ -52,7 +52,7 @@ class Conv2DNest : public Conv2D {
     private:
         Tensor<HE::unified::UnifiedPlaintext> PackWeight();
         Tensor<uint64_t> PackActivation(Tensor<uint64_t> x);
-        Tensor<HE::unified::UnifiedCiphertext> HECompute(Tensor<HE::unified::UnifiedPlaintext> weight_pt, Tensor<HE::unified::UnifiedCiphertext> ac_ct, LOCATION target);
+        Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> ac_ct);
         Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
 };
 

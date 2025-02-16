@@ -11,9 +11,9 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     std::vector<uint64_t> tmp_vec(poly_degree);
     // cout << "OK 1" << endl;
     // encoding
-    const auto target = HE->server ? HE->Backend() : HOST;
-    Tensor<UnifiedPlaintext> ac_pt(poly_shape, target);
-    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HE->GenerateZeroCiphertext(target));
+    Tensor<UnifiedPlaintext> ac_pt(poly_shape, HE->server ? HE->Backend() : HOST);
+    Tensor<UnifiedCiphertext> ac_ct(
+        poly_shape, HOST /* Communication can be only done on HOST */);
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             // cout << "i: " << i << " j: " << j << endl;
@@ -27,6 +27,11 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     // communication and addition
     if (HE->server){
         HE->ReceiveEncVec(ac_ct);
+        ac_ct.apply([HE](UnifiedCiphertext &ct){
+            if (HE->Backend() == DEVICE) {
+                ct.to_device(*HE->context);
+            }
+        });
         assert(ac_pt.size() == ac_ct.size() && "Number of polys does not match.");
         for (size_t i = 0; i < ac_ct.size(); i++) {
             HE->evaluator->add_plain_inplace(ac_ct(i), ac_pt(i));
@@ -71,6 +76,11 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
+        out_ct.apply([HE](UnifiedCiphertext &ct){
+            if (HE->Backend() == DEVICE) {
+                ct.to_host(*HE->context);
+            }
+        });
         HE->SendEncVec(out_ct);
     }
     else {

@@ -8,16 +8,10 @@ using namespace HE::unified;
 // ******************** UnifiedPlaintext ********************
 
 UnifiedPlaintext::UnifiedPlaintext(const seal::Plaintext &hplain)
-    : loc_(HOST), host_plain_(hplain) {}
+    : UnifiedBase(HOST), host_plain_(hplain) {}
 
 UnifiedPlaintext::UnifiedPlaintext(seal::Plaintext &&hplain)
-    : loc_(HOST), host_plain_(std::move(hplain)) {}
-
-UnifiedPlaintext &UnifiedPlaintext::operator=(seal::Plaintext &&other) {
-  loc_ = HOST;
-  host_plain_ = std::move(other);
-  return *this;
-}
+    : UnifiedBase(HOST), host_plain_(std::move(hplain)) {}
 
 void UnifiedPlaintext::to_device(const UnifiedContext &context) {
   if (loc_ != HOST) {
@@ -32,10 +26,10 @@ void UnifiedPlaintext::to_device(const UnifiedContext &context) {
 
 #ifdef USE_HE_GPU
 UnifiedPlaintext::UnifiedPlaintext(const PhantomPlaintext &dplain)
-    : loc_(DEVICE), device_plain_(dplain) {}
+    : UnifiedBase(DEVICE), device_plain_(dplain) {}
 
 UnifiedPlaintext::UnifiedPlaintext(PhantomPlaintext &&dplain)
-    : loc_(DEVICE), device_plain_(std::move(dplain)) {}
+    : UnifiedBase(DEVICE), device_plain_(std::move(dplain)) {}
 
 void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
                                  const seal::Plaintext &hplain,
@@ -86,20 +80,18 @@ double &UnifiedPlaintext::scale() {
 
 // ******************** UnifiedCiphertext ********************
 
-UnifiedCiphertext::UnifiedCiphertext(LOCATION loc) : loc_(loc) {}
-
 UnifiedCiphertext::UnifiedCiphertext(const seal::Ciphertext &cipher)
-    : loc_(HOST), host_cipher_(cipher) {}
+    : UnifiedBase(HOST), host_cipher_(cipher) {}
 
 UnifiedCiphertext::UnifiedCiphertext(seal::Ciphertext &&cipher)
-    : loc_(HOST), host_cipher_(std::move(cipher)) {}
+    : UnifiedBase(HOST), host_cipher_(std::move(cipher)) {}
 
 #ifdef USE_HE_GPU
 UnifiedCiphertext::UnifiedCiphertext(const PhantomCiphertext &cipher)
-    : loc_(DEVICE), device_cipher_(cipher) {}
+    : UnifiedBase(DEVICE), device_cipher_(cipher) {}
 
 UnifiedCiphertext::UnifiedCiphertext(PhantomCiphertext &&cipher)
-    : loc_(DEVICE), device_cipher_(std::move(cipher)) {}
+    : UnifiedBase(DEVICE), device_cipher_(std::move(cipher)) {}
 
 void UnifiedCiphertext::to_device(const seal::SEALContext &hcontext,
                                   const seal::Ciphertext &hcipher,
@@ -346,10 +338,10 @@ void UnifiedRelinKeys::to_device(const seal::SEALContext &hcontext,
 // ******************** UnifiedGaloisKeys ********************
 
 UnifiedGaloisKeys::UnifiedGaloisKeys(const seal::GaloisKeys &key)
-    : loc_(HOST), host_galoiskey_(key) {}
+    : UnifiedBase(HOST), host_galoiskey_(key) {}
 
 UnifiedGaloisKeys::UnifiedGaloisKeys(seal::GaloisKeys &&key)
-    : loc_(HOST), host_galoiskey_(std::move(key)) {}
+    : UnifiedBase(HOST), host_galoiskey_(std::move(key)) {}
 
 void UnifiedGaloisKeys::save(std::ostream &stream) const {
   if (loc_ != HOST) {
@@ -380,7 +372,7 @@ void UnifiedGaloisKeys::to_device(const UnifiedContext &context) {
 
 #ifdef USE_HE_GPU
 UnifiedGaloisKeys::UnifiedGaloisKeys(PhantomGaloisKey &&key)
-    : loc_(DEVICE), device_galoiskey_(std::move(key)) {}
+    : UnifiedBase(DEVICE), device_galoiskey_(std::move(key)) {}
 
 void UnifiedGaloisKeys::to_device(const seal::SEALContext &hcontext,
                                   const seal::GaloisKeys &hgalois,

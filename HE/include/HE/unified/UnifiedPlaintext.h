@@ -10,8 +10,9 @@ namespace HE {
 namespace unified {
 
 class UnifiedPlaintext : public UnifiedBase {
+
 public:
-  UnifiedPlaintext(LOCATION loc = UNDEF) : loc_(loc) {}
+  UnifiedPlaintext(LOCATION loc = UNDEF) : UnifiedBase(loc) {}
 
   UnifiedPlaintext(const seal::Plaintext &hplain);
 
@@ -25,7 +26,13 @@ public:
 
   ~UnifiedPlaintext() = default;
 
-  UnifiedPlaintext &operator=(seal::Plaintext &&);
+  UnifiedPlaintext(const UnifiedPlaintext &) = default;
+
+  UnifiedPlaintext &operator=(const UnifiedPlaintext &) = default;
+
+  UnifiedPlaintext(UnifiedPlaintext &&) = default;
+
+  UnifiedPlaintext &operator=(UnifiedPlaintext &&) = default;
 
   bool on_host() const override {
     return loc_ == HOST || loc_ == HOST_AND_DEVICE;
@@ -86,8 +93,6 @@ public:
   double &scale();
 
 private:
-  LOCATION loc_ = UNDEF;
-
   seal::Plaintext host_plain_;
 #ifdef USE_HE_GPU
   PhantomPlaintext device_plain_;
