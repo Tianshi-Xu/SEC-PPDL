@@ -1,7 +1,7 @@
 #ifndef CF2_OT_PACK_H__
 #define CF2_OT_PACK_H__
-#include "Primitive/emp-ot.h"
-#include "Primitive/split-kkot.h"
+#include <OT/emp-ot.h>
+#include <OT/split-kkot.h>
 #include <Utils/emp-tool.h>
 #define KKOT_TYPES 8
 

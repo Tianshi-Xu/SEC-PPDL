@@ -21,11 +21,11 @@ SOFTWARE.
 
 #ifndef OT_KKOT_H__
 #define OT_KKOT_H__
-#include "Primitive/np.h"
-#include "Primitive/ot.h"
+#include <OT/np.h>
+#include <OT/ot.h>
 
 namespace OT {
-template <typename IO> class KKOT : public OT<KKOT<IO>> {
+template <typename IO> class KKOT : public OTPrimitive<KKOT<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;

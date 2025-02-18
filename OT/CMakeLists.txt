@@ -8,7 +8,7 @@ add_library(OT STATIC ${srcs})
 target_include_directories(OT PUBLIC include)
 
 target_link_libraries(OT PUBLIC
-    Datatype
+    Datatype Utils
 )
 
 message(STATUS "OT_FOUND: ${OT_FOUND}")

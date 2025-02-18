@@ -25,7 +25,7 @@ Enquiries about further applications and development opportunities are welcome.
 #ifndef EMP_GROUP_H__
 #define EMP_GROUP_H__
 
-#include "utils/utils.h"
+#include <Utils/utils.h>
 #include <cstring>
 #include <openssl/bn.h>
 #include <openssl/ec.h>

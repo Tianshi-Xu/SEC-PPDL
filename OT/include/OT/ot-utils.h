@@ -21,7 +21,7 @@ SOFTWARE.
 
 #ifndef OT_UTIL_H__
 #define OT_UTIL_H__
-#include "Primitive/ot.h"
+#include <OT/ot.h>
 
 namespace OT {
 template <typename basetype>

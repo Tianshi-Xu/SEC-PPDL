@@ -10,7 +10,7 @@ int main(int argc, char **argv){
     HE.GenerateNewKey();
     
     uint64_t Ci = 16; uint64_t Co = 16; uint64_t H = 19; uint64_t W = 19;
-    uint64_t p = 1; uint64_t s = 2; uint64_t k = 5; uint64_t Ho = 9; uint64_t Wo = 9;
+    uint64_t p = 1; uint64_t s = 2; uint64_t k = 3; uint64_t Ho = 9; uint64_t Wo = 9;
     Tensor<uint64_t> input({Ci, H, W}); 
     Tensor<uint64_t> weight({Co, Ci, k, k});
     Tensor<uint64_t> bias({Co});

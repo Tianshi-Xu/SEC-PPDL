@@ -1,7 +1,7 @@
 #ifndef EMP_OTCO_H__
 #define EMP_OTCO_H__
 #include <Utils/emp-tool.h>
-#include "Primitive/ot.h"
+#include <OT/ot.h>
 namespace OT {
 
 template<typename IO>
@@ -11,7 +11,7 @@ template<typename IO>
  * https://eprint.iacr.org/2015/267.pdf
  */
 
-class OTCO: public OT<OTCO<IO>> { public:
+class OTCO: public OTPrimitive<OTCO<IO>> { public:
 	IO* io;
 	Group *G = nullptr;
 	bool delete_G = true;

@@ -1,6 +1,6 @@
 #ifndef EMP_IKNP_H__
 #define EMP_IKNP_H__
-#include "Primitive/co.h"
+#include "OT/co.h"
 
 namespace OT {
 

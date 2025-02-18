@@ -28,13 +28,13 @@ SOFTWARE.
 // online offline split can
 // be found in OT/kkot.h
 
-#include "Primitive/np.h"
-#include "Primitive/ot-utils.h"
-#include "Primitive/ot.h"
-#include "Primitive/split-utils.h"
+#include <OT/np.h>
+#include <OT/ot-utils.h>
+#include <OT/ot.h>
+#include <OT/split-utils.h>
 
 namespace OT {
-template <typename IO> class SplitKKOT : public OT<SplitKKOT<IO>> {
+template <typename IO> class SplitKKOT : public OTPrimitive<SplitKKOT<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -361,7 +361,7 @@ public:
   template <typename T> void got_send_online(T **data, int length) {
     const int bsize = length; // ro_batch_size;
     uint32_t y_size = (uint32_t)ceil((N * bsize * l) / ((float)sizeof(T) * 8));
-    int bits_in_sel_input = sci::bitlen(N);
+    int bits_in_sel_input = Utils::bitlen(N);
     uint32_t a_size = (uint32_t)ceil((bsize * bits_in_sel_input) /
                                      ((float)sizeof(uint8_t) * 8));
     T y[y_size];
@@ -420,7 +420,7 @@ public:
     const int bsize = length;
     uint32_t res_size =
         (uint32_t)ceil((N * length * l) / ((float)sizeof(T) * 8));
-    int bits_in_sel_input = sci::bitlen(N);
+    int bits_in_sel_input = Utils::bitlen(N);
     uint32_t a_size = (uint32_t)ceil((length * bits_in_sel_input) /
                                      ((float)sizeof(uint8_t) * 8));
     T res[res_size];

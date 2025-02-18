@@ -68,7 +68,8 @@
         "regex": "cpp",
         "iomanip": "cpp",
         "numbers": "cpp",
-        "semaphore": "cpp"
+        "semaphore": "cpp",
+        "string_span": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc"
 }

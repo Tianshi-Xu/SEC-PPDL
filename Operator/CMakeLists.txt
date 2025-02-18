@@ -10,4 +10,5 @@ target_include_directories(Operator PUBLIC include)
 target_link_libraries(Operator PUBLIC
     Datatype
     HE
+    OT
 )

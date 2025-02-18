@@ -27,11 +27,11 @@ Modified by Nishant Kumar
 
 #ifndef OT_IKNP_H__
 #define OT_IKNP_H__
-#include "Primitive/np.h"
-#include "Primitive/ot.h"
+#include <OT/np.h>
+#include <OT/ot.h>
 #include <algorithm>
 namespace OT {
-template <typename IO> class IKNP : public OT<IKNP<IO>> {
+template <typename IO> class IKNP : public OTPrimitive<IKNP<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
