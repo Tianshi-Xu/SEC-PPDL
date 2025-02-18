@@ -55,8 +55,8 @@ inline void parse_party_and_port(char **arg, int argc, int *party, int *port);
 std::string Party(int p);
 
 // Timing related
-//inline time_point<high_resolution_clock> clock_start();
-//inline double time_from(const time_point<high_resolution_clock> &s);
+// inline time_point<high_resolution_clock> clock_start();
+// inline double time_from(const time_point<high_resolution_clock> &s);
 
 // block128 conversions
 template <typename T = uint64_t> std::string m128i_to_string(const __m128i var);
@@ -93,5 +93,6 @@ void block_to_bool(bool * data, block b);
 template<typename T>
 inline void int_to_bool(bool * data, T input, int len);
 
+#include "utils.hpp"
 } // namespace Utils
 #endif // UTILS_H__

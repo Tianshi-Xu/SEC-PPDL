@@ -1,14 +1,14 @@
 /** @defgroup OT Oblivious Transfer
  */
 
-#include "Primitive/ideal.h"
-#include "Primitive/ot.h"
+#include "ideal.h"
+#include "ot.h"
 
-#include "Primitive/iknp.h"
-#include "Primitive/np.h"
+#include "iknp.h"
+#include "np.h"
 
 //#include "OT/kkot.h"
-#include "Primitive/ot_pack.h"
-#include "Primitive/split-iknp.h"
+#include "ot_pack.h"
+#include "split-iknp.h"
 //#include "OT/split-kkot.h"
 

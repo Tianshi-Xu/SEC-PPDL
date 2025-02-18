@@ -28,8 +28,11 @@ Modified by Deevashwer Rathee, Nishant Kumar, Mayank Rathee
 #ifndef OT_H__
 #define OT_H__
 #include <Utils/emp-tool.h>
+
+using namespace Utils;
+
 namespace OT {
-template <typename T> class OT {
+template <typename T> class OTPrimitive {
 public:
   void send(const block128 *data0, const block128 *data1, int length) {
     static_cast<T *>(this)->send_impl(data0, data1, length);

@@ -21,7 +21,7 @@ SOFTWARE.
 
 #ifndef SPLIT_UTIL_H__
 #define SPLIT_UTIL_H__
-#include "Primitive/ot.h"
+#include "ot.h"
 
 namespace OT {
 template <typename basetype>

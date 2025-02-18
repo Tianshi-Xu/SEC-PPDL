@@ -27,13 +27,13 @@ Modified by Nishant Kumar, Deevashwer Rathee
 
 #ifndef OT_IDEAL_H__
 #define OT_IDEAL_H__
-#include "Primitive/ot.h"
+#include "ot.h"
 #include <cmath>
 /** @addtogroup OT
     @{
   */
 namespace OT {
-template <typename IO> class OTIdeal : public OT<OTIdeal<IO>> {
+template <typename IO> class OTIdeal : public OTPrimitive<OTIdeal<IO>> {
 public:
   int cnt = 0;
   IO *io = nullptr;

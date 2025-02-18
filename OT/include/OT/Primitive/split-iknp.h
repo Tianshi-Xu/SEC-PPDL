@@ -25,13 +25,15 @@ SOFTWARE.
 // In split functions, OT is split
 // into offline and online phase.
 
-#include "Primitive/np.h"
-#include "Primitive/ot-utils.h"
-#include "Primitive/ot.h"
-#include "Primitive/split-utils.h"
+#include "np.h"
+#include "ot-utils.h"
+#include "ot.h"
+#include "split-utils.h"
+
+using namespace Utils;
 
 namespace OT {
-template <typename IO> class SplitIKNP : public OT<SplitIKNP<IO>> {
+template <typename IO> class SplitIKNP : public OTPrimitive<SplitIKNP<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;

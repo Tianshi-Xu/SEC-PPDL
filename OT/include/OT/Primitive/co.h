@@ -11,7 +11,7 @@ template<typename IO>
  * https://eprint.iacr.org/2015/267.pdf
  */
 
-class OTCO: public OT<OTCO<IO>> { public:
+class OTCO: public OTPrimitiveOTCO<IO>> { public:
 	IO* io;
 	Group *G = nullptr;
 	bool delete_G = true;

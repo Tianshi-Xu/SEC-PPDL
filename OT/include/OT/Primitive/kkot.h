@@ -25,7 +25,7 @@ SOFTWARE.
 #include "Primitive/ot.h"
 
 namespace OT {
-template <typename IO> class KKOT : public OT<KKOT<IO>> {
+template <typename IO> class KKOT : public OTPrimitive<KKOT<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;

@@ -28,13 +28,15 @@ SOFTWARE.
 // online offline split can
 // be found in OT/kkot.h
 
-#include "Primitive/np.h"
-#include "Primitive/ot-utils.h"
-#include "Primitive/ot.h"
-#include "Primitive/split-utils.h"
+#include "np.h"
+#include "ot-utils.h"
+#include "ot.h"
+#include "split-utils.h"
+
+using namespace Utils;
 
 namespace OT {
-template <typename IO> class SplitKKOT : public OT<SplitKKOT<IO>> {
+template <typename IO> class SplitKKOT : public OTPrimitive<SplitKKOT<IO>> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -74,7 +76,7 @@ public:
   IO *io = nullptr;
 
   SplitKKOT(int party, IO *io, int N) {
-    assert(party == ALICE || party == BOB);
+    assert(party == Utils::ALICE || party == Utils::BOB);
     this->party = party;
     this->io = io;
     assert(N > 0);
@@ -86,7 +88,7 @@ public:
     d = new (std::align_val_t(32)) block256[block_size];
     c_AND_s = new (std::align_val_t(32)) block256[lambda];
     switch (party) {
-    case ALICE:
+    case Utils::ALICE:
       h = new uint8_t *[N];
       h64 = new uint64_t *[N];
       for (int i = 0; i < N; i++) {
@@ -94,7 +96,7 @@ public:
         h64[i] = new uint64_t[precomp_batch_size];
       }
       break;
-    case BOB:
+    case Utils::BOB:
       h = new uint8_t *[1];
       h64 = new uint64_t *[1];
       r_off = new uint8_t[precomp_batch_size];
@@ -119,7 +121,7 @@ public:
     if (precomp_masks)
       delete[] c_AND_s;
     switch (party) {
-    case ALICE:
+    case Utils::ALICE:
       for (int i = 0; i < N; i++) {
         delete[] h[i];
         delete[] h64[i];
@@ -127,7 +129,7 @@ public:
       delete[] h;
       delete[] h64;
       break;
-    case BOB:
+    case Utils::BOB:
       delete[] h[0];
       delete[] h;
       delete[] h64[0];
@@ -150,7 +152,7 @@ public:
       precomp_masks = false;
     }
     switch (party) {
-    case ALICE:
+    case Utils::ALICE:
       for (int i = 0; i < N; i++) {
         delete[] h[i];
         delete[] h64[i];
@@ -158,7 +160,7 @@ public:
       delete[] h;
       delete[] h64;
       break;
-    case BOB:
+    case Utils::BOB:
       delete[] h[0];
       delete[] h;
       delete[] h64[0];
@@ -167,7 +169,7 @@ public:
       break;
     }
     switch (party) {
-    case ALICE:
+    case Utils::ALICE:
       h = new uint8_t *[N];
       h64 = new uint64_t *[N];
       for (int i = 0; i < N; i++) {
@@ -175,7 +177,7 @@ public:
         h64[i] = new uint64_t[precomp_batch_size];
       }
       break;
-    case BOB:
+    case Utils::BOB:
       h = new uint8_t *[1];
       h64 = new uint64_t *[1];
       r_off = new uint8_t[precomp_batch_size];
@@ -233,11 +235,11 @@ public:
 
   void preprocess() {
     switch (party) {
-    case ALICE:
+    case Utils::ALICE:
       send_pre(counter);
       got_send_offline(counter);
       break;
-    case BOB:
+    case Utils::BOB:
       prg.random_data(r_off, counter);
       uint8_t mask = N - 1; // N is a power of 2
       for (int i = 0; i < counter; i++) {
@@ -361,7 +363,7 @@ public:
   template <typename T> void got_send_online(T **data, int length) {
     const int bsize = length; // ro_batch_size;
     uint32_t y_size = (uint32_t)ceil((N * bsize * l) / ((float)sizeof(T) * 8));
-    int bits_in_sel_input = sci::bitlen(N);
+    int bits_in_sel_input = bitlen(N);
     uint32_t a_size = (uint32_t)ceil((bsize * bits_in_sel_input) /
                                      ((float)sizeof(uint8_t) * 8));
     T y[y_size];
@@ -420,7 +422,7 @@ public:
     const int bsize = length;
     uint32_t res_size =
         (uint32_t)ceil((N * length * l) / ((float)sizeof(T) * 8));
-    int bits_in_sel_input = sci::bitlen(N);
+    int bits_in_sel_input = bitlen(N);
     uint32_t a_size = (uint32_t)ceil((length * bits_in_sel_input) /
                                      ((float)sizeof(uint8_t) * 8));
     T res[res_size];
