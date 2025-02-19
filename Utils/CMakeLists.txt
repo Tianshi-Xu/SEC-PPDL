@@ -18,6 +18,9 @@ include(include/Utils/cmake/source_of_randomness.cmake)
 
 # add_library(Utils INTERFACE)
 # file(GLOB_RECURSE hdrs CONFIGURE_DEPENDS include/*.h)
+
+find_package(OpenSSL REQUIRED)
+include_directories(${OPENSSL_INCLUDE_DIR})
 add_library(Utils INTERFACE)
 target_include_directories(Utils INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

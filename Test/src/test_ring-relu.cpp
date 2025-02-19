@@ -19,7 +19,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include "Operator/millionaire.h"
+#include "Non-linear/relu-ring.h"
 #include "Utils/utils.h"
 #include <fstream>
 #include <iostream>
@@ -40,7 +40,9 @@ int dim = 10000;//1ULL << 16;
 int bw_x = 32;
 int s_x = 28;
 
+
 int bitlength = 16;
+int32_t kScale = 12;
 
 NetIO *io;
 OTPack<NetIO> *otpack;
@@ -49,16 +51,16 @@ OTPack<NetIO> *otpackArr[MAX_THREADS];
 
 uint64_t comm_threads[MAX_THREADS];
 
-void relu_thread(int tid, uint8_t *rev, uint64_t *input, int num_ops, uint64_t bitlength) {
-  MillionaireProtocol<NetIO> *mill;
+void relu_thread(int tid, uint64_t *rev, uint64_t *input, int num_ops, uint64_t bitlength) {
+    ReLURingProtocol<NetIO, uint64_t> *reluprotocol;
   if (tid & 1) {
-    mill = new MillionaireProtocol<NetIO>(3 - party, io, otpackArr[tid]);
+    reluprotocol = new ReLURingProtocol<NetIO, uint64_t>(3 - party, RING, ioArr[tid], bitlength, MILL_PARAM, otpackArr[tid]);
   } else {
-    mill = new MillionaireProtocol<NetIO>(party, io, otpackArr[tid]);
+    reluprotocol = new ReLURingProtocol<NetIO, uint64_t>(3 - party, RING, ioArr[tid], bitlength, MILL_PARAM, otpackArr[tid]);
   }
-  mill->compare(rev, input, num_ops, bitlength);
+  reluprotocol->relu(rev, input, num_ops);
 
-  delete mill;
+  delete reluprotocol;
 }
 
 int main(int argc, char **argv) {
@@ -103,7 +105,7 @@ int main(int argc, char **argv) {
   PRG128 prg;
 
   uint64_t *input = new uint64_t[dim];
-  uint8_t *res = new uint8_t[dim];
+  uint64_t *res = new uint64_t[dim];
 
   prg.random_data(input, dim * sizeof(uint64_t));
   for (int i=0; i<dim; i++){
@@ -156,17 +158,18 @@ int main(int argc, char **argv) {
   /********************************************/
   if (party == ALICE) {
     ioArr[0]->send_data(input, dim * sizeof(uint64_t));
-    ioArr[0]->send_data(res, dim * sizeof(uint8_t));
+    ioArr[0]->send_data(res, dim * sizeof(uint64_t));
   } else { // party == BOB
     uint64_t *input0 = new uint64_t[dim];
-    uint8_t *res0 = new uint8_t[dim];
+    uint64_t *res0 = new uint64_t[dim];
     ioArr[0]->recv_data(input0, dim * sizeof(uint64_t));
-    ioArr[0]->recv_data(res0, dim * sizeof(uint8_t));
+    ioArr[0]->recv_data(res0, dim * sizeof(uint64_t));
 
     for (int i = 0; i < 10; i++) {
-      bool comp_result = int64_t(input[i] - input0[i]) < 0;
-      cout <<  "input0:" << int64_t(input[i] - input0[i]) << endl;
-      cout << "comp_result:" << comp_result << "  " << "res_share0:" << int(res[i]) << "  " << "res_share1:" << int(res0[i]) << endl;
+      uint64_t res_result = (res[i] + res0[i]) & ((1ULL << bitlength) - 1);
+      cout << endl;
+      cout <<  "origin_sum:" << ((input[i] + input0[i]) & ((1ULL << bitlength) - 1)) << endl;
+      cout << "res_sum:" << res_result << "  " << "res_share0:" << res[i] << "  " << "res_share1:" << res0[i] << endl;
     //   int64_t X = signed_val(x[i] + x0[i], bw_x);
     //   int64_t Y = signed_val(y[i] + y0[i], bw_x);
     //   int64_t expectedY = X;
@@ -188,10 +191,10 @@ int main(int argc, char **argv) {
 
   /**** Process & Write Benchmarking Data *****/
   /********************************************/
-  cout << "Number of millionaire/s:\t" << (double(dim) / t) * 1e6 << std::endl;
-  cout << "one millionaire cost:\t" << (t / double(dim)) << std::endl;
-  cout << "millionaire Time\t" << t / (1000.0) << " ms" << endl;
-  cout << "millionaire Bytes Sent\t" << (totalComm) << " byte" << endl;
+  cout << "Number of ring-relu/s:\t" << (double(dim) / t) * 1e6 << std::endl;
+  cout << "one ring-relu cost:\t" << (t / double(dim)) << std::endl;
+  cout << "ring-relu Time\t" << t / (1000.0) << " ms" << endl;
+  cout << "ring-relu Bytes Sent\t" << (totalComm) << " byte" << endl;
 
   /******************* Cleanup ****************/
   /********************************************/
