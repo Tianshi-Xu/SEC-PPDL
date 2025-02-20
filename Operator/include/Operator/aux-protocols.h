@@ -67,54 +67,54 @@ public:
       int32_t bw_y);
 
   // Boolean to Arithmetic Shares
-//   void B2A(
-//       // input (boolean) vector
-//       uint8_t *x,
-//       // output vector
-//       uint64_t *y,
-//       // size of vector
-//       int32_t size,
-//       // bitwidth of y
-//       int32_t bw_y);
+  void B2A(
+      // input (boolean) vector
+      uint8_t *x,
+      // output vector
+      uint64_t *y,
+      // size of vector
+      int32_t size,
+      // bitwidth of y
+      int32_t bw_y);
 
-//   template <typename T>
-//   void lookup_table(
-//       // table specification
-//       T **spec,
-//       // input vector
-//       T *x,
-//       // output vector
-//       T *y,
-//       // size of vector
-//       int32_t size,
-//       // bitwidth of input to LUT
-//       int32_t bw_x,
-//       // bitwidth of output of LUT
-//       int32_t bw_y);
+  template <typename T>
+  void lookup_table(
+      // table specification
+      T **spec,
+      // input vector
+      T *x,
+      // output vector
+      T *y,
+      // size of vector
+      int32_t size,
+      // bitwidth of input to LUT
+      int32_t bw_x,
+      // bitwidth of output of LUT
+      int32_t bw_y);
 
-//   // MSB computation
-//   void MSB(
-//       // input vector
-//       uint64_t *x,
-//       // shares of MSB(x)
-//       uint8_t *msb_x,
-//       // size of input vector
-//       int32_t size,
-//       // bitwidth of x
-//       int32_t bw_x);
+  // MSB computation
+  void MSB(
+      // input vector
+      uint64_t *x,
+      // shares of MSB(x)
+      uint8_t *msb_x,
+      // size of input vector
+      int32_t size,
+      // bitwidth of x
+      int32_t bw_x);
 
 //   // MSB to Wrap computation
-//   void MSB_to_Wrap(
-//       // input vector
-//       uint64_t *x,
-//       // shares of MSB(x)
-//       uint8_t *msb_x,
-//       // output shares of Wrap(x)
-//       uint8_t *wrap_x,
-//       // size of input vector
-//       int32_t size,
-//       // bitwidth of x
-//       int32_t bw_x);
+  void MSB_to_Wrap(
+      // input vector
+      uint64_t *x,
+      // shares of MSB(x)
+      uint8_t *msb_x,
+      // output shares of Wrap(x)
+      uint8_t *wrap_x,
+      // size of input vector
+      int32_t size,
+      // bitwidth of x
+      int32_t bw_x);
 
 //   // Simple MSB to Wrap computation
 //   void msb0_to_wrap(
@@ -139,15 +139,15 @@ public:
 //       int32_t bw_x);
 
 //   // Bitwise AND
-//   void AND(
-//       // input A (boolean) vector
-//       uint8_t *x,
-//       // input B (boolean) vector
-//       uint8_t *y,
-//       // output vector
-//       uint8_t *z,
-//       // size of vector
-//       int32_t size);
+  void AND(
+      // input A (boolean) vector
+      uint8_t *x,
+      // input B (boolean) vector
+      uint8_t *y,
+      // output vector
+      uint8_t *z,
+      // size of vector
+      int32_t size);
 
 //   void digit_decomposition(int32_t dim, uint64_t *x, uint64_t *x_digits,
 //                            int32_t bw_x, int32_t digit_size);

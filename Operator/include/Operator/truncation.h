@@ -120,21 +120,21 @@ public:
       uint8_t *msb_x = nullptr);
 
   // Truncate (right-shift) by shift in the same ring
-  void truncate_red_then_ext(
-      // Size of vector
-      int32_t dim,
-      // input vector
-      uint64_t *inA,
-      // output vector
-      uint64_t *outB,
-      // right shift amount
-      int32_t shift,
-      // Input and output bitwidth
-      int32_t bw,
-      // signed truncation?
-      bool signed_arithmetic = true,
-      // msb of input vector elements
-      uint8_t *msb_x = nullptr);
+//   void truncate_red_then_ext(
+//       // Size of vector
+//       int32_t dim,
+//       // input vector
+//       uint64_t *inA,
+//       // output vector
+//       uint64_t *outB,
+//       // right shift amount
+//       int32_t shift,
+//       // Input and output bitwidth
+//       int32_t bw,
+//       // signed truncation?
+//       bool signed_arithmetic = true,
+//       // msb of input vector elements
+//       uint8_t *msb_x = nullptr);
 
   // Truncate (right-shift) by shift and go to a smaller ring
   void truncate_and_reduce(
