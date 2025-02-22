@@ -9,6 +9,6 @@
 
 //#include "OT/kkot.h"
 #include "ot_pack.h"
-#include "split-iknp.h"
+#include "split_iknp.h"
 //#include "OT/split-kkot.h"
 

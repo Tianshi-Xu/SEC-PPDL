@@ -10,7 +10,11 @@
                 "${workspaceFolder}/Extern/SEAL/native/src",
                 "${workspaceFolder}/OT/include",
                 "${workspaceFolder}/Layer/LinearLayer/include",
-                "${workspaceFolder}/OT/OTPrimitive/include"
+                "${workspaceFolder}/OT/OTPrimitive/include",
+                "${workspaceFolder}/Extern/SEAL/build/thirdparty/msgsl-src/include",
+                "${workspaceFolder}/Extern/hexl/hexl_build/include",
+                "${workspaceFolder}/HE/include",
+                "${workspaceFolder}/Operator/LinearOperator/include"
             ],
             "defines": [],
             "compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc",

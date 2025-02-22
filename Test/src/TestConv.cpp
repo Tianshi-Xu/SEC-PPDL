@@ -1,4 +1,5 @@
 #include <LinearLayer/Conv.h>
+
 using namespace LinearLayer;
 int main(int argc, char **argv){
     bool party = std::stoi(argv[1]);

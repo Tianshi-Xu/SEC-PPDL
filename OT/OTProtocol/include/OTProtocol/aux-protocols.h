@@ -21,7 +21,7 @@ SOFTWARE.
 
 #include "millionaire.h"
 #include "millionaire_with_equality.h"
-#include <OTPrimitive/emp-ot.h>
+#include <OTPrimitive/emp_ot.h>
 #pragma once
 
 using namespace OTPrimitive;

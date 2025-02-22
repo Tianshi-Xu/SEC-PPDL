@@ -6,15 +6,16 @@
 // #include <algorithm>
 // #include <stdexcept>
 
-// #include "../ot-utils.h"
-// #include "../ot.h"
+// #include "ot_utils.h"
+// #include "ot.h"
 // #include <Utils/mitccrh.h>
 // #include <Utils/performance.h>
 
-// namespace cheetah {
+
+// namespace OTPrimitive {
 
 // template <typename IO>
-// class SilentOT : public sci::OT<SilentOT<IO>> {
+// class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
 //  public:
 //   FerretCOT<IO>* ferret;
 //   cheetah::MITCCRH<8> mitccrh;
@@ -112,7 +113,7 @@
 //                                         ((float)sizeof(uint64_t) * 8));
 //       corrected_bsize = std::min(ot_bsize, length - i);
 
-//       sci::pack_cot_messages(y, corr_data, corrected_y_size, corrected_bsize,
+//       OTPrimitive::pack_cot_messages(y, corr_data, corrected_y_size, corrected_bsize,
 //                              l);
 //       ferret->io->send_data(y, sizeof(uint64_t) * (corrected_y_size));
 //     }
@@ -151,7 +152,7 @@
 
 //       ferret->io->recv_data(recvd, sizeof(uint64_t) * corrected_recvd_size);
 
-//       sci::unpack_cot_messages(corr_data, recvd, corrected_bsize, l);
+//       OTPrimitive::unpack_cot_messages(corr_data, recvd, corrected_bsize, l);
 
 //       for (int j = i; j < i + ot_bsize and j < length; ++j) {
 //         if (b[j])
@@ -253,7 +254,7 @@
 //                                         ((float)sizeof(T) * 8));
 //       corrected_bsize = std::min(ot_bsize, length - i);
 
-//       sci::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
+//       OTPrimitive::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
 //                                corrected_bsize, l, 2);
 
 //       ferret->io->send_data(y, sizeof(T) * (corrected_y_size));
@@ -291,7 +292,7 @@
 //       memcpy(pad, rcm_data + i, std::min(ot_bsize, length - i) * sizeof(block));
 //       ferret->mitccrh.template hash<ot_bsize, 1>(pad);
 
-//       sci::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
+//       OTPrimitive::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
 //                                  corrected_bsize, l, 2);
 //     }
 //     delete[] rcm_data;
@@ -475,7 +476,7 @@
 //                                         ((float)sizeof(T) * 8));
 //       corrected_bsize = std::min(ot_bsize, length - i);
 
-//       sci::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
+//       OTPrimitive::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
 //                                corrected_bsize, l, N);
 
 //       ferret->io->send_data(y, sizeof(T) * (corrected_y_size));
@@ -533,7 +534,7 @@
 //         }
 //       }
 
-//       sci::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
+//       OTPrimitive::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
 //                                  corrected_bsize, l, N);
 //     }
 //     delete[] hash_in;
@@ -565,7 +566,7 @@
 // };
 
 // template <typename IO>
-// class SilentOTN : public sci::OT<SilentOTN<IO>> {
+// class SilentOTN : public OTPrimitive::OT<SilentOTN<IO>> {
 //  public:
 //   SilentOT<IO>* silent_ot;
 //   int N;
@@ -586,4 +587,4 @@
 //   }
 // };
 
-// }  // namespace cheetah
+// }  // namespace OTPrimitive

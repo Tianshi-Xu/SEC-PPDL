@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(Model_test LANGUAGES CXX)
-
+project(OTPrimitive LANGUAGES CXX)
 
 
 file(GLOB_RECURSE srcs CONFIGURE_DEPENDS src/*.cpp include/*.h)

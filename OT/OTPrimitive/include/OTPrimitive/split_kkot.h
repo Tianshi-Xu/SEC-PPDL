@@ -7,9 +7,9 @@
 // be found in OT/kkot.h
 
 #include "np.h"
-#include "ot-utils.h"
+#include "ot_utils.h"
 #include "ot.h"
-#include "split-utils.h"
+#include "split_utils.h"
 
 namespace OTPrimitive {
 template <typename IO> class SplitKKOT : public OT<SplitKKOT<IO>> {

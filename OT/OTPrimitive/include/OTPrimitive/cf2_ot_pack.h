@@ -1,7 +1,8 @@
-#include "emp-ot.h"
-#include "split-kkot.h"
+#include "emp_ot.h"
+#include "split_kkot.h"
 #include <Utils/emp-tool.h>
 #define KKOT_TYPES 8
+
 
 namespace OTPrimitive {
 template <typename T>

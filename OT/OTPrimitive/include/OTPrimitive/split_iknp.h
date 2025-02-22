@@ -25,9 +25,9 @@ SOFTWARE.
 // into offline and online phase.
 
 #include "np.h"
-#include "ot-utils.h"
+#include "ot_utils.h"
 #include "ot.h"
-#include "split-utils.h"
+#include "split_utils.h"
 
 namespace OTPrimitive {
 template <typename IO> class SplitIKNP : public OT<SplitIKNP<IO>> {
