@@ -9,7 +9,8 @@ add_library(LinearLayer STATIC ${srcs})
 target_include_directories(LinearLayer PUBLIC include)
 
 target_link_libraries(LinearLayer PUBLIC
-    Operator HEXL::hexl
+    LinearOperator NonlinearOperator
+    HEXL::hexl
 )
 
 message(STATUS "LinearLayer_FOUND: ${LinearLayer_FOUND}")

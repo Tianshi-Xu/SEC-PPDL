@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
+#pragma once
 #ifndef PRG_H__
 #define PRG_H__
 #include "Utils/aes-ni.h"

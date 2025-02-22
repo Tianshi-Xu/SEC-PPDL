@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
+#pragma once
 #ifndef UTIL_BLOCK_H__
 #define UTIL_BLOCK_H__
 #include <algorithm>

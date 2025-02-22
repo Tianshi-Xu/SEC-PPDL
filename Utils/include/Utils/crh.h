@@ -21,7 +21,7 @@ SOFTWARE.
 
 Enquiries about further applications and development opportunities are welcome.
 */
-
+#pragma once
 #include "Utils/prp.h"
 #include <stdio.h>
 #ifndef CRH_H__

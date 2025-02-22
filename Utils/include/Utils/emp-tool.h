@@ -1,3 +1,4 @@
+#pragma once
 #include "Utils/io_channel.h"
 #include "Utils/net_io_channel.h"
 

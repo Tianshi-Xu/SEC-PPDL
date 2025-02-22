@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
+#pragma once
 #ifndef HASH_H__
 #define HASH_H__
 

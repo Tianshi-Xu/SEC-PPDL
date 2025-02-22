@@ -21,7 +21,7 @@ SOFTWARE.
 
 Enquiries about further applications and development opportunities are welcome.
 */
-
+#pragma once
 #ifndef EMP_GROUP_H__
 #define EMP_GROUP_H__
 

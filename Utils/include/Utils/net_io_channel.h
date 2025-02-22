@@ -21,7 +21,7 @@ SOFTWARE.
 
 Enquiries about further applications and development opportunities are welcome.
 */
-
+#pragma once
 #ifndef NETWORK_IO_CHANNEL
 #define NETWORK_IO_CHANNEL
 

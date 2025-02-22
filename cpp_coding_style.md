@@ -20,7 +20,7 @@ file(GLOB_RECURSE srcs CONFIGURE_DEPENDS src/*.cpp include/*.h)
 add_library(项目名字 STATIC ${srcs})
 target_include_directories(项目名字 PUBLIC include)
 ```
-- 头文件.h写法
+- 头文件.h写法，**注意，凡是定义了模板的函数，都应该在.h文件中实现，在cpp文件中实现使用时编译会报错**。并且，头文件中实现的独立函数(即非类成员函数)必须包含`inline`关键字，否则编译也会报错。
 ```
 #pragma once
 namespace 项目名 {

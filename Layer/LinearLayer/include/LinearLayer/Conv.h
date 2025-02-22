@@ -2,7 +2,7 @@
 #include <hexl/hexl.hpp>
 #include <Datatype/Tensor.h>
 #include <HE/HE.h>
-#include <Operator/Conversion.h>
+#include <LinearOperator/Conversion.h>
 #include "../../../Layer/Module.h"
 
 using namespace seal;

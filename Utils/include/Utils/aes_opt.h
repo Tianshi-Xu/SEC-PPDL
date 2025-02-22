@@ -29,7 +29,7 @@ Enquiries about further applications and development opportunities are welcome.
 Modified by Mayank Rathee
 Reference code: https://github.com/Shay-Gueron/AES-GCM-SIV
 */
-
+#pragma once
 #ifndef LIBGARBLE_AES_OPT_H
 #define LIBGARBLE_AES_OPT_H
 

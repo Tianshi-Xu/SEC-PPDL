@@ -48,7 +48,7 @@
  * ====================================================================
  *
  */
-
+#pragma once
 #ifndef LIBGARBLE_AES_H
 #define LIBGARBLE_AES_H
 

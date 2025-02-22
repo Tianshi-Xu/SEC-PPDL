@@ -69,7 +69,15 @@
         "iomanip": "cpp",
         "numbers": "cpp",
         "semaphore": "cpp",
-        "string_span": "cpp"
+        "string_span": "cpp",
+        "any": "cpp",
+        "codecvt": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "unordered_set": "cpp",
+        "future": "cpp",
+        "variant": "cpp",
+        "strstream": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc"
 }

@@ -24,9 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
-#ifndef UTILS_H__
-#define UTILS_H__
+#pragma once
 #include "Utils/block.h"
 #include "Utils/prg.h"
 #include "Utils/constants.h"
@@ -36,6 +34,7 @@ Modified by Deevashwer Rathee
 #include <sstream>
 #include <string>
 #include <iostream>
+#pragma once
 #define macro_xstr(a) macro_str(a)
 #define macro_str(a) #a
 
@@ -93,7 +92,7 @@ void block_to_bool(bool * data, block b);
 template<typename T>
 inline void int_to_bool(bool * data, T input, int len);
 
-uint64_t all1Mask(int x){
+inline uint64_t all1Mask(int x){
     if (x==64) return -1;
     else return (1ULL<<x)-1;
 }
@@ -423,7 +422,7 @@ inline uint64_t moduloMult(uint64_t a, uint64_t b, uint64_t mod){
     return res; 
 }
 
-uint64_t ceil_val(uint64_t x, uint64_t y){
+inline uint64_t ceil_val(uint64_t x, uint64_t y){
     return (x+y-1)/y;
 }
 
@@ -522,5 +521,12 @@ inline void int_to_bool(bool * data, T input, int len) {
 		input >>= 1;
 	}
 }
+
+inline void error(const char * s, int line, const char * file) {
+    fprintf(stderr, s, "\n");
+    if(file != nullptr) {
+        fprintf(stderr, "at %d, %s\n", line, file);
+    }
+    exit(1);
+}
 } // namespace Utils
-#endif // UTILS_H__

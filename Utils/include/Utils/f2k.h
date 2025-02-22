@@ -1,3 +1,4 @@
+#pragma once
 #ifndef EMP_F2K_H__
 #define EMP_F2K_H__
 #include "Utils/block.h"

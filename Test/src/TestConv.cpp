@@ -1,5 +1,5 @@
 #include <LinearLayer/Conv.h>
-
+using namespace LinearLayer;
 int main(int argc, char **argv){
     bool party = std::stoi(argv[1]);
     const char* address = "127.0.0.1";
@@ -31,7 +31,7 @@ int main(int argc, char **argv){
         }
     }
     cout << "input generated" << endl;
-    LinearLayer::Conv2DNest conv(H, s, p, weight, bias, &HE);
+    Conv2DNest conv(H, s, p, weight, bias, &HE);
     Tensor<uint64_t> output = conv(input);
     if (!party) {
         for (uint64_t i = 0; i < Co; i++){

@@ -26,11 +26,14 @@ Modified by Nishant Kumar, Deevashwer Rathee
 */
 #include <iostream>
 #include <emmintrin.h>
-#include <Utils/constants.h>
 #include <Utils/utils.h>
 
 
 namespace Utils {
 
 
+}
+
+int main() {
+    return 0;
 }

@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
+#pragma once
 #ifndef CONFIG_H__
 #define CONFIG_H__
 #include <map>

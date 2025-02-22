@@ -1,3 +1,4 @@
+#pragma once
 #ifndef EMP_CCRH_H__
 #define EMP_CCRH_H__
 #include "Utils/prp.h"

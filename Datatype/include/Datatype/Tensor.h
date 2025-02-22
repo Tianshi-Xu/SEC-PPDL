@@ -48,6 +48,32 @@ public:
         assert(data_.size() == totalSize() && "Data size does not match shape");
     }
 
+    // Randomize a tensor mod 2^bitlength, must be integer type. Can not be applied in secure application!
+    void randomize(int bitlength) {
+        if constexpr (std::is_signed_v<T>) {
+            // 对于整型：使用按位与实现模运算
+            for (size_t i = 0; i < data_.size(); ++i) {
+                data_[i] = static_cast<T>(rand()) & ((1ULL << bitlength) - 1);
+                data_[i] -= static_cast<T>(1ULL << (bitlength - 1));
+            }
+        }
+        else if constexpr (std::is_unsigned_v<T>) {
+            for (size_t i = 0; i < data_.size(); ++i) {
+                data_[i] = static_cast<T>(rand()) & ((1ULL << bitlength) - 1);
+            }
+        }
+        else{
+            std::cerr << "Randomize for non-integer type under modulous is not supported" << std::endl;
+        }
+    }
+
+    // Randomize a tensor without mod, can be any type like float
+    void randomize(){
+        for (size_t i = 0; i < data_.size(); ++i) {
+            data_[i] = static_cast<T>(rand()/ double(RAND_MAX));
+        }
+    }
+    
     // Flatten操作
     void flatten() {
         shape_ = { data_.size() };

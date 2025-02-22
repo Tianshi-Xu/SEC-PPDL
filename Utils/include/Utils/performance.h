@@ -1,3 +1,4 @@
+#pragma once
 #ifndef PERFORMANCE_H
 #define PERFORMANCE_H
 

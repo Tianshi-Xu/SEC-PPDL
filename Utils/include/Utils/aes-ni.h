@@ -23,7 +23,7 @@
  *
  * Modified for CrypTFlow2
  */
-
+#pragma once
 #ifndef LIBGARBLE_AES_NI_H
 #define LIBGARBLE_AES_NI_H
 

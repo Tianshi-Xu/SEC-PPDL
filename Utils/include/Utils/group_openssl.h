@@ -21,11 +21,12 @@ SOFTWARE.
 
 Enquiries about further applications and development opportunities are welcome.
 */
-
+#pragma once
 #ifndef EMP_GROUP_OPENSSL_H__
 #define EMP_GROUP_OPENSSL_H__
-#include "Utils/group.h"
-#include "Utils/utils.h"
+#include "group.h"
+#include "utils.h"
+using namespace Utils;
 namespace Utils {
 inline BigInt::BigInt() { n = BN_new(); }
 inline BigInt::BigInt(const BigInt &oth) {

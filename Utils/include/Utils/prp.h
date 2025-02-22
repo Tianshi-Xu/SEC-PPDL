@@ -21,7 +21,7 @@ SOFTWARE.
 
 Enquiries about further applications and development opportunities are welcome.
 */
-
+#pragma once
 #ifndef PRP_H__
 #define PRP_H__
 #include "Utils/aes.h"

@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-
+#pragma once
 #ifndef IO_CHANNEL_H__
 #define IO_CHANNEL_H__
 #include "Utils/block.h"

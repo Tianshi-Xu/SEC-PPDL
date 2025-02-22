@@ -1,3 +1,4 @@
+#pragma once
 #ifndef SCI_MITCCRH_H__
 #define SCI_MITCCRH_H__
 #include <emp-tool/utils/aes_opt.h>

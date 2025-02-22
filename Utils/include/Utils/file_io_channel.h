@@ -1,3 +1,4 @@
+#pragma once
 #ifndef EMP_FILE_IO_CHANNEL_H__
 #define EMP_FILE_IO_CHANNEL_H__
 
