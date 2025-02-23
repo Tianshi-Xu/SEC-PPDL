@@ -87,7 +87,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
         int64_t mask;
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<int64_t> dist(-plain / 2, plain / 2);
+        std::uniform_int_distribution<int64_t> dist(0, plain - 1);
 
 
         for (size_t i = 0; i < dM; i++){
