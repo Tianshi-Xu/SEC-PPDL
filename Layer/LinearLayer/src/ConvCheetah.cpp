@@ -41,7 +41,6 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
     C = shape[1];
     M = shape[0];
     h = shape[2];
-    //const std::vector<size_t>& inputTensorShape = inputTensor.shape();
     polyModulusDegree = he->polyModulusDegree;
     H = inputHeight;
     W = inputWeight;
@@ -61,20 +60,14 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
     Wprime = (W - h + s) / s;
     HWprime = (HW - h + s) / s;
     WWprime = (WW - h + s) / s;
-    std::cout << "in Conv2DCheetah:" << he->polyModulusDegree << std::endl;
     polyModulusDegree = he->polyModulusDegree;
-    std::cout << "in Conv2DCheetah:" << polyModulusDegree << std::endl;
     plain = he->plain_mod;
-    std::cout << "setup success" << std::endl;
-    std::cout << Hprime << " " << Wprime << H << h << s;
-
-    };
+};
 
 // 加密张量
 Tensor<UnifiedCiphertext> Conv2DCheetah::EncryptTensor(Tensor<UnifiedPlaintext> plainTensor) {
     std::vector<size_t> shapeTab = {dC, dH, dW};
     Tensor<UnifiedCiphertext> TalphabetaCipher(shapeTab, he->GenerateZeroCiphertext());
-
     for (unsigned long gama = 0; gama < dC; gama++) {
         for (unsigned long alpha = 0; alpha < dH; alpha++) {
             for (unsigned long beta = 0; beta < dW; beta++) {
@@ -94,6 +87,10 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
         Tensor<UnifiedPlaintext>  plainMask(shapeTab,HOST);
         UnifiedPlaintext plainMaskInv(HOST);
         int64_t mask;
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int64_t> dist(0, plain - 1);
+
 
         for (size_t i = 0; i < dM; i++){
             for (size_t j = 0; j < dH; j++){
@@ -101,7 +98,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
                     plainMask({i,j,k}).hplain().resize(polyModulusDegree);
                     plainMaskInv.hplain().resize(polyModulusDegree);
                     for (size_t l = 0; l < polyModulusDegree; l++){
-                        mask = (-3) + rand() % 7;
+                        mask = dist(gen);
                         if (mask < 0){
                             mask += plain;
                         }
@@ -131,7 +128,6 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
             }
         }
         return plainMask;
-
     }
 }
 
@@ -144,7 +140,6 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackTensor(Tensor<int64_t> x) {
     for (unsigned long gama = 0; gama < dC; gama++){
         for (unsigned long alpha = 0; alpha < dH; alpha++){
             for (unsigned long beta = 0; beta < dW; beta++){
-                
                 //traverse 
                 for (unsigned long ic = 0; ic < CW; ic++){
                     if ((ic + gama * CW) >= C){
@@ -180,13 +175,9 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackTensor(Tensor<int64_t> x) {
                 Tensor<uint64_t> Tsubflatten = Tsub;
                 Tsubflatten.flatten();
                 vector<uint64_t> Tsubv = Tsubflatten.data(); 
-                std::cout << "gama alpha beta:" << gama << " " << alpha << " " << beta << std::endl;
-                std::cout << "poly:" << polyModulusDegree << std::endl;
                 Talphabeta({gama,alpha,beta}).hplain().resize(polyModulusDegree);
                 seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta({gama,alpha,beta}).hplain().data());
                 std::fill_n(Talphabeta({gama,alpha,beta}).hplain().data() + len, polyModulusDegree - len, 0);
-                //encryptor.encrypt(Talphabeta({gama,alpha,beta}),TalphabetaCipher({gama,alpha,beta}));
-                std::cout << len << " " << plain << " ";
             }
         }
     }
@@ -198,8 +189,6 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
     std::vector<size_t> shapeTab = {dM, dC};
     Tensor<UnifiedPlaintext> Ktg(shapeTab,Datatype::HOST);
     size_t len = OW + 1;
-    std::cout << dM << " " << dC << " " << MW <<" " << CW << std::endl;
-
 
     for (unsigned long theta = 0; theta < dM; theta++){
         for (unsigned long gama = 0; gama < dC; gama++){
@@ -210,44 +199,27 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
                     if (((theta * MW + it) >= M) || ((gama * CW + jg) >= C)){
                         for (unsigned hr = 0; hr < h; hr++){
                             for (unsigned hc = 0; hc < h; hc++){
-                                //Ksub({it,jg,hr,hc}) = 0;
                                 Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = 0;
                             }
                         }
-                        std::cout << "execute expand! theta MW it" << theta << " " << MW << " " << it <<std::endl;
-                        std::cout << "gama CW jg" << gama << " " << CW << " " << jg << std::endl;
                     }else{
                         for (unsigned hr = 0; hr < h; hr++){
                             for (unsigned hc = 0; hc < h; hc++){
                                 int64_t element = x({theta * MW + it, gama * CW + jg, hr, hc});
-                                std::cout << "element theta MW it" << element << " " << theta << " " << MW << " " << it << std::endl;
-                                std::cout << "gama CW jg" << gama << " " << CW << " " << jg << std::endl;
-                                // Ksub({it,jg,hr,hc}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
-                                // Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = Ksub({it,jg,hr,hc});
                                 Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                             }
                         }
                     }
                 }
             }
-            std::cout << "theta:" << theta << "gama:" << gama << std::endl;
-            for (size_t check = 0; check <= OW; check++){
-                std::cout << Tsubv[check] << " ";
-            }
-            std::cout << std::endl;
             Ktg({theta,gama}).hplain().resize(polyModulusDegree);
-            //batch_encoder.encode(vecIni, Talphabeta[gama][alpha][beta]);
             seal::util::modulo_poly_coeffs(Tsubv, len, plain, Ktg({theta, gama}).hplain().data());
-            for (size_t check = 0; check <= OW; check++){
-                std::cout << Ktg({theta,gama}).hplain().data()[check] << " ";
-            }
             if (len < polyModulusDegree){
                 std::fill_n(Ktg({theta,gama}).hplain().data() + len, polyModulusDegree - len, 0);
             }
         }
     }
 
-    std::cout << "finish encode";
 
     return Ktg;
 }
@@ -300,7 +272,7 @@ Tensor<int64_t> Conv2DCheetah::ExtractResult(Tensor<UnifiedPlaintext> ConvResult
                 size_t beta = (jprime * s) / (WW - h + 1);
                 size_t des = OW - c * CW * HW * WW + i  * WW + j;
                 auto interm = *(ConvResultPlain({theta, alpha, beta}).hplain().data() + des);
-                interm = (interm > plain / 2) ? (interm - plain) : interm;
+                //interm = (interm > plain / 2) ? (interm - plain) : interm;
                 finalResult({cprime, iprime, jprime}) = interm;
             }
         }
@@ -319,7 +291,6 @@ Tensor<int64_t> Conv2DCheetah::Conv(Tensor<int64_t> T, Tensor<int64_t> K){
         Tensor<UnifiedCiphertext> convResult({dM, dH, dW}, this->he->GenerateZeroCiphertext());
         auto share = this->HETOPLAIN(convResult);
         auto finalR = this->ExtractResult(share);
-        finalR.print();
         return finalR;
     }else{
         //服务器端
@@ -338,10 +309,7 @@ Tensor<int64_t> Conv2DCheetah::Conv(Tensor<int64_t> T, Tensor<int64_t> K){
         auto finalpack = this->sumCP(enc,pack2);
         auto convResult = this->ConvCP(finalpack,packK);
         auto share = this->HETOPLAIN(convResult);
-        std::cout << "final share shape:";
-        //share.print();
         auto finalR = this->ExtractResult(share);
-        finalR.print();
         return finalR;
     }
 }
