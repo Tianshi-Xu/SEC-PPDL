@@ -59,7 +59,8 @@ class Conv2DNest : public Conv2D {
         Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
 };
 
-class Conv2DCheetah : public Module {
+
+class Conv2DCheetah : public Conv2D {
 public:
     unsigned long M, C, H, W, h, s;
     unsigned long N, HW, WW, CW, MW, dM, dC, dH, dW, OW, Hprime, Wprime, HWprime, WWprime;
@@ -67,21 +68,23 @@ public:
     uint64_t plain;
     HEEvaluator* he;
 
-    Conv2DCheetah(size_t H, size_t W, HEEvaluator* he, Tensor<int64_t> kernel, size_t stride);
+    Conv2DCheetah(size_t H, size_t W, HEEvaluator* he, const Tensor<uint64_t>& kernel, size_t stride, const Tensor<uint64_t>& bias, uint64_t padding);
 
-    Tensor<UnifiedCiphertext> EncryptTensor(Tensor<UnifiedPlaintext> plainTensor);
-    Tensor<UnifiedPlaintext> PackTensor(Tensor<int64_t> x);
-    Tensor<UnifiedPlaintext> PackKernel(Tensor<int64_t> x);
-    Tensor<UnifiedCiphertext> ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K);
-    Tensor<UnifiedCiphertext> sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor);
-    Tensor<int64_t> ExtractResult(Tensor<UnifiedPlaintext> ConvResultPlain);
-    Tensor<UnifiedPlaintext> HETOPLAIN (Tensor<UnifiedCiphertext> inputCipher);
-    Tensor<int64_t> Conv(Tensor<int64_t> T, Tensor<int64_t> K);
+    
+    Tensor<uint64_t> operator()(Tensor<uint64_t> x);
 
 private:
     int DivUpper(int a, int b);
     int CalculateCost(int H, int W, int h, int Hw, int Ww, int C, int N);
     void FindOptimalPartition(int H, int W, int h, int C, int N, int* optimal_Hw, int* optimal_Ww);
+    Tensor<UnifiedCiphertext> EncryptTensor(Tensor<UnifiedPlaintext> plainTensor);
+    Tensor<uint64_t> PackActivation(Tensor<uint64_t> x);
+    Tensor<UnifiedPlaintext> PackWeight();
+    Tensor<UnifiedCiphertext> TensorTOHE(Tensor<uint64_t> PackActivationTensor);
+    Tensor<UnifiedCiphertext> HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct);
+    Tensor<UnifiedCiphertext> sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor);
+    Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
+    Tensor<uint64_t> HETOTensor (Tensor<UnifiedCiphertext> inputCipher);
 };
 
 }
