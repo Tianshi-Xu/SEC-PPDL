@@ -32,9 +32,9 @@ string address = "127.0.0.1";
 
 int bitlength = 16;
 int32_t kScale = 12;
-NetIO *ioArr[MAX_THREADS];
-OTPack<NetIO> *otpackArr[MAX_THREADS];
-ReLUProtocol<NetIO, int32_t> **reluprotocol = new ReLUProtocol<NetIO, int32_t>*[MAX_THREADS];
+Utils::NetIO *ioArr[MAX_THREADS];
+OTPrimitive::OTPack<Utils::NetIO> *otpackArr[MAX_THREADS];
+ReLUProtocol<Utils::NetIO, int32_t> **reluprotocol = new ReLUProtocol<Utils::NetIO, int32_t>*[MAX_THREADS];
 
 uint64_t comm_threads[MAX_THREADS];
 
@@ -54,13 +54,13 @@ int main(int argc, char **argv) {
   /********************************************/
   for (int i = 0; i < num_threads; i++) {
     ioArr[i] =
-        new NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
+        new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
     if (i & 1) {
-      otpackArr[i] = new OTPack<NetIO>(ioArr[i], 3 - party);
+      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
     } else {
-      otpackArr[i] = new OTPack<NetIO>(ioArr[i], party);
+      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
     }
-    reluprotocol[i] = new ReLURingProtocol<NetIO, int32_t>(party, ioArr[i], 4, MILL_PARAM, otpackArr[i]);
+    reluprotocol[i] = new ReLURingProtocol<Utils::NetIO, int32_t>(party, ioArr[i], 4, MILL_PARAM, otpackArr[i], Datatype::IKNP);
   }
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
   for (int i = 0; i < num_threads; i++) {

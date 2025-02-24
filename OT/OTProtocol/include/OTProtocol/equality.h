@@ -19,7 +19,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #include "millionaire.h"
-#include <OTPrimitive/emp_ot.h>
+#include <OTPrimitive/ot_primitive.h>
 #include <Utils/emp-tool.h>
 #include <cmath>
 #pragma once

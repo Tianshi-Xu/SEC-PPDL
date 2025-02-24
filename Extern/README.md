@@ -12,3 +12,8 @@ cmake -S . -B build -DCMAKE_INSTALL_PREFIX=hexl_build
 cmake --build build
 cmake --install build
 ```
+#### emp-ot & emp-tool
+```
+cd Extern
+. ./build-ot.sh
+```

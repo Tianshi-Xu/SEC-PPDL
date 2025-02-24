@@ -20,5 +20,43 @@ SOFTWARE.
 */
 
 #pragma once
+#define KKOT_TYPES 8
+// #include "cf2_ot_pack.h"
+#include "split_kkot.h"
+#include "split_iknp.h"
+namespace OTPrimitive {
+template <typename T>
+class OTPack {
+ public:
+  SplitKKOT<T> *kkot[KKOT_TYPES];
 
-#include "cf2_ot_pack.h"
+  // iknp_straight and iknp_reversed: party
+  // acts as sender in straight and receiver in reversed.
+  // Needed for MUX calls.
+  SplitIKNP<T> *iknp_straight;
+  SplitIKNP<T> *iknp_reversed;
+  T *io;
+  int party;
+  bool do_setup = false;
+
+  OTPack(T *io, int party, bool do_setup = true) {
+  };
+
+  ~OTPack() {
+  };
+
+  void SetupBaseOTs() {};
+
+  /*
+   * DISCLAIMER:
+   * OTPack copy method avoids computing setup keys for each OT instance by
+   * reusing the keys generated (through base OTs) for another OT instance.
+   * Ideally, the PRGs within OT instances, using the same keys, should use
+   * mutually exclusive counters for security. However, the current
+   * implementation does not support this.
+   */
+
+  void copy(OTPack<T> *copy_from) {};
+};
+
+}  // namespace OTPrimitive

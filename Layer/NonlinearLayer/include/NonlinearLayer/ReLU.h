@@ -46,13 +46,13 @@ public:
 
   // Constructor
   ReLURingProtocol(int party, IO *io, int l, int b,
-                   OTPack<IO> *otpack) {
+                   OTPack<IO> *otpack, OT_TYPE ot_type = Datatype::IKNP) {
     this->party = party;
     this->io = io;
     this->l = l;
     this->b = b;
     this->otpack = otpack;
-    this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b);
+    this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b,ot_type);
     this->triple_gen = this->millionaire->triple_gen;
     this->aux = new AuxProtocols(party, io, otpack);
     // configure();
@@ -105,7 +105,7 @@ public:
     }
 };
 
-template <typename T, typename IO=NetIO>
+template <typename T, typename IO=Utils::NetIO>
 class ReLU : public Module{
     public:
       int bitwidth;

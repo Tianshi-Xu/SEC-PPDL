@@ -31,21 +31,21 @@ namespace OTProtocol {
 
 class Truncation {
 public:
-  NetIO *io = nullptr;
-  OTPrimitive::OTPack<NetIO> *otpack;
-  TripleGenerator<NetIO> *triple_gen = nullptr;
-  MillionaireProtocol<NetIO> *mill = nullptr;
-  MillionaireWithEquality<NetIO> *mill_eq = nullptr;
-  Equality<NetIO> *eq = nullptr;
-  AuxProtocols *aux = nullptr;
+  Utils::NetIO *io = nullptr;
+  OTPrimitive::OTPack<Utils::NetIO> *otpack;
+  OTProtocol::TripleGenerator<Utils::NetIO> *triple_gen = nullptr;
+  OTProtocol::MillionaireProtocol<Utils::NetIO> *mill = nullptr;
+  OTProtocol::MillionaireWithEquality<Utils::NetIO> *mill_eq = nullptr;
+  OTProtocol::Equality<Utils::NetIO> *eq = nullptr;
+  OTProtocol::AuxProtocols *aux = nullptr;
   bool del_aux = false;
   bool del_milleq = false;
   int party;
 
   // Constructor
-  Truncation(int party, NetIO *io, OTPrimitive::OTPack<NetIO> *otpack,
-             AuxProtocols *auxp = nullptr,
-             MillionaireWithEquality<NetIO> *mill_eq_in = nullptr);
+  Truncation(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
+             OTProtocol::AuxProtocols *auxp = nullptr,
+             OTProtocol::MillionaireWithEquality<Utils::NetIO> *mill_eq_in = nullptr);
 
   // Destructor
   ~Truncation();

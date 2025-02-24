@@ -21,7 +21,7 @@ SOFTWARE.
 
 #include "millionaire.h"
 #include "millionaire_with_equality.h"
-#include <OTPrimitive/emp_ot.h>
+#include <OTPrimitive/ot_primitive.h>
 #pragma once
 
 using namespace OTPrimitive;
@@ -31,12 +31,12 @@ namespace OTProtocol {
 class AuxProtocols {
 public:
   int party;
-  NetIO *io;
-  OTPrimitive::OTPack<NetIO> *otpack;
-  MillionaireProtocol<NetIO> *mill;
-  MillionaireWithEquality<NetIO> *mill_and_eq;
+  Utils::NetIO *io;
+  OTPrimitive::OTPack<Utils::NetIO> *otpack;
+  OTProtocol::MillionaireProtocol<Utils::NetIO> *mill;
+  OTProtocol::MillionaireWithEquality<Utils::NetIO> *mill_and_eq;
 
-  AuxProtocols(int party, NetIO *io, OTPrimitive::OTPack<NetIO> *otpack);
+  AuxProtocols(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack);
 
   ~AuxProtocols();
 

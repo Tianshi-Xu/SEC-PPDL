@@ -7,6 +7,8 @@
 
 using namespace seal;
 using namespace Datatype;
+using namespace HE;
+using namespace HE::unified;
 
 namespace LinearLayer {
 

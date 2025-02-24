@@ -164,7 +164,7 @@ class HEEvaluator {
         }
     }
 
-    unified::UnifiedCiphertext GenerateZeroCiphertext(LOCATION loc) {
+    unified::UnifiedCiphertext GenerateZeroCiphertext(LOCATION loc=HOST) {
         unified::UnifiedPlaintext zeros_pt(HOST);
         unified::UnifiedCiphertext zeros_ct(HOST);
 

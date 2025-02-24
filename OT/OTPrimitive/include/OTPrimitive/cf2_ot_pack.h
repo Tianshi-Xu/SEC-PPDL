@@ -1,68 +1,57 @@
+#pragma once
 #include "emp_ot.h"
 #include "split_kkot.h"
+#include "ot_pack.h"
 #include <Utils/emp-tool.h>
-#define KKOT_TYPES 8
-
 
 namespace OTPrimitive {
 template <typename T>
-class OTPack {
+class IKNPOTPack : public OTPack<T> {
  public:
-  SplitKKOT<T> *kkot[KKOT_TYPES];
-
-  // iknp_straight and iknp_reversed: party
-  // acts as sender in straight and receiver in reversed.
-  // Needed for MUX calls.
-  SplitIKNP<T> *iknp_straight;
-  SplitIKNP<T> *iknp_reversed;
-  T *io;
-  int party;
-  bool do_setup = false;
-
-  OTPack(T *io, int party, bool do_setup = true) {
+  IKNPOTPack(T *io, int party, bool do_setup = true) {
     std::cout << "using kkot pack" << std::endl;
     this->party = party;
     this->do_setup = do_setup;
     this->io = io;
 
     for (int i = 0; i < KKOT_TYPES; i++) {
-      kkot[i] = new SplitKKOT<NetIO>(party, io, 1 << (i + 1));
+      this->kkot[i] = new SplitKKOT<NetIO>(this->party, io, 1 << (i + 1));
     }
 
-    iknp_straight = new SplitIKNP<NetIO>(party, io);
-    iknp_reversed = new SplitIKNP<NetIO>(3 - party, io);
-    do_setup = false;
+    this->iknp_straight = new SplitIKNP<NetIO>(this->party, io);
+    this->iknp_reversed = new SplitIKNP<NetIO>(3 - this->party, io);
+    this->do_setup = false;
     if (do_setup) {
       SetupBaseOTs();
     }
   }
 
-  ~OTPack() {
-    for (int i = 0; i < KKOT_TYPES; i++) delete kkot[i];
-    delete iknp_straight;
-    delete iknp_reversed;
+  ~IKNPOTPack() {
+    for (int i = 0; i < KKOT_TYPES; i++) delete this->kkot[i];
+    delete this->iknp_straight;
+    delete this->iknp_reversed;
   }
 
   void SetupBaseOTs() {
-    switch (party) {
+    switch (this->party) {
       case 1:
-        kkot[0]->setup_send();
-        iknp_straight->setup_send();
-        iknp_reversed->setup_recv();
+        this->kkot[0]->setup_send();
+        this->iknp_straight->setup_send();
+        this->iknp_reversed->setup_recv();
         for (int i = 1; i < KKOT_TYPES; i++) {
-          kkot[i]->setup_send();
+          this->kkot[i]->setup_send();
         }
         break;
       case 2:
-        kkot[0]->setup_recv();
-        iknp_straight->setup_recv();
-        iknp_reversed->setup_send();
+        this->kkot[0]->setup_recv();
+        this->iknp_straight->setup_recv();
+        this->iknp_reversed->setup_send();
         for (int i = 1; i < KKOT_TYPES; i++) {
-          kkot[i]->setup_recv();
+          this->kkot[i]->setup_recv();
         }
         break;
     }
-    io->flush();
+    this->io->flush();
   }
 
   /*

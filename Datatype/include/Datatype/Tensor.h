@@ -10,7 +10,7 @@
 #include "Datatype/UnifiedType.h"
 
 namespace Datatype {
-
+enum OT_TYPE { IKNP = 0, VOLE };
 // Tensor类定义
 template <typename T>
 class Tensor {

@@ -1,9 +1,11 @@
-#include "LinearLayer/Conv.h"
+#include <LinearLayer/Conv.h>
+#include <seal/util/polyarithsmallmod.h>
 #include <algorithm>
 
 using namespace seal;
 using namespace LinearLayer;
-
+using namespace HE;
+using namespace HE::unified;
 
 // 计算上取整除法
 int Conv2DCheetah::DivUpper(int a, int b) {
@@ -249,6 +251,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
 
     return Ktg;
 }
+
 Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor){
     Tensor<UnifiedCiphertext> Talphabeta({dC, dH, dW}, HOST);
     for (size_t gama = 0; gama < dC; gama++){
