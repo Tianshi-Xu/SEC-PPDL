@@ -2,10 +2,10 @@
 #include <seal/util/polyarithsmallmod.h>
 #include <algorithm>
 
+
 using namespace seal;
 using namespace LinearLayer;
-using namespace HE;
-using namespace HE::unified;
+
 
 // 计算上取整除法
 int Conv2DCheetah::DivUpper(int a, int b) {
@@ -35,15 +35,18 @@ void Conv2DCheetah::FindOptimalPartition(int H, int W, int h, int C, int N, int*
     }
 }
 
-Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluator* he, Tensor<int64_t> kernel, size_t stride){
+Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluator* he, const Tensor<uint64_t>& kernel, size_t stride, const Tensor<uint64_t>& bias, uint64_t padding)
+    : Conv2D(inputHeight, stride, padding, kernel, bias, he)
+{
     this->he = he;
     std::vector<size_t> shape = kernel.shape();
     C = shape[1];
     M = shape[0];
     h = shape[2];
     polyModulusDegree = he->polyModulusDegree;
-    H = inputHeight;
-    W = inputWeight;
+    this->padding = padding;
+    H = inputHeight + 2 * padding;
+    W = inputWeight + 2 * padding;
     s = stride;
     int optimalHw = H, optimalWw = W;
     FindOptimalPartition(H, W, h, C, polyModulusDegree, &optimalHw, &optimalWw);
@@ -62,6 +65,8 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
     WWprime = (WW - h + s) / s;
     polyModulusDegree = he->polyModulusDegree;
     plain = he->plain_mod;
+    weight_pt = this->PackWeight();
+
 };
 
 // 加密张量
@@ -78,13 +83,13 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::EncryptTensor(Tensor<UnifiedPlaintext> 
     return TalphabetaCipher;
 }
 
-Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inputCipher){
+Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCipher){
     if (he->server) {
         //add mask 
         //send ciphertext
-        std::vector<size_t> shapeTab = {dM, dH, dW};
-        Tensor<UnifiedCiphertext> cipherMask(shapeTab,he->GenerateZeroCiphertext());
-        Tensor<UnifiedPlaintext>  plainMask(shapeTab,HOST);
+        Tensor<UnifiedCiphertext> cipherMask({dM, dH, dW},he->GenerateZeroCiphertext());
+        Tensor<UnifiedPlaintext> plainMask({dM, dH, dW},HOST);
+        Tensor<uint64_t> tensorMask({dM, dH, dW, polyModulusDegree}, 0);
         UnifiedPlaintext plainMaskInv(HOST);
         int64_t mask;
         std::random_device rd;
@@ -99,10 +104,8 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
                     plainMaskInv.hplain().resize(polyModulusDegree);
                     for (size_t l = 0; l < polyModulusDegree; l++){
                         mask = dist(gen);
-                        if (mask < 0){
-                            mask += plain;
-                        }
                         *(plainMask({i,j,k}).hplain().data() + l) = mask;
+                        tensorMask({i, j, k, l}) = mask;
                         mask = plain - mask;
                         *(plainMaskInv.hplain().data() + l) = mask;   
                     }
@@ -112,31 +115,41 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::HETOPLAIN (Tensor<UnifiedCiphertext> inp
         }
         cipherMask.flatten();
         he->SendEncVec(cipherMask);
-        return plainMask;
+        return tensorMask;
 
     }else{
         //receive ciphertext and decry.
-        std::vector<size_t> shapeTab = {dM, dH, dW};
         Tensor<UnifiedCiphertext> cipherMask({dM * dH * dW},he->GenerateZeroCiphertext());
         he->ReceiveEncVec(cipherMask);
-        Tensor<UnifiedPlaintext>  plainMask(shapeTab,HOST);
+        Tensor<UnifiedPlaintext>  plainMask({dM, dH, dW},HOST);
+        Tensor<uint64_t> tensorMask({dM, dH, dW, polyModulusDegree}, 0);
         for (size_t i = 0; i < dM; i++){
             for (size_t j = 0; j < dH; j++){
                 for (size_t k = 0; k < dW; k++){
                     he->decryptor->decrypt(cipherMask({i * dH * dW + j * dW + k}), plainMask({i, j, k}));
+                    for (size_t l = 0; l < polyModulusDegree; l++){
+                        tensorMask({i, j, k, l}) = *(plainMask({i,j,k}).hplain().data() + l);
+                    }
                 }
             }
         }
-        return plainMask;
+        return tensorMask;
     }
 }
 
 // 计算输入张量的 Pack 版本
-Tensor<UnifiedPlaintext> Conv2DCheetah::PackTensor(Tensor<int64_t> x) {
-    std::vector<size_t> shapeTab = {dC, dH, dW};
-    Tensor<UnifiedPlaintext> Talphabeta(shapeTab,Datatype::HOST);
-    int len = CW * HW * WW;
+Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
+    Tensor<uint64_t> padded_x ({C, H, W} ,0);
+    for (size_t i = 0; i < C; i++){
+        for (size_t j = 0; j < (H - 2 * padding); j++){
+            for (size_t k = 0; k < (W - 2 * padding); k++){
+                padded_x({i, j + padding, k + padding}) = x({i, j, k});
+            }
+        }
+    }
+    size_t len = CW * HW * WW;
     Tensor<uint64_t> Tsub ({CW, HW, WW});
+    Tensor<uint64_t> PackActivationTensor({dC, dH, dW, len},0);
     for (unsigned long gama = 0; gama < dC; gama++){
         for (unsigned long alpha = 0; alpha < dH; alpha++){
             for (unsigned long beta = 0; beta < dW; beta++){
@@ -164,7 +177,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackTensor(Tensor<int64_t> x) {
                                         Tsub({ic,jh,kw}) = 0;
                                     }
                                     else{
-                                        int64_t element = x({gama * CW + ic, alpha * (HW - h + 1) + jh, beta * (WW - h + 1) + kw});
+                                        int64_t element = padded_x({gama * CW + ic, alpha * (HW - h + 1) + jh, beta * (WW - h + 1) + kw});
                                         Tsub({ic,jh,kw}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                                     }
                                 }
@@ -175,20 +188,66 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackTensor(Tensor<int64_t> x) {
                 Tensor<uint64_t> Tsubflatten = Tsub;
                 Tsubflatten.flatten();
                 vector<uint64_t> Tsubv = Tsubflatten.data(); 
+                for (size_t i = 0; i < len; i++){
+                    PackActivationTensor({gama, alpha, beta, i}) = Tsubv[i];
+                }
+            }
+        }
+    }
+    return PackActivationTensor;
+}
+
+Tensor<UnifiedCiphertext> Conv2DCheetah::TensorTOHE(Tensor<uint64_t> PackActivationTensor) {
+    std::vector<size_t> shapeTab = {dC, dH, dW};
+    Tensor<UnifiedPlaintext> Talphabeta(shapeTab,Datatype::HOST);
+    size_t len = CW * HW * WW;
+    for (unsigned long gama = 0; gama < dC; gama++){
+        for (unsigned long alpha = 0; alpha < dH; alpha++){
+            for (unsigned long beta = 0; beta < dW; beta++){
+                //traverse 
+                vector<uint64_t> Tsubv(len, 0); 
+                for (size_t i = 0; i < len; i++){
+                    Tsubv[i] = PackActivationTensor({gama, alpha, beta, i});
+                }
                 Talphabeta({gama,alpha,beta}).hplain().resize(polyModulusDegree);
                 seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta({gama,alpha,beta}).hplain().data());
                 std::fill_n(Talphabeta({gama,alpha,beta}).hplain().data() + len, polyModulusDegree - len, 0);
             }
         }
     }
-    return Talphabeta;
+    Tensor<UnifiedCiphertext> finalpack({dC, dH, dW}, he->GenerateZeroCiphertext());
+    if (!he->server){
+        //客服端
+        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
+        enc = this->EncryptTensor(Talphabeta);
+        enc.flatten();
+        he->SendEncVec(enc);
+    }else{
+        //服务器端
+        Tensor<UnifiedCiphertext> encflatten({dC * dH * dW}, this->he->GenerateZeroCiphertext());
+        he->ReceiveEncVec(encflatten);
+        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
+        for (size_t i = 0; i < dC; i++){
+            for (size_t j = 0; j < dH; j++){
+                for (size_t k = 0; k < dW; k++){
+                    enc({i,j,k}) = encflatten({i * dH * dW + j * dW + k});
+                }
+            }
+        }
+        finalpack = this->sumCP(enc,Talphabeta);
+    }
+    return finalpack;
 }
 
+
 // 计算卷积核的 Pack 版本
-Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
+Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
     std::vector<size_t> shapeTab = {dM, dC};
     Tensor<UnifiedPlaintext> Ktg(shapeTab,Datatype::HOST);
     size_t len = OW + 1;
+    if (!he->server){
+        return Ktg;
+    }
 
     for (unsigned long theta = 0; theta < dM; theta++){
         for (unsigned long gama = 0; gama < dC; gama++){
@@ -205,7 +264,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
                     }else{
                         for (unsigned hr = 0; hr < h; hr++){
                             for (unsigned hc = 0; hc < h; hc++){
-                                int64_t element = x({theta * MW + it, gama * CW + jg, hr, hc});
+                                int64_t element = this->weight({theta * MW + it, gama * CW + jg, hr, hc});
                                 Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                             }
                         }
@@ -223,7 +282,6 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackKernel(Tensor<int64_t> x) {
 
     return Ktg;
 }
-
 Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor){
     Tensor<UnifiedCiphertext> Talphabeta({dC, dH, dW}, HOST);
     for (size_t gama = 0; gama < dC; gama++){
@@ -238,17 +296,22 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
+Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct)
+{
+//Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     std::vector<size_t> shapeTab = {dM, dH, dW};
     Tensor<UnifiedCiphertext> ConvRe(shapeTab,he->GenerateZeroCiphertext());
-    UnifiedCiphertext interm;
+    UnifiedCiphertext interm = he->GenerateZeroCiphertext();
+    if (!he->server){
+        return ConvRe;
+    }
 
     for (size_t theta = 0; theta < dM; theta++) {
         for (size_t alpha = 0; alpha < dH; alpha++) {
             for (size_t beta = 0; beta < dW; beta++) {
-                he->evaluator->multiply_plain(T({0, alpha, beta}), K({theta, 0}), ConvRe({theta, alpha, beta}));
+                he->evaluator->multiply_plain(ac_ct({0, alpha, beta}), weight_pt({theta, 0}), ConvRe({theta, alpha, beta}));
                 for (size_t gama = 1; gama < dC; gama++) {
-                    he->evaluator->multiply_plain(T({gama, alpha, beta}), K({theta, gama}), interm);
+                    he->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), weight_pt({theta, gama}), interm);
                     he->evaluator->add_inplace(ConvRe({theta, alpha, beta}), interm);
                 }
             }
@@ -257,8 +320,8 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Ten
     return ConvRe;
 }
 
-Tensor<int64_t> Conv2DCheetah::ExtractResult(Tensor<UnifiedPlaintext> ConvResultPlain){
-    Tensor<int64_t> finalResult ({M, Hprime, Wprime});
+Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
+    Tensor<uint64_t> finalResult ({M, Hprime, Wprime});
     int checkl = 0;
 
     for (size_t cprime = 0; cprime < M; cprime++){
@@ -271,47 +334,27 @@ Tensor<int64_t> Conv2DCheetah::ExtractResult(Tensor<UnifiedPlaintext> ConvResult
                 size_t alpha = (iprime * s) / (HW - h + 1);
                 size_t beta = (jprime * s) / (WW - h + 1);
                 size_t des = OW - c * CW * HW * WW + i  * WW + j;
-                auto interm = *(ConvResultPlain({theta, alpha, beta}).hplain().data() + des);
-                //interm = (interm > plain / 2) ? (interm - plain) : interm;
-                finalResult({cprime, iprime, jprime}) = interm;
+                finalResult({cprime, iprime, jprime}) = out({theta, alpha, beta, des});
             }
         }
     }
     return finalResult;
+
 }
 
-Tensor<int64_t> Conv2DCheetah::Conv(Tensor<int64_t> T, Tensor<int64_t> K){
-    if (!he->server){
-        //客服端
-        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
-        auto pack1 = this->PackTensor(T);
-        enc = this->EncryptTensor(pack1);
-        enc.flatten();
-        he->SendEncVec(enc);
-        Tensor<UnifiedCiphertext> convResult({dM, dH, dW}, this->he->GenerateZeroCiphertext());
-        auto share = this->HETOPLAIN(convResult);
-        auto finalR = this->ExtractResult(share);
-        return finalR;
-    }else{
-        //服务器端
-        auto pack2 = this->PackTensor(T);
-        auto packK = this->PackKernel(K);
-        Tensor<UnifiedCiphertext> encflatten({dC * dH * dW}, this->he->GenerateZeroCiphertext());
-        he->ReceiveEncVec(encflatten);
-        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
-        for (size_t i = 0; i < dC; i++){
-            for (size_t j = 0; j < dH; j++){
-                for (size_t k = 0; k < dW; k++){
-                    enc({i,j,k}) = encflatten({i * dH * dW + j * dW + k});
-                }
-            }
-        }
-        auto finalpack = this->sumCP(enc,pack2);
-        auto convResult = this->ConvCP(finalpack,packK);
-        auto share = this->HETOPLAIN(convResult);
-        auto finalR = this->ExtractResult(share);
-        return finalR;
-    }
+Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> x){
+    std::cout << "1";
+    auto pack = this->PackActivation(x);
+    std::cout << "2";
+    auto Cipher = this->TensorTOHE(pack);
+    std::cout << "3";
+    auto ConvResult = this->HECompute(weight_pt, Cipher);
+    std::cout << "4";
+    auto share = this->HETOTensor(ConvResult);
+    std::cout << "5";
+    auto finalR = this->DepackResult(share);
+    std::cout << "6";
+    return finalR;
 }
 
  // namespace LinearLayer

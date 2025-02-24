@@ -24,13 +24,14 @@ SOFTWARE.
 // In split functions, OT is split
 // into offline and online phase.
 
-#include "np.h"
+#include "ot_np.h"
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
 
 namespace OTPrimitive {
-template <typename IO> class SplitIKNP : public OT<SplitIKNP<IO>> {
+template <typename IO> 
+class SplitIKNP : public OT<IO> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -942,17 +943,17 @@ public:
    *            Send/Recv wrapper functions                *
    ********************************************************/
 
-  void send_impl(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) {
     send_pre(length);
     got_send_post(data0, data1, length);
   }
 
-  void recv_impl(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) {
     recv_pre((bool *)b, length);
     got_recv_post(data, b, length);
   }
 
-  void send_impl(uint64_t **data, int length, int l) {
+  void send(uint64_t **data, int length, int l) {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -965,7 +966,7 @@ public:
     }
   }
 
-  void recv_impl(uint64_t *data, uint8_t *b, int length, int l) {
+  void recv(uint64_t *data, uint8_t *b, int length, int l) {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -978,7 +979,7 @@ public:
     }
   }
 
-  void send_impl(uint8_t **data, int length, int l) {
+  void send(uint8_t **data, int length, int l) {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {
@@ -992,7 +993,7 @@ public:
     }
   }
 
-  void recv_impl(uint8_t *data, uint8_t *b, int length, int l) {
+  void recv(uint8_t *data, uint8_t *b, int length, int l) {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {

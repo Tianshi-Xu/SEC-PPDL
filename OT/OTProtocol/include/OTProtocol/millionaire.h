@@ -43,7 +43,7 @@ public:
   Datatype::OT_TYPE ot_type;
 
   MillionaireProtocol(int party, IO *io, OTPrimitive::OTPack<IO> *otpack,
-                      int bitlength = 32, int radix_base = MILL_PARAM, OT_TYPE ot_type = IKNP) {
+                      int bitlength = 32, int radix_base = MILL_PARAM, OT_TYPE ot_type = Datatype::IKNP) {
     this->party = party;
     this->io = io;
     this->otpack = otpack;

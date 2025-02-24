@@ -34,31 +34,31 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
 
   ~SilentOT() { delete ferret; }
 
-  void send_impl(const block* data0, const block* data1, int64_t length) {
+  void send(const block* data0, const block* data1, int64_t length) {
     send_ot_cm_cc(data0, data1, length);
   }
 
-  void recv_impl(block* data, const bool* b, int64_t length) {
+  void recv(block* data, const bool* b, int64_t length) {
     recv_ot_cm_cc(data, b, length);
   }
 
   template <typename T>
-  void send_impl(T** data, int length, int l) {
+  void send(T** data, int length, int l) {
     send_ot_cm_cc(data, length, l);
   }
 
   template <typename T>
-  void recv_impl(T* data, const uint8_t* b, int length, int l) {
+  void recv(T* data, const uint8_t* b, int length, int l) {
     recv_ot_cm_cc(data, b, length, l);
   }
 
   template <typename T>
-  void send_impl(T** data, int length, int N, int l) {
+  void send(T** data, int length, int N, int l) {
     send_ot_cm_cc(data, length, N, l);
   }
 
   template <typename T>
-  void recv_impl(T* data, const uint8_t* b, int length, int N, int l) {
+  void recv(T* data, const uint8_t* b, int length, int N, int l) {
     recv_ot_cm_cc(data, b, length, N, l);
   }
 
@@ -576,13 +576,13 @@ class SilentOTN : public OTPrimitive::OT<SilentOTN<IO>> {
   }
 
   template <typename T>
-  void send_impl(T** data, int length, int l) {
-    silent_ot->send_impl(data, length, N, l);
+  void send(T** data, int length, int l) {
+    silent_ot->send(data, length, N, l);
   }
 
   template <typename T>
-  void recv_impl(T* data, const uint8_t* b, int length, int l) {
-    silent_ot->recv_impl(data, b, length, N, l);
+  void recv(T* data, const uint8_t* b, int length, int l) {
+    silent_ot->recv(data, b, length, N, l);
   }
 };
 

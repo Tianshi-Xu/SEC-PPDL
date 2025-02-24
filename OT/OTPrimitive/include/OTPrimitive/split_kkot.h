@@ -6,18 +6,22 @@
 // online offline split can
 // be found in OT/kkot.h
 
-#include "np.h"
+#include "ot_np.h"
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
 
 namespace OTPrimitive {
-template <typename IO> class SplitKKOT : public OT<SplitKKOT<IO>> {
+
+template <typename IO> 
+class SplitKKOT : public OT<IO> {
+
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
   int party;
   const int lambda = 256;
+  int te = 99;
 #if __APPLE__
   int block_size = 1024 * 8;
 #else
@@ -516,7 +520,7 @@ public:
     delete[] recvd;
   }
 
-  void send_impl(uint8_t **data, int length, int l) {
+  void send(uint8_t **data, int length, int l) {
     assert(N <= lambda && N >= 2);
     assert(l <= 8 && l >= 1);
     // assert(((N*l*length) % 8) == 0);
@@ -532,7 +536,7 @@ public:
     }
   }
 
-  void recv_impl(uint8_t *data, uint8_t *b, int length, int l) {
+  void recv(uint8_t *data, uint8_t *b, int length, int l) {
     assert(N <= lambda && N >= 2);
     assert(l <= 8 && l >= 1);
     // assert(((N*l*length) % 8) == 0);
@@ -548,7 +552,7 @@ public:
     }
   }
 
-  void send_impl(uint64_t **data, int length, int l) {
+  void send(uint64_t **data, int length, int l) {
     assert(N <= lambda && N >= 2);
     // assert(l > 8);
     this->l = l;
@@ -563,7 +567,7 @@ public:
     }
   }
 
-  void recv_impl(uint64_t *data, uint8_t *b, int length, int l) {
+  void recv(uint64_t *data, uint8_t *b, int length, int l) {
     assert(N <= lambda && N >= 2);
     // assert(l > 8);
     this->l = l;

@@ -10,7 +10,7 @@ template<typename IO>
  * https://eprint.iacr.org/2015/267.pdf
  */
 
-class OTCO: public OT<OTCO<IO>> { public:
+class OTCO: public OT<IO> { public:
 	IO* io;
 	Group *G = nullptr;
 	bool delete_G = true;
@@ -28,7 +28,7 @@ class OTCO: public OT<OTCO<IO>> { public:
 			delete G;
 	}
 
-	void send_impl(const block* data0, const block* data1, int64_t length) {
+	void send(const block* data0, const block* data1, int64_t length) {
 		BigInt a;
 		Point A, AaInv;
 		block res[2];
@@ -58,7 +58,7 @@ class OTCO: public OT<OTCO<IO>> { public:
 		delete[] B;
 	}
 
-	void recv_impl(block* data, const bool* b, int64_t length) {
+	void recv(block* data, const bool* b, int64_t length) {
 		BigInt * bb = new BigInt[length];
 		Point * B = new Point[length],
 				* As = new Point[length],
