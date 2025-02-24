@@ -34,25 +34,25 @@ Modified by Nishant Kumar, Deevashwer Rathee
   */
 using namespace Utils;
 namespace OTPrimitive {
-template <typename IO> class OTIdeal : public OT<OTIdeal<IO>> {
+template <typename IO> class OTIdeal : public OT<IO> {
 public:
   int cnt = 0;
   IO *io = nullptr;
   OTIdeal(IO *io) { this->io = io; }
 
-  void send_impl(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) {
     cnt += length;
     io->send_block(data0, length);
     io->send_block(data1, length);
   }
 
-  void send_impl(const block256 *data0, const block256 *data1, int length) {
+  void send(const block256 *data0, const block256 *data1, int length) {
     cnt += length;
     io->send_block(data0, length);
     io->send_block(data1, length);
   }
 
-  void recv_impl(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) {
     cnt += length;
     block128 *data1 = new block128[length];
     io->recv_block(data, length);
@@ -63,7 +63,7 @@ public:
     delete[] data1;
   }
 
-  void recv_impl(block256 *data, const bool *b, int length) {
+  void recv(block256 *data, const bool *b, int length) {
     cnt += length;
     alignas(32) block256 data1[length];
     io->recv_block(data, length);
@@ -73,7 +73,7 @@ public:
         data[i] = data1[i];
   }
 
-  void send_impl(uint8_t **data, int length, int N, int l) {
+  void send(uint8_t **data, int length, int N, int l) {
     assert(N <= 256 && N >= 2);
     assert(l <= 8 && l >= 1 && (8 % l) == 0);
     assert((N * l % 8) == 0);
@@ -84,7 +84,7 @@ public:
     delete[] b;
   }
 
-  void recv_impl(uint8_t *data, const uint8_t *b, int length, int N, int l) {
+  void recv(uint8_t *data, const uint8_t *b, int length, int N, int l) {
     assert(N <= 256 && N >= 2);
     assert(l <= 8 && l >= 1 && (8 % l) == 0);
     assert((N * l % 8) == 0);

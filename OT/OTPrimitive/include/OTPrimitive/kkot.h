@@ -1,8 +1,8 @@
-#include "np.h"
+#include "ot_np.h"
 #include "ot.h"
 #pragma once
-namespace OT {
-template <typename IO> class KKOT : public OTPrimitive<KKOT<IO>> {
+namespace OTPrimitive {
+template <typename IO> class KKOT : public OT<IO> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -191,7 +191,7 @@ public:
     delete[] tT;
   }
 
-  void send_impl(block128 **data, int length, int N) {
+  void send(block128 **data, int length, int N) {
     if (length < 1)
       return;
     assert(N <= lambda && N >= 2);
@@ -202,7 +202,7 @@ public:
     got_send_post(data, length);
   }
 
-  void recv_impl(block128 *data, const uint8_t *b, int length, int N) {
+  void recv(block128 *data, const uint8_t *b, int length, int N) {
     if (length < 1)
       return;
     assert(N <= lambda && N >= 2);

@@ -5,7 +5,7 @@
 #include "ot.h"
 
 #include "iknp.h"
-#include "np.h"
+#include "ot_np.h"
 
 //#include "OT/kkot.h"
 #include "ot_pack.h"

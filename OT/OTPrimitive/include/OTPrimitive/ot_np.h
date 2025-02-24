@@ -31,7 +31,7 @@ Modified by Deevashwer Rathee
         @{
 */
 namespace OTPrimitive {
-template <typename IO> class OTNP : public OT<OTNP<IO>> {
+template <typename IO> class OTNP : public OT<IO> {
 public:
   IO *io;
   Utils::Group *G = nullptr;
@@ -50,7 +50,7 @@ public:
       delete G;
   }
 
-  void send_impl(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -96,7 +96,7 @@ public:
     delete[] pk0;
   }
 
-  void send_impl(const block256 *data0, const block256 *data1, int length) {
+  void send(const block256 *data0, const block256 *data1, int length) {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -142,7 +142,7 @@ public:
     delete[] pk0;
   }
 
-  void recv_impl(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];
@@ -177,7 +177,7 @@ public:
     delete[] gr;
   }
 
-  void recv_impl(block256 *data, const bool *b, int length) {
+  void recv(block256 *data, const bool *b, int length) {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];

@@ -26,11 +26,11 @@ Modified by Nishant Kumar
 */
 
 #pragma once
-#include "np.h"
+#include "ot_np.h"
 #include "ot.h"
 #include <algorithm>
 namespace OTPrimitive {
-template <typename IO> class IKNP : public OT<IKNP<IO>> {
+template <typename IO> class IKNP : public OT<IO> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -391,21 +391,21 @@ public:
     delete[] tT;
   }
 
-  void send_impl(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) {
     if (length < 1)
       return;
     send_pre(length);
     got_send_post(data0, data1, length);
   }
 
-  void recv_impl(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) {
     if (length < 1)
       return;
     recv_pre(b, length);
     got_recv_post(data, b, length);
   }
 
-  void send_impl(uint64_t **data, int length, int l) {
+  void send(uint64_t **data, int length, int l) {
     if (length < 1)
       return;
     this->l = l;
@@ -413,7 +413,7 @@ public:
     got_send_post(data, length);
   }
 
-  void recv_impl(uint64_t *data, const uint8_t *b, int length, int l) {
+  void recv(uint64_t *data, const uint8_t *b, int length, int l) {
     if (length < 1)
       return;
     this->l = l;

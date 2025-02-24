@@ -1,14 +1,16 @@
 #pragma once
 #include "emp_ot.h"
-#include "split_kkot.h"
 #include "ot_pack.h"
 #include <Utils/emp-tool.h>
+using namespace OTPrimitive;
+using namespace std;
 
 namespace OTPrimitive {
 template <typename T>
 class IKNPOTPack : public OTPack<T> {
+
  public:
-  IKNPOTPack(T *io, int party, bool do_setup = true) {
+  IKNPOTPack(T *io, int party, bool do_setup = true): OTPack<T>(io, party, do_setup) {
     std::cout << "using kkot pack" << std::endl;
     this->party = party;
     this->do_setup = do_setup;
@@ -16,6 +18,7 @@ class IKNPOTPack : public OTPack<T> {
 
     for (int i = 0; i < KKOT_TYPES; i++) {
       this->kkot[i] = new SplitKKOT<NetIO>(this->party, io, 1 << (i + 1));
+      // cout << this->kkot[i]->te << endl;
     }
 
     this->iknp_straight = new SplitIKNP<NetIO>(this->party, io);

@@ -25,21 +25,21 @@ SOFTWARE.
 #include "split_kkot.h"
 #include "split_iknp.h"
 namespace OTPrimitive {
-template <typename T>
+template <typename IO>
 class OTPack {
  public:
-  SplitKKOT<T> *kkot[KKOT_TYPES];
+  OTPrimitive::OT<IO> *kkot[KKOT_TYPES];
 
   // iknp_straight and iknp_reversed: party
   // acts as sender in straight and receiver in reversed.
   // Needed for MUX calls.
-  SplitIKNP<T> *iknp_straight;
-  SplitIKNP<T> *iknp_reversed;
-  T *io;
+  OTPrimitive::OT<IO> *iknp_straight;
+  OTPrimitive::OT<IO> *iknp_reversed;
+  IO *io;
   int party;
   bool do_setup = false;
 
-  OTPack(T *io, int party, bool do_setup = true) {
+  OTPack(IO *io, int party, bool do_setup = true) {
   };
 
   ~OTPack() {
@@ -56,7 +56,7 @@ class OTPack {
    * implementation does not support this.
    */
 
-  void copy(OTPack<T> *copy_from) {};
+  void copy(OTPack<IO> *copy_from) {};
 };
 
 }  // namespace OTPrimitive
