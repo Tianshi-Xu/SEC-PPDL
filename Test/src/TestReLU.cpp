@@ -56,7 +56,11 @@ int main(int argc, char **argv) {
     ioArr[i] =
         new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
     if (i & 1) {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
+      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party); 
+      // 子类对象不能直接赋值给父类对象，因为父类对象不会有子类特有的数据成员，并且可能会丢失子类的数据
+      // 但是父类指针可以指向一个子类对象
+      // Child 类是从 Parent 类派生的，并且它继承了 Parent 的所有公有成员函数。当创建一个 Child 类对象时，这个对象会包含一个 Parent 类的子对象
+      // 当父类指针指向子类对象时，通过虚函数机制（如果父类函数是虚函数）可以实现多态，使得调用的成员函数是子类中的重载版本，而不是父类的版本
     } else {
       otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
     }

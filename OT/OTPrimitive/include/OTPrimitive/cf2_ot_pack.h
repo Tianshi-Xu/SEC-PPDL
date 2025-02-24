@@ -8,7 +8,7 @@ namespace OTPrimitive {
 template <typename T>
 class IKNPOTPack : public OTPack<T> {
  public:
-  IKNPOTPack(T *io, int party, bool do_setup = true) {
+  IKNPOTPack(T *io, int party, bool do_setup = true) : OTPack<T>(io, party, do_setup) {
     std::cout << "using kkot pack" << std::endl;
     this->party = party;
     this->do_setup = do_setup;

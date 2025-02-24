@@ -16,9 +16,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                     ${EMP-TOOL_INCLUDE_DIRS}) 
 
 add_subdirectory(Datatype)
-add_subdirectory(HE)
-add_subdirectory(OT)
+# add_subdirectory(HE)
 add_subdirectory(Utils)
+add_subdirectory(OT)
+
 add_subdirectory(Operator)
 add_subdirectory(Layer)
 add_subdirectory(Test)
