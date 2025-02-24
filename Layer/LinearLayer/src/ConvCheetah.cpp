@@ -2,6 +2,7 @@
 #include <seal/util/polyarithsmallmod.h>
 #include <algorithm>
 
+
 using namespace seal;
 using namespace LinearLayer;
 
@@ -43,8 +44,9 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
     M = shape[0];
     h = shape[2];
     polyModulusDegree = he->polyModulusDegree;
-    H = inputHeight;
-    W = inputWeight;
+    this->padding = padding;
+    H = inputHeight + 2 * padding;
+    W = inputWeight + 2 * padding;
     s = stride;
     int optimalHw = H, optimalWw = W;
     FindOptimalPartition(H, W, h, C, polyModulusDegree, &optimalHw, &optimalWw);
@@ -64,6 +66,7 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
     polyModulusDegree = he->polyModulusDegree;
     plain = he->plain_mod;
     weight_pt = this->PackWeight();
+
 };
 
 // 加密张量
@@ -136,6 +139,14 @@ Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCiphe
 
 // 计算输入张量的 Pack 版本
 Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
+    Tensor<uint64_t> padded_x ({C, H, W} ,0);
+    for (size_t i = 0; i < C; i++){
+        for (size_t j = 0; j < (H - 2 * padding); j++){
+            for (size_t k = 0; k < (W - 2 * padding); k++){
+                padded_x({i, j + padding, k + padding}) = x({i, j, k});
+            }
+        }
+    }
     size_t len = CW * HW * WW;
     Tensor<uint64_t> Tsub ({CW, HW, WW});
     Tensor<uint64_t> PackActivationTensor({dC, dH, dW, len},0);
@@ -166,7 +177,7 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
                                         Tsub({ic,jh,kw}) = 0;
                                     }
                                     else{
-                                        int64_t element = x({gama * CW + ic, alpha * (HW - h + 1) + jh, beta * (WW - h + 1) + kw});
+                                        int64_t element = padded_x({gama * CW + ic, alpha * (HW - h + 1) + jh, beta * (WW - h + 1) + kw});
                                         Tsub({ic,jh,kw}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                                     }
                                 }
@@ -290,7 +301,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(Tensor<UnifiedPlaintext> weig
 //Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     std::vector<size_t> shapeTab = {dM, dH, dW};
     Tensor<UnifiedCiphertext> ConvRe(shapeTab,he->GenerateZeroCiphertext());
-    UnifiedCiphertext interm;
+    UnifiedCiphertext interm = he->GenerateZeroCiphertext();
     if (!he->server){
         return ConvRe;
     }
@@ -332,11 +343,17 @@ Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
 }
 
 Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> x){
+    std::cout << "1";
     auto pack = this->PackActivation(x);
+    std::cout << "2";
     auto Cipher = this->TensorTOHE(pack);
+    std::cout << "3";
     auto ConvResult = this->HECompute(weight_pt, Cipher);
+    std::cout << "4";
     auto share = this->HETOTensor(ConvResult);
+    std::cout << "5";
     auto finalR = this->DepackResult(share);
+    std::cout << "6";
     return finalR;
 }
 
