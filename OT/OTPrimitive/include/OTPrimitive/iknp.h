@@ -45,7 +45,7 @@ public:
   IO *io = nullptr;
   CRH crh;
 
-  IKNP(IO *io) {
+  IKNP(IO *io) : OT<IO>() {
     this->io = io;
     base_ot = new OTNP<IO>(io);
     s = new bool[lambda];
@@ -68,7 +68,7 @@ public:
     delete[] extended_r;
   }
 
-  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) {
+  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) override {
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -83,7 +83,7 @@ public:
       G0[i].reseed(&k0[i]);
   }
 
-  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) {
+  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) override {
     setup = true;
     if (in_k0 != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -391,21 +391,21 @@ public:
     delete[] tT;
   }
 
-  void send(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) override {
     if (length < 1)
       return;
     send_pre(length);
     got_send_post(data0, data1, length);
   }
 
-  void recv(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) override {
     if (length < 1)
       return;
     recv_pre(b, length);
     got_recv_post(data, b, length);
   }
 
-  void send(uint64_t **data, int length, int l) {
+  void send(uint64_t **data, int length, int l) override {
     if (length < 1)
       return;
     this->l = l;
@@ -413,7 +413,7 @@ public:
     got_send_post(data, length);
   }
 
-  void recv(uint64_t *data, const uint8_t *b, int length, int l) {
+  void recv(uint64_t *data, const uint8_t *b, int length, int l) override {
     if (length < 1)
       return;
     this->l = l;
@@ -421,14 +421,14 @@ public:
     got_recv_post(data, b, length);
   }
 
-  void send_cot(block128 *data0, block128 delta, int length) {
+  void send_cot(block128 *data0, block128 delta, int length) override {
     if (length < 1)
       return;
     send_pre(length);
     cot_send_post(data0, delta, length);
   }
 
-  void recv_cot(block128 *data, const bool *b, int length) {
+  void recv_cot(block128 *data, const bool *b, int length) override {
     if (length < 1)
       return;
     recv_pre(b, length);

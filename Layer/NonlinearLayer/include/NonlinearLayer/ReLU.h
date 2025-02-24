@@ -88,11 +88,12 @@ public:
                 uint8_t *msb, bool skip_ot) {
         uint8_t *msb_tmp = new uint8_t[num_relu];
         if(msb!=nullptr){
-            memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
+          memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
         }
         else{
-            this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
+          this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
         }
+        
         for (int i = 0; i < num_relu; i++) {
             if (party == ALICE) {
                 msb_tmp[i] = msb_tmp[i] ^ 1;

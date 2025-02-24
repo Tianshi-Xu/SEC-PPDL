@@ -28,7 +28,7 @@ class OTCO: public OT<IO> { public:
 			delete G;
 	}
 
-	void send(const block* data0, const block* data1, int64_t length) {
+	void send(const block* data0, const block* data1, int64_t length) override {
 		BigInt a;
 		Point A, AaInv;
 		block res[2];
@@ -58,7 +58,7 @@ class OTCO: public OT<IO> { public:
 		delete[] B;
 	}
 
-	void recv(block* data, const bool* b, int64_t length) {
+	void recv(block* data, const bool* b, int64_t length) override {
 		BigInt * bb = new BigInt[length];
 		Point * B = new Point[length],
 				* As = new Point[length],

@@ -28,13 +28,13 @@ namespace OTPrimitive {
 template <typename IO>
 class OTPack {
  public:
-  OTPrimitive::OT<IO> *kkot[KKOT_TYPES];
+  OT<IO> *kkot[KKOT_TYPES];
 
   // iknp_straight and iknp_reversed: party
   // acts as sender in straight and receiver in reversed.
   // Needed for MUX calls.
-  OTPrimitive::OT<IO> *iknp_straight;
-  OTPrimitive::OT<IO> *iknp_reversed;
+  OT<IO> *iknp_straight;
+  OT<IO> *iknp_reversed;
   IO *io;
   int party;
   bool do_setup = false;

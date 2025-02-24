@@ -150,6 +150,8 @@ public:
         mill->compare(msb_x, tmp_x, size, bw_x - 1, true);  // computing greater_than
 
         for (int i = 0; i < size; i++) {
+            // cout << "msb_x[" << i << "] = " << msb_x[i] << endl;
+            // cout << "msb_xb[" << i << "] = " << msb_xb[i] << endl;
             msb_x[i] = msb_x[i] ^ msb_xb[i];
         }
 

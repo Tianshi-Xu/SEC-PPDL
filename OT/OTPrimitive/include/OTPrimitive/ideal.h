@@ -34,25 +34,27 @@ Modified by Nishant Kumar, Deevashwer Rathee
   */
 using namespace Utils;
 namespace OTPrimitive {
-template <typename IO> class OTIdeal : public OT<IO> {
+
+template <typename IO> 
+class OTIdeal : public OT<IO> {
 public:
   int cnt = 0;
   IO *io = nullptr;
   OTIdeal(IO *io) { this->io = io; }
 
-  void send(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) override {
     cnt += length;
     io->send_block(data0, length);
     io->send_block(data1, length);
   }
 
-  void send(const block256 *data0, const block256 *data1, int length) {
+  void send(const block256 *data0, const block256 *data1, int length) override {
     cnt += length;
     io->send_block(data0, length);
     io->send_block(data1, length);
   }
 
-  void recv(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) override {
     cnt += length;
     block128 *data1 = new block128[length];
     io->recv_block(data, length);
@@ -63,7 +65,7 @@ public:
     delete[] data1;
   }
 
-  void recv(block256 *data, const bool *b, int length) {
+  void recv(block256 *data, const bool *b, int length) override {
     cnt += length;
     alignas(32) block256 data1[length];
     io->recv_block(data, length);
@@ -73,7 +75,7 @@ public:
         data[i] = data1[i];
   }
 
-  void send(uint8_t **data, int length, int N, int l) {
+  void send(uint8_t **data, int length, int N, int l) override {
     assert(N <= 256 && N >= 2);
     assert(l <= 8 && l >= 1 && (8 % l) == 0);
     assert((N * l % 8) == 0);
@@ -84,7 +86,7 @@ public:
     delete[] b;
   }
 
-  void recv(uint8_t *data, const uint8_t *b, int length, int N, int l) {
+  void recv(uint8_t *data, const uint8_t *b, int length, int N, int l) override {
     assert(N <= 256 && N >= 2);
     assert(l <= 8 && l >= 1 && (8 % l) == 0);
     assert((N * l % 8) == 0);
@@ -106,7 +108,7 @@ public:
   */
   void send_cot_matmul(uint64_t *rdata, const uint64_t *corr,
                        const uint64_t *chunkSizes, const uint64_t *numChunks,
-                       const int numOTs) {
+                       const int numOTs) override {
     // std::cout<<"Using Ideal OT"<<std::endl;
     uint8_t choices[numOTs];
     io->recv_data(choices, numOTs);
@@ -145,7 +147,7 @@ public:
   */
   void recv_cot_matmul(uint64_t *data, const uint8_t *choices,
                        const uint64_t *chunkSizes, const uint64_t *numChunks,
-                       const int numOTs) {
+                       const int numOTs) override {
     // std::cout<<"Using Ideal OT"<<std::endl;
     io->send_data(choices, numOTs);
     uint64_t dataPtr = 0;

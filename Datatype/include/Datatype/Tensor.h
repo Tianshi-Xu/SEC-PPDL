@@ -50,6 +50,8 @@ public:
 
     // Randomize a tensor mod 2^bitlength, must be integer type. Can not be applied in secure application!
     void randomize(int bitlength) {
+        // change seed
+        srand(time(0));
         if constexpr (std::is_signed_v<T>) {
             // 对于整型：使用按位与实现模运算
             for (size_t i = 0; i < data_.size(); ++i) {

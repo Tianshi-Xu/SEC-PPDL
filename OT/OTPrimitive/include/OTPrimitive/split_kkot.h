@@ -10,7 +10,8 @@
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
-
+using namespace OTPrimitive;
+using namespace std;
 namespace OTPrimitive {
 
 template <typename IO> 
@@ -55,7 +56,7 @@ public:
   uint8_t *extended_r = nullptr;
   IO *io = nullptr;
 
-  SplitKKOT(int party, IO *io, int N) {
+  SplitKKOT(int party, IO *io, int N) : OT<IO>() {
     assert(party == ALICE || party == BOB);
     this->party = party;
     this->io = io;
@@ -169,7 +170,7 @@ public:
     }
   }
 
-  void setup_send(block256 *in_k0 = nullptr, bool *in_s = nullptr) {
+  void setup_send(bool is256, block256 *in_k0 = nullptr, bool *in_s = nullptr) override {
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block256));
@@ -177,14 +178,16 @@ public:
       block_s = bool_to256(s);
     } else {
       prg.random_bool(s, lambda);
+      cout << "setup_send" << endl;
       base_ot->recv(k0, s, lambda);
+      cout << "setup_send done" << endl;
       block_s = bool_to256(s);
     }
     for (int i = 0; i < lambda; ++i)
       G0[i].reseed(&k0[i]);
   }
 
-  void setup_recv(block256 *in_k0 = nullptr, block256 *in_k1 = nullptr) {
+  void setup_recv(bool is256, block256 *in_k0 = nullptr, block256 *in_k1 = nullptr) override {
     setup = true;
     if (in_k0 != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block256));
@@ -240,7 +243,7 @@ public:
     alignas(32) block256 q[block_size];
     qT = new (std::align_val_t(32)) block256[length];
     if (!setup)
-      setup_send();
+      setup_send(true);
     if (!precomp_masks)
       precompute_masks();
 
@@ -267,7 +270,7 @@ public:
     alignas(32) block256 t[block_size];
     tT = new (std::align_val_t(32)) block256[length];
     if (not setup)
-      setup_recv();
+      setup_recv(true);
 
     uint8_t *r2 = new uint8_t[length];
     prg.random_data(extended_r, block_size);
@@ -520,7 +523,7 @@ public:
     delete[] recvd;
   }
 
-  void send(uint8_t **data, int length, int l) {
+  void send(uint8_t **data, int length, int l) override {
     assert(N <= lambda && N >= 2);
     assert(l <= 8 && l >= 1);
     // assert(((N*l*length) % 8) == 0);
@@ -536,7 +539,7 @@ public:
     }
   }
 
-  void recv(uint8_t *data, uint8_t *b, int length, int l) {
+  void recv(uint8_t *data, uint8_t *b, int length, int l) override {
     assert(N <= lambda && N >= 2);
     assert(l <= 8 && l >= 1);
     // assert(((N*l*length) % 8) == 0);
@@ -552,7 +555,7 @@ public:
     }
   }
 
-  void send(uint64_t **data, int length, int l) {
+  void send(uint64_t **data, int length, int l) override {
     assert(N <= lambda && N >= 2);
     // assert(l > 8);
     this->l = l;
@@ -567,7 +570,7 @@ public:
     }
   }
 
-  void recv(uint64_t *data, uint8_t *b, int length, int l) {
+  void recv(uint64_t *data, uint8_t *b, int length, int l) override {
     assert(N <= lambda && N >= 2);
     // assert(l > 8);
     this->l = l;

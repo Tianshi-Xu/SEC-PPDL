@@ -2,7 +2,8 @@
 #include "ot.h"
 #pragma once
 namespace OTPrimitive {
-template <typename IO> class KKOT : public OT<IO> {
+template <typename IO> 
+class KKOT : public OT<IO> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
@@ -18,7 +19,7 @@ public:
   uint8_t *extended_r = nullptr;
   IO *io = nullptr;
 
-  KKOT(IO *io) {
+  KKOT(IO *io) : OT<IO>() {
     this->io = io;
     base_ot = new OTNP<IO>(io);
     s = new bool[lambda];

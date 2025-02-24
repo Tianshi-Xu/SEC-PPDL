@@ -36,7 +36,7 @@ public:
   IO *io;
   Utils::Group *G = nullptr;
   bool delete_G = true;
-  OTNP(IO *io, Utils::Group *_G = nullptr) {
+  OTNP(IO *io, Utils::Group *_G = nullptr) : OT<IO>() {
     this->io = io;
     if (_G == nullptr)
       G = new Utils::Group();
@@ -50,7 +50,7 @@ public:
       delete G;
   }
 
-  void send(const block128 *data0, const block128 *data1, int length) {
+  void send(const block128 *data0, const block128 *data1, int length) override {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -96,7 +96,7 @@ public:
     delete[] pk0;
   }
 
-  void send(const block256 *data0, const block256 *data1, int length) {
+  void send(const block256 *data0, const block256 *data1, int length) override {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -142,7 +142,7 @@ public:
     delete[] pk0;
   }
 
-  void recv(block128 *data, const bool *b, int length) {
+  void recv(block128 *data, const bool *b, int length) override {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];
@@ -177,7 +177,7 @@ public:
     delete[] gr;
   }
 
-  void recv(block256 *data, const bool *b, int length) {
+  void recv(block256 *data, const bool *b, int length) override {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];

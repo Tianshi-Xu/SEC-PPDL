@@ -27,7 +27,7 @@ using namespace NonlinearLayer;
 #define MAX_THREADS 4
 
 int party, port = 32000;
-int num_threads = 4;
+int num_threads = 1;
 string address = "127.0.0.1";
 
 int bitlength = 16;
@@ -72,13 +72,18 @@ int main(int argc, char **argv) {
 
   /************ Generate Test Data ************/
   /********************************************/
-  Tensor<int32_t> input({8});
-  input.randomize(4);
+  uint32_t dim = 64;
+  Tensor<int32_t> input({dim});
+  Tensor<int32_t> input2({dim});
+  if(party == Utils::BOB) {
+    input.randomize(4);
+  }
+  input2 = input;
   input.print();
 
   ReLU<int32_t> relu(reluprotocol, 4, num_threads);
   relu(&input);
-  input.print();
+  // input.print();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {
@@ -90,38 +95,23 @@ int main(int argc, char **argv) {
 
   /************** Verification ****************/
   /********************************************/
-  // if (party == ALICE) {
-  //   ioArr[0]->send_data(input, dim * sizeof(uint64_t));
-  //   ioArr[0]->send_data(res, dim * sizeof(uint64_t));
-  // } else { // party == BOB
-  //   uint64_t *input0 = new uint64_t[dim];
-  //   uint64_t *res0 = new uint64_t[dim];
-  //   ioArr[0]->recv_data(input0, dim * sizeof(uint64_t));
-  //   ioArr[0]->recv_data(res0, dim * sizeof(uint64_t));
-
-  //   for (int i = 0; i < 10; i++) {
-  //     uint64_t res_result = (res[i] + res0[i]) & ((1ULL << bitlength) - 1);
-  //     cout << endl;
-  //     cout <<  "origin_sum:" << ((input[i] + input0[i]) & ((1ULL << bitlength) - 1)) << endl;
-  //     cout << "res_sum:" << res_result << "  " << "res_share0:" << res[i] << "  " << "res_share1:" << res0[i] << endl;
-  //   //   int64_t X = signed_val(x[i] + x0[i], bw_x);
-  //   //   int64_t Y = signed_val(y[i] + y0[i], bw_x);
-  //   //   int64_t expectedY = X;
-  //   //   if (X < 0)
-  //   //     expectedY = 0;
-  //   //   if (six != 0) {
-  //   //     if (X > int64_t(six))
-  //   //       expectedY = six;
-  //   //   }
-  //   //   // cout << X << "\t" << Y << "\t" << expectedY << endl;
-  //   //   assert(Y == expectedY);
-  //   }
-
-    // cout << "ReLU" << (six == 0 ? "" : "6") << " Tests Passed" << endl;
-
-    // delete[] input0;
-    // delete[] res0;
-  // }
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), dim * sizeof(int32_t));
+  } else { // party == BOB
+    int32_t *input0 = new int32_t[dim];
+    ioArr[0]->recv_data(input0, dim * sizeof(int32_t));
+    int error = 0;
+    for (uint32_t i = 0; i < dim; i++) {
+      input({i}) = (input({i}) + input0[i]) & ((1ULL << 4) - 1);
+      if(input({i})!=(input2({i})>0?input2({i}):0)) {
+        error++;
+      }
+      // cout << "input[" << i << "] = " << input({i}) << endl;
+    }
+    input.print();
+    cout << "error = " << error << endl;
+    delete[] input0;
+  }
 
   /**** Process & Write Benchmarking Data *****/
   /********************************************/
