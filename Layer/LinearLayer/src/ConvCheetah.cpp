@@ -269,7 +269,7 @@ Tensor<int64_t> Conv2DCheetah::ExtractResult(Tensor<UnifiedPlaintext> ConvResult
                 size_t beta = (jprime * s) / (WW - h + 1);
                 size_t des = OW - c * CW * HW * WW + i  * WW + j;
                 auto interm = *(ConvResultPlain({theta, alpha, beta}).hplain().data() + des);
-                interm = (interm > plain / 2) ? (interm - plain) : interm;
+                //interm = (interm > plain / 2) ? (interm - plain) : interm;
                 finalResult({cprime, iprime, jprime}) = interm;
             }
         }
