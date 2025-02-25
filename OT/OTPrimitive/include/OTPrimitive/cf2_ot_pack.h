@@ -17,12 +17,12 @@ class IKNPOTPack : public OTPack<T> {
     this->io = io;
 
     for (int i = 0; i < KKOT_TYPES; i++) {
-      this->kkot[i] = new SplitKKOT<NetIO>(this->party, io, 1 << (i + 1));
+      this->kkot[i] = new SplitKKOT<Utils::NetIO>(this->party, io, 1 << (i + 1));
       // cout << this->kkot[i]->te << endl;
     }
     cout << "iknp_straight" << endl;
-    this->iknp_straight = new SplitIKNP<NetIO>(this->party, io);
-    this->iknp_reversed = new SplitIKNP<NetIO>(3 - this->party, io);
+    this->iknp_straight = new SplitIKNP<Utils::NetIO>(this->party, io);
+    this->iknp_reversed = new SplitIKNP<Utils::NetIO>(3 - this->party, io);
     this->do_setup = false;
     if (do_setup) {
       cout << "SetupBaseOTs" << endl;

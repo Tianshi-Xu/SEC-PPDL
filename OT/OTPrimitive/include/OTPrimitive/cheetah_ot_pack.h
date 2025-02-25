@@ -23,7 +23,7 @@ class VOLEOTPack : public OTPack<T> {
 
   T *ios[1];
 
-  VOLEOTPack(T *io, int party, bool do_setup = true) {
+  VOLEOTPack(T *io, int party, bool do_setup = true): OTPack<T>(io, party, do_setup) {
     std::cout << "using silent ot pack" << std::endl;
 
     this->party = party;
@@ -32,26 +32,26 @@ class VOLEOTPack : public OTPack<T> {
 
     ios[0] = io;
     silent_ot = new SilentOT<T>(party, 1, ios, false, true,
-                                         party == sci::ALICE
+                                         party == Utils::ALICE
                                              ? PRE_OT_DATA_REG_SEND_FILE_ALICE
                                              : PRE_OT_DATA_REG_RECV_FILE_BOB);
     silent_ot_reversed = new SilentOT<T>(
         3 - party, 1, ios, false, true,
-        party == sci::ALICE ? PRE_OT_DATA_REG_RECV_FILE_ALICE
+        party == Utils::ALICE ? PRE_OT_DATA_REG_RECV_FILE_ALICE
                             : PRE_OT_DATA_REG_SEND_FILE_BOB);
 
     for (int i = 0; i < KKOT_TYPES; i++) {
-      kkot[i] = new SilentOTN<T>(silent_ot, 1 << (i + 1));
+      this->kkot[i] = new SilentOTN<T>(silent_ot, 1 << (i + 1));
     }
 
-    iknp_straight = silent_ot;
-    iknp_reversed = silent_ot_reversed;
+    this->iknp_straight = silent_ot;
+    this->iknp_reversed = silent_ot_reversed;
   }
 
   ~VOLEOTPack() {
     delete silent_ot;
-    for (int i = 0; i < KKOT_TYPES; i++) delete kkot[i];
-    delete iknp_reversed;
+    for (int i = 0; i < KKOT_TYPES; i++) delete this->kkot[i];
+    delete this->iknp_reversed;
   }
 
   void SetupBaseOTs() {}

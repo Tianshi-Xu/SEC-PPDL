@@ -81,7 +81,7 @@ public:
         for (int i = 0; i < size; i++) {
             corr_data[i] = (x[i] * (1 - 2 * uint64_t(sel[i]))) & mask_y;
         }
-        if (party == ALICE) {
+        if (party == Utils::ALICE) {
             otpack->iknp_straight->send_cot(data_S, corr_data, size, bw_y);
             otpack->iknp_reversed->recv_cot(data_R, (bool *)sel, size, bw_y);
         } else {  // party == BOB
@@ -144,7 +144,7 @@ public:
         for (int i = 0; i < size; i++) {
             tmp_x[i] = x[i] & shift_mask;
             msb_xb[i] = (x[i] >> shift) & 1;
-            if (party == BOB) tmp_x[i] = (shift_mask - tmp_x[i]) & shift_mask;
+            if (party == Utils::BOB) tmp_x[i] = (shift_mask - tmp_x[i]) & shift_mask;
         }
 
         mill->compare(msb_x, tmp_x, size, bw_x - 1, true);  // computing greater_than

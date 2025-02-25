@@ -29,14 +29,14 @@ using namespace OTPrimitive;
 using namespace Utils;
 using namespace OTProtocol;
 namespace OTProtocol {
-AuxProtocols::AuxProtocols(int party, NetIO *io,
-                           OTPack<NetIO> *otpack) {
+AuxProtocols::AuxProtocols(int party, Utils::NetIO *io,
+                           OTPack<Utils::NetIO> *otpack) {
   this->party = party;
   this->io = io;
   this->otpack = otpack;
-  this->mill = new MillionaireProtocol<NetIO>(party, io, otpack);
+  this->mill = new MillionaireProtocol<Utils::NetIO>(party, io, otpack);
   this->mill_and_eq =
-      new MillionaireWithEquality<NetIO>(party, io, otpack);
+      new MillionaireWithEquality<Utils::NetIO>(party, io, otpack);
 }
 
 AuxProtocols::~AuxProtocols() {
@@ -51,7 +51,7 @@ void AuxProtocols::wrap_computation(uint64_t *x, uint8_t *y, int32_t size,
 
   uint64_t *tmp_x = new uint64_t[size];
   for (int i = 0; i < size; i++) {
-    if (party == ALICE)
+    if (party == Utils::ALICE)
       tmp_x[i] = x[i] & mask;
     else
       tmp_x[i] = (mask - x[i]) & mask;  // 2^{bw_x} - 1 - x[i]
@@ -74,7 +74,7 @@ void AuxProtocols::B2A(uint8_t *x, uint64_t *y, int32_t size, int32_t bw_y) {
   }
   uint64_t mask = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
 
-  if (party == ALICE) {
+  if (party == Utils::ALICE) {
     uint64_t *corr_data = new uint64_t[size];
     for (int i = 0; i < size; i++) {
       corr_data[i] = (-2 * uint64_t(x[i])) & mask;
@@ -85,7 +85,7 @@ void AuxProtocols::B2A(uint8_t *x, uint64_t *y, int32_t size, int32_t bw_y) {
       y[i] = (uint64_t(x[i]) - y[i]) & mask;
     }
     delete[] corr_data;
-  } else {  // party == BOB
+  } else {  // party == Utils::BOB
     otpack->iknp_straight->recv_cot(y, (bool *)x, size, bw_y);
 
     for (int i = 0; i < size; i++) {
@@ -97,10 +97,10 @@ void AuxProtocols::B2A(uint8_t *x, uint64_t *y, int32_t size, int32_t bw_y) {
 template <typename T>
 void AuxProtocols::lookup_table(T **spec, T *x, T *y, int32_t size,
                                 int32_t bw_x, int32_t bw_y) {
-  if (party == ALICE) {
+  if (party == Utils::ALICE) {
     assert(x == nullptr);
     assert(y == nullptr);
-  } else {  // party == BOB
+  } else {  // party == Utils::BOB
     assert(spec == nullptr);
   }
   assert(bw_x <= 8 && bw_x >= 2);
@@ -111,7 +111,7 @@ void AuxProtocols::lookup_table(T **spec, T *x, T *y, int32_t size,
   T mask_y = (bw_y == T_size ? -1 : ((1ULL << bw_y) - 1));
   uint64_t N = 1 << bw_x;
 
-  if (party == ALICE) {
+  if (party == Utils::ALICE) {
     PRG128 prg;
     T **data = new T *[size];
     for (int i = 0; i < size; i++) {
@@ -125,7 +125,7 @@ void AuxProtocols::lookup_table(T **spec, T *x, T *y, int32_t size,
 
     for (int i = 0; i < size; i++) delete[] data[i];
     delete[] data;
-  } else {  // party == BOB
+  } else {  // party == Utils::BOB
     uint8_t *choice = new uint8_t[size];
     for (int i = 0; i < size; i++) {
       choice[i] = x[i] & mask_x;
@@ -141,7 +141,7 @@ void AuxProtocols::lookup_table(T **spec, T *x, T *y, int32_t size,
 void AuxProtocols::MSB_to_Wrap(uint64_t *x, uint8_t *msb_x, uint8_t *wrap_x,
                                int32_t size, int32_t bw_x) {
   assert(bw_x <= 64);
-  if (party == ALICE) {
+  if (party == Utils::ALICE) {
     PRG128 prg;
     prg.random_bool((bool *)wrap_x, size);
     uint8_t **spec = new uint8_t *[size];
@@ -160,7 +160,7 @@ void AuxProtocols::MSB_to_Wrap(uint64_t *x, uint8_t *msb_x, uint8_t *wrap_x,
 
     for (int i = 0; i < size; i++) delete[] spec[i];
     delete[] spec;
-  } else {  // party == BOB
+  } else {  // party == Utils::BOB
     uint8_t *lut_in = new uint8_t[size];
     for (int i = 0; i < size; i++) {
       lut_in[i] = (((x[i] >> (bw_x - 1)) & 1) << 1) | msb_x[i];
@@ -267,7 +267,7 @@ void AuxProtocols::AND(uint8_t *x, uint8_t *y, uint8_t *z, int32_t size) {
                          size);
 
   int size_used = size / 8;
-  if (party == ALICE) {
+  if (party == Utils::ALICE) {
     // Send share of e and f
     io->send_data(ei, size_used);
     io->send_data(ei, size_used);
