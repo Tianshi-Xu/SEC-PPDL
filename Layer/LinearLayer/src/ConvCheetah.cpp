@@ -118,7 +118,7 @@ Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, cons
     for (size_t i = 0; i < M; i++){
         for (size_t j = 0; j < Hprime; j++){
             for (size_t k = 0; k < Wprime; k++){
-                biasFuse({i, j, k}) = bias({i, j, k}) * (*beta)({j});
+                biasFuse({i, j, k}) = bias({i, j, k}) * (*gamma)({j}) + (*beta)({j});
             }
         }
     }
