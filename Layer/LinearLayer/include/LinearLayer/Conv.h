@@ -73,6 +73,9 @@ public:
 
     Conv2DCheetah(size_t H, size_t W, HEEvaluator* he, const Tensor<uint64_t>& kernel, size_t stride, const Tensor<uint64_t>& bias, uint64_t padding);
 
+    Conv2DCheetah(size_t H, size_t W, HEEvaluator* he, const Tensor<uint64_t>& kernel, 
+                  size_t stride, const Tensor<uint64_t>& bias, uint64_t padding, Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
+
     
     Tensor<uint64_t> operator()(Tensor<uint64_t> x);
 
