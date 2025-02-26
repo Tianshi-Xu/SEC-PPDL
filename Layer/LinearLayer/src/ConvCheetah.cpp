@@ -345,6 +345,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
 
     return Ktg;
 }
+
 Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor){
     Tensor<UnifiedCiphertext> Talphabeta({dC, dH, dW}, HOST);
     for (size_t gama = 0; gama < dC; gama++){

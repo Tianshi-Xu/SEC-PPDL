@@ -24,13 +24,13 @@ class Conv2D : public Module {
         Tensor<uint64_t> weight;
         Tensor<HE::unified::UnifiedPlaintext> weight_pt;  // We denote all plaintext(ciphertext) variables with suffix '_pt'('_ct')
         Tensor<uint64_t> bias;
-        HE::HEEvaluator* HE;
+        HE::HEEvaluator* he;
         bool fused_bn;
         // TODO: remove the parameter `in_feature_size`
-        Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
+        Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* he);
 
         // TODO: implement this constructor
-        Conv2D(uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t padding, HE::HEEvaluator* HE);
+        Conv2D(uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t padding, HE::HEEvaluator* he);
     
         virtual ~Conv2D() = default;
     
@@ -55,7 +55,7 @@ class Conv2DNest : public Conv2D {
         uint64_t input_rot;
         vector<uint64_t> tmp_w;
 
-        Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
+        Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* he);
         Tensor<uint64_t> operator()(Tensor<uint64_t> x);
 
     private:
@@ -79,7 +79,6 @@ public:
     Conv2DCheetah(size_t H, size_t W, HEEvaluator* he, const Tensor<uint64_t>& kernel, 
                   size_t stride, const Tensor<uint64_t>& bias, uint64_t padding, Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
 
-    
     Tensor<uint64_t> operator()(Tensor<uint64_t> x);
 
 private:

@@ -7,13 +7,13 @@ using namespace HE::unified;
 
 namespace LinearLayer {
 // Extract shared parameters. Let dim(w) = {Co, Ci, k, k}
-Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
+Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* he)
     : in_feature_size(in_feature_size), 
       stride(stride),
       padding(padding),
       weight(weight), 
       bias(bias), 
-      HE(HE)
+      he(he)
 {
     std::vector<size_t> weight_shape = weight.shape();
 
