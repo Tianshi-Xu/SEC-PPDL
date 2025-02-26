@@ -81,11 +81,11 @@ Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, cons
     M = shape[0];
     h = shape[2];
     Tensor<uint64_t> kernelFuse({M, C, h, h}, 0);
-    for (size_t i = 0; i < C; i++){
-        for (size_t j = 0; j < M; j++){
+    for (size_t i = 0; i < M; i++){
+        for (size_t j = 0; j < C; j++){
             for (size_t k = 0; k < h; k++){
                 for (size_t l = 0; l < h; l++){
-                    kernelFuse({i, j, k, l}) = kernel({i, j, k, l}) * (*gamma)({j});
+                    kernelFuse({i, j, k, l}) = kernel({i, j, k, l}) * (*gamma)({i});
                 }
             }
         }
@@ -118,7 +118,7 @@ Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, cons
     for (size_t i = 0; i < M; i++){
         for (size_t j = 0; j < Hprime; j++){
             for (size_t k = 0; k < Wprime; k++){
-                biasFuse({i, j, k}) = bias({i, j, k}) * (*gamma)({j}) + (*beta)({j});
+                biasFuse({i, j, k}) = bias({i, j, k}) * (*gamma)({i}) + (*beta)({i});
             }
         }
     }
