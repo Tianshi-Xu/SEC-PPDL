@@ -3,6 +3,7 @@
 #include <NonlinearLayer/ReLU.h>
 #include <NonlinearOperator/Truncation.h>
 
+namespace Model{
 template <typename T, typename IO=Utils::NetIO>
 class CryptoPrimitive{
     public:
@@ -11,8 +12,8 @@ class CryptoPrimitive{
         NonlinearOperator::Truncation<T>* truncation;
         int32_t num_threads;
         int party;
-
-        CryptoPrimitive(int party, HE::HEEvaluator* HE, NonlinearLayer::ReLU<IO, T>* relu, NonlinearOperator::Truncation<T>* truncation, int32_t num_threads){
+        Datatype::CONV_TYPE conv_type;
+        CryptoPrimitive(int party, HE::HEEvaluator* HE, Datatype::CONV_TYPE conv_type, NonlinearLayer::ReLU<IO, T>* relu, NonlinearOperator::Truncation<T>* truncation, int32_t num_threads){
             this->HE = HE;
             this->relu = relu;
             this->truncation = truncation;
@@ -48,3 +49,4 @@ class CryptoPrimitive{
         NonlinearLayer::ReLUProtocol<Utils::NetIO, T> **reluprotocol;
         NonlinearOperator::TruncationProtocol **truncationProtocol;
 };
+}

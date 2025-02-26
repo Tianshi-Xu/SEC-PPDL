@@ -11,6 +11,7 @@
 
 namespace Datatype {
 enum OT_TYPE { IKNP = 0, VOLE };
+enum CONV_TYPE { Cheetah = 0, Nest};
 // Tensor类定义
 template <typename T>
 class Tensor {
