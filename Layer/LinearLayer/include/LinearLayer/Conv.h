@@ -91,6 +91,7 @@ private:
     Tensor<UnifiedCiphertext> sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor);
     Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
     Tensor<uint64_t> HETOTensor (Tensor<UnifiedCiphertext> inputCipher);
+    void fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
 };
 
 }
