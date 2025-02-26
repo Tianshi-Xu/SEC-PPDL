@@ -129,4 +129,13 @@ public:
       // Input bitwidth
       int32_t bw);
 };
+
+class ReLUTruncationProtocol {
+    public:
+        TruncationProtocol *truncationProtocol;
+        ReLUTruncationProtocol(TruncationProtocol *truncationProtocol){
+            this->truncationProtocol = truncationProtocol;
+        }
+};
+
 } // namespace OTProtocol

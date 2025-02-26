@@ -21,7 +21,7 @@ class CryptoPrimitive{
             this->party = party;
         }
 
-        CryptoPrimitive(int party, HE::HEEvaluator* HE, int32_t num_threads, Datatype::OT_TYPE ot_type){
+        CryptoPrimitive(int party, HE::HEEvaluator* HE, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type){
             this->party = party;
             this->HE = HE;
             this->num_threads = num_threads;
@@ -37,7 +37,7 @@ class CryptoPrimitive{
                 } else {
                     this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
                 }
-                this->reluprotocol[i] = new ReLURingProtocol<IO, T>(party, ioArr[i], 4, MILL_PARAM, otpackArr[i], ot_type);
+                this->reluprotocol[i] = new ReLURingProtocol<IO, T>(party, ioArr[i], bit_length, MILL_PARAM, otpackArr[i], ot_type);
                 this->truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
             }
             this->relu = new NonlinearLayer::ReLU<IO, T>(party, HE, num_threads, ot_type);

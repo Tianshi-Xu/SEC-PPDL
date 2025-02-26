@@ -147,7 +147,6 @@ void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
   return;
 }
 
-#if !USE_CHEETAH
 void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
                           int32_t shift, int32_t bw, bool signed_arithmetic,
                           uint8_t *msb_x, bool _dummy) {
@@ -237,9 +236,6 @@ void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
 
   return;
 }
-#else
-#include "truncation-cheetah.cpp"
-#endif
 
 // void Truncation::truncate_red_then_ext(int32_t dim, uint64_t *inA,
 //                                        uint64_t *outB, int32_t shift,
