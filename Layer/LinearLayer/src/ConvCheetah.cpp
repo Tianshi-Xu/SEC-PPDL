@@ -69,6 +69,69 @@ Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluato
 
 };
 
+
+void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
+    Tensor<uint64_t> kernelFuse({M, C, h, h}, 0);
+    for (size_t i = 0; i < M; i++){
+        for (size_t j = 0; j < C; j++){
+            for (size_t k = 0; k < h; k++){
+                for (size_t l = 0; l < h; l++){
+                    kernelFuse({i, j, k, l}) = this->weight({i, j, k, l}) * (*gamma)({i});
+                }
+            }
+        }
+    }
+    this->weight = kernelFuse;
+    Tensor<uint64_t> biasFuse({M, Hprime, Wprime}, 0);
+
+    for (size_t i = 0; i < M; i++){
+        for (size_t j = 0; j < Hprime; j++){
+            for (size_t k = 0; k < Wprime; k++){
+                biasFuse({i, j, k}) = this->bias({i, j, k}) * (*gamma)({i}) + (*beta)({i});
+            }
+        }
+    }
+    this->bias = biasFuse;
+}
+
+
+Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, const Tensor<uint64_t>& kernel, 
+                  size_t stride, const Tensor<uint64_t>& bias, uint64_t padding, Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta)
+    : Conv2D(Height, stride, padding, kernel, bias, he)
+{
+    this->fused_bn = true;
+    this->he = he;
+    std::vector<size_t> shape = kernel.shape();
+    C = shape[1];
+    M = shape[0];
+    h = shape[2];
+    polyModulusDegree = he->polyModulusDegree;
+    this->padding = padding;
+    H = Height + 2 * padding;
+    W = Width + 2 * padding;
+    s = stride;
+    int optimalHw = H, optimalWw = W;
+    FindOptimalPartition(H, W, h, C, polyModulusDegree, &optimalHw, &optimalWw);
+    HW = optimalHw;
+    WW = optimalWw;
+    CW = min(C, (polyModulusDegree / (HW * WW)));
+    MW = min(M, (polyModulusDegree / (CW * HW * WW)));
+    dM = DivUpper(M,MW);
+    dC = DivUpper(C,CW);
+    dH = DivUpper(H - h + 1 , HW - h + 1);
+    dW = DivUpper(W - h + 1 , WW - h + 1);
+    OW = HW * WW * (MW * CW - 1) + WW * (h - 1) + h - 1;
+    Hprime = (H - h + s) / s;
+    Wprime = (W - h + s) / s;
+    HWprime = (HW - h + s) / s;
+    WWprime = (WW - h + s) / s;
+    polyModulusDegree = he->polyModulusDegree;
+    plain = he->plain_mod;
+    this->fuse_bn(gamma, beta);
+    weight_pt = this->PackWeight();
+};
+
+
 // 加密张量
 Tensor<UnifiedCiphertext> Conv2DCheetah::EncryptTensor(Tensor<UnifiedPlaintext> plainTensor) {
     std::vector<size_t> shapeTab = {dC, dH, dW};
