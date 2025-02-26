@@ -9,4 +9,4 @@ project(test)
 # target_link_libraries(test_tensor PUBLIC Datatype)
 
 add_executable(test_relu ${CMAKE_CURRENT_LIST_DIR}/src/TestReLU.cpp)
-target_link_libraries(test_relu PUBLIC NonlinearLayer)
+target_link_libraries(test_relu PUBLIC NonlinearOperator NonlinearLayer)

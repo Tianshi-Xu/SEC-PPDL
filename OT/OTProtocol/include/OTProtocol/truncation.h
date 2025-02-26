@@ -1,23 +1,3 @@
-/*
-Authors: Mayank Rathee, Deevashwer Rathee
-Copyright:
-Copyright (c) 2021 Microsoft Research
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
 #pragma once
 #include "aux-protocols.h"
 #include "equality.h"
@@ -29,7 +9,7 @@ using namespace OTProtocol;
 
 namespace OTProtocol {
 
-class Truncation {
+class TruncationProtocol {
 public:
   Utils::NetIO *io = nullptr;
   OTPrimitive::OTPack<Utils::NetIO> *otpack;
@@ -43,12 +23,12 @@ public:
   int party;
 
   // Constructor
-  Truncation(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
+  TruncationProtocol(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
              OTProtocol::AuxProtocols *auxp = nullptr,
              OTProtocol::MillionaireWithEquality<Utils::NetIO> *mill_eq_in = nullptr);
 
   // Destructor
-  ~Truncation();
+  ~TruncationProtocol();
 
   // Truncate (right-shift) by shift in the same ring (round towards -inf)
   void truncate(

@@ -178,9 +178,7 @@ public:
       block_s = bool_to256(s);
     } else {
       prg.random_bool(s, lambda);
-      cout << "setup_send" << endl;
       base_ot->recv(k0, s, lambda);
-      cout << "setup_send done" << endl;
       block_s = bool_to256(s);
     }
     for (int i = 0; i < lambda; ++i)

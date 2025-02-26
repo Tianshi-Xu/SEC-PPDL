@@ -1,29 +1,8 @@
-/*
-Authors: Mayank Rathee, Deevashwer Rathee
-Copyright:
-Copyright (c) 2021 Microsoft Research
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
 #include <OTProtocol/truncation.h>
 
 namespace OTProtocol {
 
-Truncation::Truncation(int party, NetIO *io, OTPrimitive::OTPack<NetIO> *otpack,
+TruncationProtocol::TruncationProtocol(int party, NetIO *io, OTPrimitive::OTPack<NetIO> *otpack,
                        AuxProtocols *auxp,
                        MillionaireWithEquality<NetIO> *mill_eq_in) {
   this->party = party;
@@ -47,7 +26,7 @@ Truncation::Truncation(int party, NetIO *io, OTPrimitive::OTPack<NetIO> *otpack,
   this->triple_gen = this->mill->triple_gen;
 }
 
-Truncation::~Truncation() {
+TruncationProtocol::~TruncationProtocol() {
   if (del_aux) {
     delete this->aux;
   }
@@ -57,7 +36,7 @@ Truncation::~Truncation() {
   delete this->eq;
 }
 
-void Truncation::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
+void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
                           int32_t shift, int32_t bw, bool signed_arithmetic,
                           uint8_t *msb_x) {
   if (signed_arithmetic == false) {
@@ -169,7 +148,7 @@ void Truncation::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
 }
 
 #if !USE_CHEETAH
-void Truncation::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
+void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
                           int32_t shift, int32_t bw, bool signed_arithmetic,
                           uint8_t *msb_x, bool _dummy) {
   if (shift == 0) {
@@ -178,18 +157,18 @@ void Truncation::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
   }
   assert((bw - shift) > 0 && "Truncation shouldn't truncate the full bitwidth");
   assert((signed_arithmetic && (bw - shift - 1 >= 0)) || !signed_arithmetic);
-  assert(inA != outB);
+  // assert(inA != outB);
 
   uint64_t mask_bw = (bw == 64 ? -1 : ((1ULL << bw) - 1));
   uint64_t mask_shift = (shift == 64 ? -1 : ((1ULL << shift) - 1));
   uint64_t mask_upper =
       ((bw - shift) == 64 ? -1 : ((1ULL << (bw - shift)) - 1));
 
-  uint64_t *inA_orig = new uint64_t[dim];
+  // uint64_t *inA_orig = new uint64_t[dim];
 
   if (signed_arithmetic && (party == ALICE)) {
     for (int i = 0; i < dim; i++) {
-      inA_orig[i] = inA[i];
+      // inA_orig[i] = inA[i];
       inA[i] = ((inA[i] + (1ULL << (bw - 1))) & mask_bw);
     }
   }
@@ -243,10 +222,10 @@ void Truncation::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
   if (signed_arithmetic && (party == ALICE)) {
     for (int i = 0; i < dim; i++) {
       outB[i] = ((outB[i] - (1ULL << (bw - shift - 1))) & mask_bw);
-      inA[i] = inA_orig[i];
+      // inA[i] = inA_orig[i];
     }
   }
-  delete[] inA_orig;
+  // delete[] inA_orig;
   delete[] inA_lower;
   delete[] inA_upper;
   delete[] wrap_lower;
@@ -282,7 +261,7 @@ void Truncation::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
 //   return;
 // }
 
-void Truncation::truncate_and_reduce(int32_t dim, uint64_t *inA, uint64_t *outB,
+void TruncationProtocol::truncate_and_reduce(int32_t dim, uint64_t *inA, uint64_t *outB,
                                      int32_t shift, int32_t bw) {
   if (shift == 0) {
     memcpy(outB, inA, sizeof(uint64_t) * dim);

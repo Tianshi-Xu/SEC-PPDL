@@ -1,4 +1,4 @@
-#include <NonlinearOperator/comp.h>
+#include <NonlinearOperator/Truncation.h>
 
 namespace NonlinearOperator {
 

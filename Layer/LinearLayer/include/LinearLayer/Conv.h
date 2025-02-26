@@ -25,12 +25,15 @@ class Conv2D : public Module {
         Tensor<HE::unified::UnifiedPlaintext> weight_pt;  // We denote all plaintext(ciphertext) variables with suffix '_pt'('_ct')
         Tensor<uint64_t> bias;
         HE::HEEvaluator* HE;
+        bool fused_bn;
 
         Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
     
         virtual ~Conv2D() = default;
     
         virtual Tensor<uint64_t> operator()(Tensor<uint64_t> x) = 0;
+
+        virtual void fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta) = 0;
 
     private:
         virtual Tensor<HE::unified::UnifiedPlaintext> PackWeight() = 0;

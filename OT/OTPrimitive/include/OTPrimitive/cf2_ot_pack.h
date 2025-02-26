@@ -25,9 +25,9 @@ class IKNPOTPack : public OTPack<T> {
     this->iknp_reversed = new SplitIKNP<Utils::NetIO>(3 - this->party, io);
     this->do_setup = false;
     if (do_setup) {
-      cout << "SetupBaseOTs" << endl;
+      // cout << "SetupBaseOTs" << endl;
       SetupBaseOTs();
-      cout << "SetupBaseOTs done" << endl;
+      // cout << "SetupBaseOTs done" << endl;
     }
   }
 
@@ -41,7 +41,6 @@ class IKNPOTPack : public OTPack<T> {
     switch (this->party) {
       case 1:
         this->kkot[0]->setup_send(true);
-        cout << "kkot[0]->setup_send done" << endl;
         this->iknp_straight->setup_send();
         this->iknp_reversed->setup_recv();
         for (int i = 1; i < KKOT_TYPES; i++) {
@@ -50,7 +49,6 @@ class IKNPOTPack : public OTPack<T> {
         break;
       case 2:
         this->kkot[0]->setup_recv(true);
-        cout << "kkot[0]->setup_recv done" << endl;
         this->iknp_straight->setup_recv();
         this->iknp_reversed->setup_send();
         for (int i = 1; i < KKOT_TYPES; i++) {
