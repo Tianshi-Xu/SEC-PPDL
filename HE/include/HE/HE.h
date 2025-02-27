@@ -28,11 +28,14 @@ class HEEvaluator {
     bool server = false;
     NetIO *IO = nullptr;
     uint64_t polyModulusDegree = 8192;
-    uint64_t plain_mod = 0;
+    uint64_t plainWidth = 20;
+    uint64_t plain_mod = 1048576;
 
     HEEvaluator(
         NetIO &IO,
         bool server,
+        size_t polyModulusDegree,
+        size_t plainWidth,
         LOCATION backend = HOST
     ){
         this->IO = &IO;
@@ -41,6 +44,9 @@ class HEEvaluator {
             throw std::invalid_argument("Currently not supported");
         }
         this->backend = backend;
+        this->plainWidth = plainWidth;
+        this->polyModulusDegree = polyModulusDegree;
+
     }
 
     ~HEEvaluator() = default;
@@ -51,12 +57,11 @@ class HEEvaluator {
         relinKeys  = new RelinKeys();
         galoisKeys = new unified::UnifiedGaloisKeys(HOST);
         EncryptionParameters parms(scheme_type::bfv);
-        context = new unified::UnifiedContext(polyModulusDegree, 20, backend);
+        context = new unified::UnifiedContext(polyModulusDegree, plainWidth, backend);
         encoder = new unified::UnifiedBatchEncoder(*context);
         evaluator = new unified::UnifiedEvaluator(*context);
-        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, 20));
+        parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, plainWidth));
         plain_mod = parms.plain_modulus().value();
-        cout << "plain_mod: " << plain_mod << endl;
         if (server) {
             uint64_t pk_sze{0};
             uint64_t gk_sze{0};
@@ -138,7 +143,7 @@ class HEEvaluator {
 
         // Send each Ciphertext in the vector using SendCipherText
         for (size_t i = 0; i < vec_size; i++) {
-            SendCipherText(ct_vec({i}));
+            SendCipherText(ct_vec(i));
         }
     }
 
@@ -161,7 +166,7 @@ class HEEvaluator {
 
         // Receive ciphertexts
         for (size_t i = 0; i < vec_size; ++i){
-            ReceiveCipherText(ct_vec({i}));
+            ReceiveCipherText(ct_vec(i));
         }
     }
 
