@@ -42,7 +42,6 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
 
 
 Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
-    std::cout << "HEToSS" << std::endl;
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
     Tensor<uint64_t> x(scalar_shape);
@@ -106,5 +105,99 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     x.reshape(scalar_shape);
     return x;
 };
+
+
+Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
+{
+    std::vector<size_t> shapeTab = x.shape();
+    auto polyModulusDegree = HE->polyModulusDegree;
+    auto plain = HE->plain_mod;
+    size_t numPoly = 1;
+    for (int num : shapeTab) {
+        numPoly *= num;
+    }
+
+    int len = shapeTab.back(); 
+    shapeTab.pop_back();
+    numPoly /= len;
+    Tensor<UnifiedPlaintext> T(shapeTab,Datatype::HOST);
+    for (size_t i = 0; i < numPoly; i++){
+        vector<uint64_t> Tsubv(len, 0);
+        for (size_t j = 0; j < len; j++){
+            Tsubv[j] = x(i * len + j);
+        }
+        T(i).hplain().resize(polyModulusDegree);
+        seal::util::modulo_poly_coeffs(Tsubv, len, plain, T(i).hplain().data());
+        std::fill_n(T(i).hplain().data() + len, polyModulusDegree - len, 0);
+    }
+    Tensor<UnifiedCiphertext> finalpack(shapeTab, HE->GenerateZeroCiphertext());
+    if (!HE->server){
+        //客服端
+        Tensor<UnifiedCiphertext> enc(shapeTab, HE->GenerateZeroCiphertext());
+        for (size_t i = 0; i < numPoly; i++){
+            HE->encryptor->encrypt(T(i), enc(i));
+        }
+        // enc.flatten();
+        HE->SendEncVec(enc);
+    }else{
+        //服务器端
+        Tensor<UnifiedCiphertext> encflatten({numPoly}, HE->GenerateZeroCiphertext());
+        HE->ReceiveEncVec(encflatten);
+        Tensor<UnifiedCiphertext> enc(shapeTab, HE->GenerateZeroCiphertext());
+        for (size_t i = 0; i < numPoly; i++){
+            HE->evaluator->add_plain(encflatten(i), T(i), enc(i));
+        }
+        finalpack = enc;
+    }
+    return finalpack;
+}
+
+
+Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE::HEEvaluator* HE)
+{
+    auto shapeTab = out_ct.shape();
+    Tensor<UnifiedCiphertext> cipherMask(shapeTab,HE->GenerateZeroCiphertext());
+    Tensor<UnifiedPlaintext> plainMask(shapeTab,HOST);
+    size_t numPoly = 1;
+    for (int num : shapeTab) {
+        numPoly *= num;
+    }
+    auto tensorShapeTab = shapeTab;
+    tensorShapeTab.push_back(HE->polyModulusDegree);
+
+    Tensor<uint64_t> tensorMask(tensorShapeTab, 0);
+    UnifiedPlaintext plainMaskInv(HOST);
+    if (HE->server) {
+        int64_t mask;
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int64_t> dist(0, HE->plain_mod - 1);
+        for (size_t i = 0; i < numPoly; i++){
+            plainMask(i).hplain().resize(HE->polyModulusDegree);
+            plainMaskInv.hplain().resize(HE->polyModulusDegree);
+            for (size_t l = 0; l < HE->polyModulusDegree; l++){
+                mask = dist(gen);
+                *(plainMask(i).hplain().data() + l) = mask;
+                tensorMask((i) * HE->polyModulusDegree + l) = mask;
+                mask = HE->plain_mod - mask;
+                *(plainMaskInv.hplain().data() + l) = mask;   
+            }
+            HE->evaluator->add_plain(out_ct(i), plainMaskInv, cipherMask(i));
+        }
+        cipherMask.flatten();
+        HE->SendEncVec(cipherMask);
+        return tensorMask;
+
+    }else{
+        HE->ReceiveEncVec(cipherMask);
+        for (size_t i = 0; i < numPoly; i++){
+            HE->decryptor->decrypt(cipherMask(i), plainMask(i));
+            for (size_t j = 0; j < HE->polyModulusDegree; j++){
+                tensorMask(i * HE->polyModulusDegree + j) = *(plainMask(i).hplain().data() + j);
+            }
+        }
+        return tensorMask;
+    }
+}
 
 } // namespace Operator
