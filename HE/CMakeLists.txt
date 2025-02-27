@@ -47,6 +47,7 @@ if(NOT USE_HE_GPU)
     target_link_libraries(HE PUBLIC
         SEAL::seal
         Datatype
+        Utils
     )
 else()
     target_compile_definitions(HE PUBLIC USE_HE_GPU)
@@ -55,5 +56,6 @@ else()
         phantom::Phantom
         CUDA::cudart # <cuda_runtime_api.h>
         Datatype
+        Utils
     )
 endif()

@@ -42,6 +42,7 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
 
 
 Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
+    std::cout << "HEToSS" << std::endl;
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
     Tensor<uint64_t> x(scalar_shape);

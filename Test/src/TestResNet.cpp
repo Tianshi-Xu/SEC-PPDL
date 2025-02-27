@@ -33,25 +33,37 @@ int main(int argc, char **argv) {
 
   /********** Setup IO and Base OTs ***********/
   /********************************************/
-  for (int i = 0; i < num_threads; i++) {
-    ioArr[i] =
-        new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
-    if (i & 1) {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
-    } else {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
-    }
-    reluprotocol[i] = new ReLURingProtocol<Utils::NetIO, int32_t>(party, ioArr[i], bitlength, MILL_PARAM, otpackArr[i], Datatype::IKNP);
-    truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
+  // for (int i = 0; i < num_threads; i++) {
+  //   ioArr[i] =
+  //       new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
+  //   if (i & 1) {
+  //     otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
+  //   } else {
+  //     otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
+  //   }
+  //   reluprotocol[i] = new ReLURingProtocol<Utils::NetIO, int32_t>(party, ioArr[i], bitlength, MILL_PARAM, otpackArr[i], Datatype::IKNP);
+  //   truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
+  // }
+  // std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
+  // for (int i = 0; i < num_threads; i++) {
+  //   auto temp = ioArr[i]->counter;
+  //   comm_threads[i] = temp;
+  //   std::cout << "Thread i = " << i << ", total data sent till now = " << temp
+  //             << std::endl;
+  // }
+  // HE::NetIO netio(address.c_str(), port, party);
+  // std::cout << "netio generated" << std::endl;
+  HE::HEEvaluator he(netio, party);
+  he.GenerateNewKey();
+  CryptoPrimitive<uint64_t> *cryptoPrimitive = new CryptoPrimitive<uint64_t>(party, &he, num_threads, bitlength, Datatype::IKNP, address, port);
+  Bottleneck<uint64_t> bottleneck(16, 64, 256, 1, cryptoPrimitive);
+  Tensor<uint64_t> input({64, 16, 16});
+  if (party == Utils::ALICE) {
+    input.randomize(16);
+    input.print();
   }
-  std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
-  for (int i = 0; i < num_threads; i++) {
-    auto temp = ioArr[i]->counter;
-    comm_threads[i] = temp;
-    std::cout << "Thread i = " << i << ", total data sent till now = " << temp
-              << std::endl;
-  }
-  
+  Tensor<uint64_t> output = bottleneck(input);
+  output.print();
   /************ Generate Test Data ************/
   /********************************************/
   

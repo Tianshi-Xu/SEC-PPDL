@@ -3,7 +3,8 @@
 #include <seal/seal.h>
 #include <vector>
 #include <Datatype/Tensor.h>
-#include <HE/NetIO.h>
+// #include <HE/NetIO.h>
+#include <Utils/net_io_channel.h>
 #include <HE/unified/UnifiedEvk.h>
 #include "HE/unified/UnifiedEncoder.h"
 #include <HE/unified/UnifiedEvaluator.h>

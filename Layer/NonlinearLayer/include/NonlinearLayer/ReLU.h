@@ -2,7 +2,7 @@
 #include "../../../Layer/Module.h"
 #include <OTProtocol/aux-protocols.h>
 #include <OTProtocol/millionaire.h>
-
+#pragma once
 using namespace Datatype;
 using namespace Utils;
 
@@ -14,15 +14,15 @@ extern int32_t kScale;
 
 namespace NonlinearLayer{
 
-template <typename IO, typename T> class ReLUProtocol {
+template <typename T, typename IO> class ReLUProtocol {
   public:
   virtual void relu(T *result, T *share, int num_relu,
             uint8_t *msb = nullptr, bool skip_ot = false) = 0;
 };
 
 
-template <typename IO, typename T>
-class ReLURingProtocol : public ReLUProtocol<IO, T> {
+template <typename T, typename IO>
+class ReLURingProtocol : public ReLUProtocol<T, IO> {
 public:
   IO *io = nullptr;
   OTPrimitive::OTPack<IO> *otpack;
@@ -111,7 +111,7 @@ class ReLU : public Module{
     public:
       int bitwidth;
       int num_threads;
-      ReLU(ReLUProtocol<IO, T> **reluprotocol,int bitwidth=32, int num_threads=4){
+      ReLU(ReLUProtocol<T, IO> **reluprotocol,int bitwidth=32, int num_threads=4){
         this->bitwidth = bitwidth;
         this->num_threads = num_threads;
         this->reluProtocol = reluprotocol;
@@ -140,8 +140,8 @@ class ReLU : public Module{
       }
       
     private:
-      ReLUProtocol<IO, T>** reluProtocol=nullptr;
-      void static relu_thread(ReLUProtocol<IO, T>* reluProtocol, T* result, T* input, int lnum_ops){
+      ReLUProtocol<T, IO>** reluProtocol=nullptr;
+      void static relu_thread(ReLUProtocol<T, IO>* reluProtocol, T* result, T* input, int lnum_ops){
         reluProtocol->relu(result, input, lnum_ops);
       }
 };

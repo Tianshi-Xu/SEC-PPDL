@@ -6,16 +6,16 @@ using namespace Utils;
 namespace OTProtocol {
 class XTProtocol {
 public:
-  NetIO *io = nullptr;
-  OTPack<NetIO> *otpack;
-  TripleGenerator<NetIO> *triple_gen = nullptr;
-  MillionaireProtocol<NetIO> *millionaire = nullptr;
+  Utils::NetIO *io = nullptr;
+  OTPrimitive::OTPack<Utils::NetIO> *otpack;
+  TripleGenerator<Utils::NetIO> *triple_gen = nullptr;
+  MillionaireProtocol<Utils::NetIO> *millionaire = nullptr;
   AuxProtocols *aux = nullptr;
   bool del_aux = false;
   int party;
 
   // Constructor
-  XTProtocol(int party, NetIO *io, OTPack<NetIO> *otpack,
+  XTProtocol(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
              AuxProtocols *auxp = nullptr);
 
   // Destructor

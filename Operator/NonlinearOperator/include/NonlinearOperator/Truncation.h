@@ -6,9 +6,6 @@ namespace NonlinearOperator {
 template <typename T>
 class Truncation {
     public:
-        NetIO *io = nullptr;
-        OTPrimitive::OTPack<NetIO> *otpack = nullptr;
-        int party;
         int num_threads;
         
         Truncation(TruncationProtocol **truncationProtocol, int num_threads=4){

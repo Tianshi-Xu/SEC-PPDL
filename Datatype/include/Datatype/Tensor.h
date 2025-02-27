@@ -182,6 +182,26 @@ public:
         std::cout << "]\n";
     }
 
+    const T& operator_(const std::vector<size_t>& indices) const {
+        return operator()(indices);
+    }
+
+    Tensor(const Tensor &other) {
+        *this = other;
+    }
+
+    Tensor & operator=(const Tensor &other) {
+        std::cout << "[warning] deep copy" << std::endl;
+        shape_ = other.shape_;
+        strides_ = other.strides_;
+        data_ = other.data_;
+        return *this; 
+    }
+
+    Tensor(Tensor &&) = default;
+
+    Tensor &operator=(Tensor &&other) = default;
+
 private:
     std::vector<size_t> shape_;
     std::vector<size_t> strides_;
@@ -217,10 +237,6 @@ private:
     // 辅助函数，避免重复代码
     T& operator_(const std::vector<size_t>& indices) {
         return const_cast<T&>(static_cast<const Tensor<T>&>(*this).operator()(indices));
-    }
-
-    const T& operator_(const std::vector<size_t>& indices) const {
-        return operator()(indices);
     }
 };
 
