@@ -32,10 +32,10 @@ class HEEvaluator {
     uint64_t plain_mod = 1048576;
 
     HEEvaluator(
-        NetIO &IO,
+        Utils::NetIO &IO,
         bool server,
-        size_t polyModulusDegree,
-        size_t plainWidth,
+        size_t polyModulusDegree=8192,
+        size_t plainWidth=20,
         LOCATION backend = HOST
     ){
         this->IO = &IO;

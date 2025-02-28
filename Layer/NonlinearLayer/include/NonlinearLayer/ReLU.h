@@ -86,16 +86,18 @@ public:
 
   void relu(T *result, T *share, int num_relu,
                 uint8_t *msb, bool skip_ot) {
+        cout << "num_relu = " << num_relu << endl;
         uint8_t *msb_tmp = new uint8_t[num_relu];
+        cout << "share[0] = " << share[0] << endl;
         if(msb!=nullptr){
           memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
         }
         else{
           this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
         }
-        
+        printf("msb_tmp[0] = %d\n", msb_tmp[0]);
         for (int i = 0; i < num_relu; i++) {
-            if (party == ALICE) {
+            if (party == Utils::ALICE) {
                 msb_tmp[i] = msb_tmp[i] ^ 1;
             }
         }

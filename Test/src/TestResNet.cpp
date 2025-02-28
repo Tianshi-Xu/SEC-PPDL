@@ -6,7 +6,7 @@ using namespace NonlinearLayer;
 using namespace Model;
 #define MAX_THREADS 4
 
-int party, port = 32000;
+int port = 32000;
 int num_threads = 1;
 string address = "127.0.0.1";
 
@@ -18,16 +18,15 @@ ReLUProtocol<Utils::NetIO, int32_t> **reluprotocol = new ReLUProtocol<Utils::Net
 TruncationProtocol **truncationProtocol = new TruncationProtocol*[MAX_THREADS];
 
 uint64_t comm_threads[MAX_THREADS];
-
+void test_tensor(Tensor<uint64_t> &x) {
+  cout << "test_tensor called" << endl;
+  x.print_shape();
+  cout << "test_tensor done" << endl;
+}
 int main(int argc, char **argv) {
   /************* Argument Parsing  ************/
   /********************************************/
-  ArgMapping amap;
-  amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2");
-  amap.arg("p", port, "Port Number");
-  amap.arg("ip", address, "IP Address of server (ALICE)");
-
-  amap.parse(argc, argv);
+  bool party = std::stoi(argv[1]);
 
   assert(num_threads <= MAX_THREADS);
 
@@ -51,19 +50,22 @@ int main(int argc, char **argv) {
   //   std::cout << "Thread i = " << i << ", total data sent till now = " << temp
   //             << std::endl;
   // }
-  // HE::NetIO netio(address.c_str(), port, party);
-  // std::cout << "netio generated" << std::endl;
-  HE::HEEvaluator he(netio, party);
-  he.GenerateNewKey();
-  CryptoPrimitive<uint64_t> *cryptoPrimitive = new CryptoPrimitive<uint64_t>(party, &he, num_threads, bitlength, Datatype::IKNP, address, port);
-  Bottleneck<uint64_t> bottleneck(16, 64, 256, 1, cryptoPrimitive);
-  Tensor<uint64_t> input({64, 16, 16});
+  Utils::NetIO netio(party==0?nullptr:address.c_str(), port);
+  std::cout << "netio generated" << std::endl;
+  HE::HEEvaluator HE(netio, party);
+  HE.GenerateNewKey();
+  CryptoPrimitive<uint64_t> *cryptoPrimitive = new CryptoPrimitive<uint64_t>(party==0?Utils::ALICE:Utils::BOB, &HE, num_threads, bitlength, Datatype::IKNP, Datatype::CONV_TYPE::Nest, address, port);
+  Bottleneck<uint64_t> bottleneck(16, 32, 64, 1, cryptoPrimitive);
+  Tensor<uint64_t> input({32, 16, 16});
   if (party == Utils::ALICE) {
     input.randomize(16);
-    input.print();
+    // input.print();
   }
+  // test_tensor(input);
   Tensor<uint64_t> output = bottleneck(input);
-  output.print();
+  cout << "bottleneck done" << endl;
+  output.print_shape();
+  // output.print();
   /************ Generate Test Data ************/
   /********************************************/
   

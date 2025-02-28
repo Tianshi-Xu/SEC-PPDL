@@ -5,13 +5,13 @@ int main(int argc, char **argv){
     bool party = std::stoi(argv[1]);
     const char* address = "127.0.0.1";
     int port = 32000;
-    NetIO netio(party==0?nullptr:address, port);
+    Utils::NetIO netio(party==0?nullptr:address, port);
     std::cout << "netio generated" << std::endl;
     HE::HEEvaluator HE(netio, party);
     HE.GenerateNewKey();
     
-    uint64_t Ci = 16; uint64_t Co = 16; uint64_t H = 19; uint64_t W = 19;
-    uint64_t p = 1; uint64_t s = 2; uint64_t k = 3; uint64_t Ho = 9; uint64_t Wo = 9;
+    uint64_t Ci = 32; uint64_t Co = 64; uint64_t H = 16; uint64_t W = 16;
+    uint64_t p = 1; uint64_t s = 1; uint64_t k = 1; uint64_t Ho = 16; uint64_t Wo = 16;
     Tensor<uint64_t> input({Ci, H, W}); 
     Tensor<uint64_t> weight({Co, Ci, k, k});
     Tensor<uint64_t> bias({Co});
@@ -32,8 +32,10 @@ int main(int argc, char **argv){
         }
     }
     cout << "input generated" << endl;
-    Conv2DNest conv(H, s, p, weight, bias, &HE);
-    Tensor<uint64_t> output = conv(input);
+    Conv2D* conv1 = new Conv2DNest(H, Ci, Co, k, s, &HE);
+    // Conv2DNest conv(H, s, p, weight, bias, &HE);
+    conv1->weight.print_shape();
+    Tensor<uint64_t> output = conv1->operator()(input);
     if (!party) {
         for (uint64_t i = 0; i < Co; i++){
             std::cout << i << std::endl;

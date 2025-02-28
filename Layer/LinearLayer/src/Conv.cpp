@@ -27,4 +27,23 @@ Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, cons
     out_feature_size = (in_feature_size + 2 * padding - kernel_size) / stride + 1;
 };
 
+Conv2D::Conv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HEEvaluator* he)
+    : in_feature_size(in_feature_size),
+      in_channels(in_channels),
+      out_channels(out_channels),
+      kernel_size(kernel_size),
+      stride(stride),
+      he(he)
+      {
+        this->padding = (kernel_size - 1) / 2;
+        if(he->server) {
+            cout << "server Conv2D constructor called" << endl;
+            this->weight = Tensor<uint64_t>({out_channels, in_channels, kernel_size, kernel_size});
+            this->bias = Tensor<uint64_t>({out_channels});
+            this->weight.randomize(16);
+            this->bias.randomize(16);
+            cout << "server Conv2D constructor done" << endl;
+        }
+      }
+
 } // namespace LinearLayer

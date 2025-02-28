@@ -70,7 +70,7 @@ public:
         for (int i = 0; i < size; i++) {
             y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i] - data_S[i]) & mask_y);
         }
-
+        cout << "y[0] = " << y[0] << endl;
         delete[] corr_data;
         delete[] data_S;
         delete[] data_R;
@@ -133,7 +133,7 @@ public:
             // cout << "msb_xb[" << i << "] = " << msb_xb[i] << endl;
             msb_x[i] = msb_x[i] ^ msb_xb[i];
         }
-
+        printf("msb_x[0] = %d\n", msb_x[0]);
         delete[] tmp_x;
         delete[] msb_xb;
     }

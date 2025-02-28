@@ -13,10 +13,10 @@ class Truncation {
             this->truncationProtocol = truncationProtocol;
         }
         // for now, only support uint64_t
-        void operator()(Tensor<T> *x, int32_t shift, int32_t bw, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
-            int dim = x->size();
-            x->flatten();
-            T* x_flatten = x->data().data();
+        void operator()(Tensor<T> &x, int32_t shift, int32_t bw, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
+            int dim = x.size();
+            x.flatten();
+            T* x_flatten = x.data().data();
             std::thread truncation_threads[num_threads];
             int chunk_size = dim / num_threads;
             for (int i = 0; i < num_threads; i++) {

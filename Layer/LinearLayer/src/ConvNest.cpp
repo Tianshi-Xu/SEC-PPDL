@@ -21,8 +21,38 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
     tiled_in_channels = in_channels / tile_size + (in_channels % tile_size != 0);
     tiled_out_channels = out_channels / tile_size + (out_channels % tile_size != 0);
     input_rot = std::sqrt(tile_size);  // to be checked
-
     if (he->server) {
+        weight_pt = PackWeight();
+    }
+}
+
+void Conv2DNest::compute_he_params(uint64_t in_feature_size) {
+    // cout << "compute_he_params called" << endl;
+    int tmp_size = in_feature_size + 2 * this->padding - 1;
+    for (int i = 0; i < 5; i++) {
+        tmp_size |= tmp_size >> (1 << i);
+    }
+    this->padded_feature_size = tmp_size + 1;
+    this->tile_size = he->polyModulusDegree / (2 * this->padded_feature_size * this->padded_feature_size);
+    this->out_channels /= 2;
+    this->tiled_in_channels = in_channels / this->tile_size + (in_channels % this->tile_size != 0);
+    this->tiled_out_channels = out_channels / this->tile_size + (out_channels % this->tile_size != 0);
+    this->input_rot = std::sqrt(this->tile_size);  // to be checked
+    this->out_feature_size = (in_feature_size + 2 * this->padding - kernel_size) / stride + 1;
+    cout << "padded_feature_size: " << this->padded_feature_size << endl;
+    cout << "tile_size: " << this->tile_size << endl;
+    cout << "tiled_in_channels: " << this->tiled_in_channels << endl;
+    cout << "tiled_out_channels: " << this->tiled_out_channels << endl;
+    cout << "input_rot: " << this->input_rot << endl;
+    cout << "out_feature_size: " << this->out_feature_size << endl;
+}
+
+Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* he)
+    : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, he)
+{
+    compute_he_params(in_feature_size);
+    // this->weight.print_shape();
+    if(he->server) {
         weight_pt = PackWeight();
     }
 }
@@ -68,7 +98,7 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     return weight_pt;
 }
 
-Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
+Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> &x) {
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, he->plain_mod);
     Tensor<uint64_t> ac_msg({tiled_in_channels, he->polyModulusDegree});
 
@@ -102,7 +132,7 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> x) {
     return ac_msg;
 }
 
-Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct) {
+Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct) {
     /** 
      *  NOTE:
      *  Server computes on he->Backend()
@@ -161,7 +191,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
     return out_ct;
 }
 
-Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
+Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
     out_channels *= 2;
     Tensor<uint64_t> y({out_channels, out_feature_size, out_feature_size});
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, he->plain_mod);
@@ -196,17 +226,19 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> out_msg) {
     return y;
 }
 
-Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> x) {  // x.shape = {Ci, H, W}
+Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
+    std::cout << "Conv2DNest operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    cout << "ac_msg generated" << endl;
+    std::cout << "ac_msg generated" << std::endl;
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, he);  // ac_ct.shape = {ci}
-    cout << "ac_ct generated" << endl;
+    std::cout << "ac_ct generated" << std::endl;
     Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    cout << "out_ct generated: " << out_ct(0).location() << endl;
+    std::cout << "out_ct generated: " << out_ct(0).location() << std::endl;
     Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, he);  // out_msg.shape = {co, N}
-    cout << "out_msg generated" << endl;
+    std::cout << "out_msg generated" << std::endl;
+    out_msg.print_shape();
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
-    cout << "y generated" << endl;
+    std::cout << "y generated" << std::endl;
 
     return y;
 };

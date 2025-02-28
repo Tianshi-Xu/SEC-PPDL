@@ -1,0 +1,80 @@
+From 9dfff897d973fee15cb2df50124be153a45dde02 Mon Sep 17 00:00:00 2001
+From: Tianshi-Xu <994876761@qq.com>
+Date: Thu, 27 Feb 2025 23:33:17 +0800
+Subject: [PATCH] .
+
+---
+ CMakeLists.txt            |  5 ++---
+ Utils/include/Utils/aes.h | 22 +++++++++++-----------
+ 2 files changed, 13 insertions(+), 14 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 24bf8fd..c1a2fb0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,11 +12,10 @@ set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/emp-ot")
+ # message(STATUS "EMP-TOOL Directory: ${EMP-TOOL_INCLUDE_DIR}")
+ # message(STATUS "emp tool found ${EMP-TOOL_FOUND}")
+ # message(STATUS "emp ot found ${EMP-OT_FOUND}")
+-include_directories(${EMP-OT_INCLUDE_DIR} 
+-                    ${EMP-TOOL_INCLUDE_DIR}) 
+-
+ add_subdirectory(Datatype)
+ add_subdirectory(Utils)
++include_directories(${EMP-OT_INCLUDE_DIR} 
++                    ${EMP-TOOL_INCLUDE_DIR}) 
+ add_subdirectory(HE)
+ add_subdirectory(OT)
+ add_subdirectory(Operator)
+diff --git a/Utils/include/Utils/aes.h b/Utils/include/Utils/aes.h
+index e18f461..91bd4fd 100644
+--- a/Utils/include/Utils/aes.h
++++ b/Utils/include/Utils/aes.h
+@@ -61,7 +61,7 @@ typedef struct {
+   unsigned int rounds;
+ } AES_KEY;
+ 
+-#define EXPAND_ASSIST(v1, v2, v3, v4, shuff_const, aes_const)                  \
++#define EXPAND_ASSIST_Util(v1, v2, v3, v4, shuff_const, aes_const)                  \
+   v2 = _mm_aeskeygenassist_si128(v4, aes_const);                               \
+   v3 = _mm_castps_si128(                                                       \
+       _mm_shuffle_ps(_mm_castsi128_ps(v3), _mm_castsi128_ps(v1), 16));         \
+@@ -78,25 +78,25 @@ AES_set_encrypt_key(const block128 userkey, AES_KEY *key) {
+   block128 *kp = key->rd_key;
+   kp[0] = x0 = userkey;
+   x2 = _mm_setzero_si128();
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 1);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 1);
+   kp[1] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 2);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 2);
+   kp[2] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 4);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 4);
+   kp[3] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 8);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 8);
+   kp[4] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 16);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 16);
+   kp[5] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 32);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 32);
+   kp[6] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 64);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 64);
+   kp[7] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 128);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 128);
+   kp[8] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 27);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 27);
+   kp[9] = x0;
+-  EXPAND_ASSIST(x0, x1, x2, x0, 255, 54);
++  EXPAND_ASSIST_Util(x0, x1, x2, x0, 255, 54);
+   kp[10] = x0;
+   key->rounds = 10;
+ }
+-- 
+1.8.3.1
+

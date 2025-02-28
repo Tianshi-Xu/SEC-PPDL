@@ -1,0 +1,398 @@
+diff --git a/emp-ot/ferret/base_cot.h b/emp-ot/ferret/base_cot.h
+index 10dab70..2ad08c8 100644
+--- a/emp-ot/ferret/base_cot.h
++++ b/emp-ot/ferret/base_cot.h
+@@ -9,16 +9,16 @@ class BaseCot { public:
+ 	block one, minusone;
+ 	block ot_delta;
+ 	IO *io;
+-	IKNP<IO> *iknp;
++	emp::IKNP<IO> *iknp;
+ 	bool malicious = false;
+ 
+ 	BaseCot(int party, IO *io, bool malicious = false) {
+ 		this->party = party;
+ 		this->io = io;
+ 		this->malicious = malicious;
+-		iknp = new IKNP<IO>(io, malicious);
+-		minusone = makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
+-		one = makeBlock(0x0LL, 0x1LL);
++		iknp = new emp::IKNP<IO>(io, malicious);
++		minusone = emp::makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
++		one = emp::makeBlock(0x0LL, 0x1LL);
+ 	}
+ 	
+ 	~BaseCot() {
+@@ -26,10 +26,10 @@ class BaseCot { public:
+ 	}
+ 
+ 	void cot_gen_pre(block deltain) {
+-		if (this->party == ALICE) {
++		if (this->party == emp::ALICE) {
+ 			this->ot_delta = deltain;
+ 			bool delta_bool[128];
+-			block_to_bool(delta_bool, ot_delta);
++			emp::block_to_bool(delta_bool, ot_delta);
+ 			iknp->setup_send(delta_bool);
+ 		} else {
+ 			iknp->setup_recv();
+@@ -37,13 +37,13 @@ class BaseCot { public:
+ 	}
+ 
+ 	void cot_gen_pre() {
+-		if (this->party == ALICE) {
+-			PRG prg;
++		if (this->party == emp::ALICE) {
++			emp::PRG prg;
+ 			prg.random_block(&ot_delta, 1);
+ 			ot_delta = ot_delta & minusone;
+ 			ot_delta = ot_delta ^ one;
+ 			bool delta_bool[128];
+-			block_to_bool(delta_bool, ot_delta);
++			emp::block_to_bool(delta_bool, ot_delta);
+ 			iknp->setup_send(delta_bool);
+ 		} else {
+ 			iknp->setup_recv();
+@@ -51,13 +51,13 @@ class BaseCot { public:
+ 	}
+ 
+ 	void cot_gen(block *ot_data, int64_t size, bool * pre_bool = nullptr) {
+-		if (this->party == ALICE) {
++		if (this->party == emp::ALICE) {
+ 			iknp->send_cot(ot_data, size);
+ 			io->flush();
+ 			for(int64_t i = 0; i < size; ++i)
+ 				ot_data[i] = ot_data[i] & minusone;
+ 		} else {
+-			PRG prg;
++			emp::PRG prg;
+ 			bool *pre_bool_ini = new bool[size];
+ 			if(pre_bool && !malicious)
+ 				memcpy(pre_bool_ini, pre_bool, size);
+@@ -65,8 +65,8 @@ class BaseCot { public:
+ 				prg.random_bool(pre_bool_ini, size);
+ 			iknp->recv_cot(ot_data, pre_bool_ini, size);
+ 			block ch[2];
+-			ch[0] = zero_block;
+-			ch[1] = makeBlock(0, 1);
++			ch[0] = emp::zero_block;
++			ch[1] = emp::makeBlock(0, 1);
+ 			for(int64_t i = 0; i < size; ++i)
+ 				ot_data[i] = 
+ 						(ot_data[i] & minusone) ^ ch[pre_bool_ini[i]];
+@@ -76,14 +76,14 @@ class BaseCot { public:
+ 
+ 	void cot_gen(OTPre<IO> *pre_ot, int64_t size, bool * pre_bool = nullptr) {
+ 		block *ot_data = new block[size];
+-		if (this->party == ALICE) {
++		if (this->party == emp::ALICE) {
+ 			iknp->send_cot(ot_data, size);
+ 			io->flush();
+ 			for(int64_t i = 0; i < size; ++i)
+ 				ot_data[i] = ot_data[i] & minusone;
+ 			pre_ot->send_pre(ot_data, ot_delta);
+ 		} else {
+-			PRG prg;
++			emp::PRG prg;
+ 			bool *pre_bool_ini = new bool[size];
+ 			if(pre_bool && !malicious)
+ 				memcpy(pre_bool_ini, pre_bool, size);
+@@ -91,8 +91,8 @@ class BaseCot { public:
+ 				prg.random_bool(pre_bool_ini, size);
+ 			iknp->recv_cot(ot_data, pre_bool_ini, size);
+ 			block ch[2];
+-			ch[0] = zero_block;
+-			ch[1] = makeBlock(0, 1);
++			ch[0] = emp::zero_block;
++			ch[1] = emp::makeBlock(0, 1);
+ 			for(int64_t i = 0; i < size; ++i)
+ 				ot_data[i] = 
+ 						(ot_data[i] & minusone) ^ ch[pre_bool_ini[i]];
+@@ -104,7 +104,7 @@ class BaseCot { public:
+ 
+ 	// debug
+ 	bool check_cot(block *data, int64_t len) {
+-		if(party == ALICE) {
++		if(party == emp::ALICE) {
+ 			io->send_block(&ot_delta, 1);
+ 			io->send_block(data, len); 
+ 			io->flush();
+@@ -113,11 +113,11 @@ class BaseCot { public:
+ 			block * tmp = new block[len];
+ 			block ch[2];
+ 			io->recv_block(ch+1, 1);
+-			ch[0] = zero_block;
++			ch[0] = emp::zero_block;
+ 			io->recv_block(tmp, len);
+ 			for(int64_t i = 0; i < len; ++i)
+-				tmp[i] = tmp[i] ^ ch[getLSB(data[i])];
+-			bool res = cmpBlock(tmp, data, len);
++				tmp[i] = tmp[i] ^ ch[emp::getLSB(data[i])];
++			bool res = emp::cmpBlock(tmp, data, len);
+ 			delete[] tmp;
+ 			return res;
+ 		}
+diff --git a/emp-ot/ferret/lpn_f2.h b/emp-ot/ferret/lpn_f2.h
+index ce741fa..4b85cb2 100644
+--- a/emp-ot/ferret/lpn_f2.h
++++ b/emp-ot/ferret/lpn_f2.h
+@@ -28,10 +28,10 @@ class LpnF2 { public:
+ 		}
+ 	}
+ 
+-	void __compute4(block * nn, const block * kk, int64_t i, PRP * prp) {
++	void __compute4(block * nn, const block * kk, int64_t i, emp::PRP * prp) {
+ 		block tmp[d];
+ 		for(int m = 0; m < d; ++m)
+-			tmp[m] = makeBlock(i, m);
++			tmp[m] = emp::makeBlock(i, m);
+ 		AES_ecb_encrypt_blks(tmp, d, &prp->aes);
+ 		uint32_t* r = (uint32_t*)(tmp);
+ 		for(int m = 0; m < 4; ++m)
+@@ -43,11 +43,11 @@ class LpnF2 { public:
+ 			}
+ 	}
+ 
+-	void __compute1(block * nn, const block * kk, int64_t i, PRP*prp) {
++	void __compute1(block * nn, const block * kk, int64_t i, emp::PRP*prp) {
+                 const auto nr_blocks = d/4 + (d % 4 != 0);
+                 block tmp[nr_blocks];
+ 		for(int m = 0; m < nr_blocks; ++m)
+-			tmp[m] = makeBlock(i, m);
++			tmp[m] = emp::makeBlock(i, m);
+ 		prp->permute_block(tmp, nr_blocks);
+ 		uint32_t* r = (uint32_t*)(tmp);
+ 		for (int j = 0; j < d; ++j)
+@@ -55,7 +55,7 @@ class LpnF2 { public:
+ 	}
+ 
+ 	void task(block * nn, const block * kk, int64_t start, int64_t end) {
+-		PRP prp(seed);
++		emp::PRP prp(seed);
+ 		int64_t j = start;
+ 		for(; j < end-4; j+=4)
+ 			__compute4(nn, kk, j, &prp);
+@@ -63,10 +63,10 @@ class LpnF2 { public:
+ 			__compute1(nn, kk, j, &prp);
+ 	}
+ 
+-	void compute(block * nn, const block * kk, block s = zero_block) {
++	void compute(block * nn, const block * kk, block s = emp::zero_block) {
+ 		vector<std::future<void>> fut;
+ 		int64_t width = n/threads;
+-        if(!cmpBlock(&s, &zero_block, 1)) seed = s;
++        if(!emp::cmpBlock(&s, &emp::zero_block, 1)) seed = s;
+ 		else seed = seed_gen();
+ 		for(int i = 0; i < threads - 1; ++i) {
+ 			int64_t start = i * width;
+@@ -84,8 +84,8 @@ class LpnF2 { public:
+ 
+ 	block seed_gen() {
+ 		block seed;
+-		if(party == ALICE) {
+-			PRG prg;
++		if(party == emp::ALICE) {
++			emp::PRG prg;
+ 			prg.random_block(&seed, 1);
+ 			io->send_data(&seed, sizeof(block));
+ 		} else {
+diff --git a/emp-ot/ferret/mpcot_reg.h b/emp-ot/ferret/mpcot_reg.h
+index 6659aa7..919af87 100644
+--- a/emp-ot/ferret/mpcot_reg.h
++++ b/emp-ot/ferret/mpcot_reg.h
+@@ -20,7 +20,7 @@ public:
+ 	int consist_check_cot_num;
+ 	bool is_malicious;
+ 
+-	PRG prg;
++	emp::PRG prg;
+ 	IO *netio;
+ 	IO **ios;
+ 	block Delta_f2k;
+@@ -61,13 +61,13 @@ public:
+ 
+ 	// MPFSS F_2k
+ 	void mpcot(block * sparse_vector, OTPre<IO> * ot, block *pre_cot_data) {
+-		if(party == BOB) consist_check_chi_alpha = new block[item_n];
++		if(party == emp::BOB) consist_check_chi_alpha = new block[item_n];
+ 		consist_check_VW = new block[item_n];
+ 
+ 		vector<SPCOT_Sender<IO>*> senders;
+ 		vector<SPCOT_Recver<IO>*> recvers;
+ 
+-		if(party == ALICE) {
++		if(party == emp::ALICE) {
+ 			mpcot_init_sender(senders, ot);
+ 			exec_parallel_sender(senders, ot, sparse_vector);
+ 		} else {
+@@ -81,7 +81,7 @@ public:
+ 		for (auto p : senders) delete p;
+ 		for (auto p : recvers) delete p;
+ 
+-		if(party == BOB) delete[] consist_check_chi_alpha;
++		if(party == emp::BOB) delete[] consist_check_chi_alpha;
+ 		delete[] consist_check_VW;
+ 	}
+ 
+@@ -167,7 +167,7 @@ public:
+ 
+ 	// f2k consistency check
+ 	void consistency_check_f2k(block *pre_cot_data, int num) {
+-		if(this->party == ALICE) {
++		if(this->party == emp::ALICE) {
+ 			block r1, r2;
+ 			vector_self_xor(&r1, this->consist_check_VW, num);
+ 			bool x_prime[128];
+@@ -179,7 +179,7 @@ public:
+ 			pack.packing(&r2, pre_cot_data);
+ 			r1 = r1 ^ r2;
+ 			block dig[2];
+-			Hash hash;
++			emp::Hash hash;
+ 			hash.hash_once(dig, &r1, sizeof(block));
+ 			this->netio->send_data(dig, 2*sizeof(block));
+ 			this->netio->flush();
+@@ -193,7 +193,7 @@ public:
+ 			bool pre_cot_bool[128];
+ 			for(int i = 0; i < 2; ++i) {
+ 				for(int j = 0; j < 64; ++j) {
+-					pre_cot_bool[i*64+j] = ((pos[i] & 1) == 1) ^ getLSB(pre_cot_data[i*64+j]);
++					pre_cot_bool[i*64+j] = ((pos[i] & 1) == 1) ^ emp::getLSB(pre_cot_data[i*64+j]);
+ 					pos[i] >>= 1;
+ 				}
+ 			}
+@@ -202,11 +202,11 @@ public:
+ 			pack.packing(&r3, pre_cot_data);
+ 			r1 = r1 ^ r3;
+ 			block dig[2];
+-			Hash hash;
++			emp::Hash hash;
+ 			hash.hash_once(dig, &r1, sizeof(block));
+ 			block recv[2];
+ 			this->netio->recv_data(recv, 2*sizeof(block));
+-			if(!cmpBlock(dig, recv, 2))
++			if(!emp::cmpBlock(dig, recv, 2))
+ 				std::cout << "SPCOT consistency check fails" << std::endl;
+ 		}
+ 	}
+diff --git a/emp-ot/ferret/preot.h b/emp-ot/ferret/preot.h
+index 0ac7641..1ba9d6d 100644
+--- a/emp-ot/ferret/preot.h
++++ b/emp-ot/ferret/preot.h
+@@ -38,7 +38,7 @@ class OTPre { public:
+ 	void send_pre(block * data, block in_Delta) {
+ 		Delta = in_Delta;
+ 		ccrh.Hn(pre_data, data, n, pre_data+n);
+-		xorBlocks_arr(pre_data+n, data, Delta, n);
++		emp::xorBlocks_arr(pre_data+n, data, Delta, n);
+ 		ccrh.Hn(pre_data+n, pre_data+n, n);
+ 	}
+ 
+@@ -49,7 +49,7 @@ class OTPre { public:
+ 
+ 	void recv_pre(block * data) {
+ 		for(int i = 0; i < n; ++i)
+-			bits[i] = getLSB(data[i]);
++			bits[i] = emp::getLSB(data[i]);
+ 		ccrh.Hn(pre_data, data, n);
+ 	}
+ 
+diff --git a/emp-ot/ferret/spcot_recver.h b/emp-ot/ferret/spcot_recver.h
+index 4e56484..50998ec 100644
+--- a/emp-ot/ferret/spcot_recver.h
++++ b/emp-ot/ferret/spcot_recver.h
+@@ -53,9 +53,9 @@ public:
+ 	void compute(block* ggm_tree_mem) {
+ 		this->ggm_tree = ggm_tree_mem;
+ 		ggm_tree_reconstruction(b, m);
+-		ggm_tree[choice_pos] = zero_block;
+-		block nodes_sum = zero_block;
+-		block one = makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
++		ggm_tree[choice_pos] = emp::zero_block;
++		block nodes_sum = emp::zero_block;
++		block one = emp::makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
+ 		for(int i = 0; i < leave_n; ++i) {
+ 			ggm_tree[i] = ggm_tree[i] & one;
+ 			nodes_sum = nodes_sum ^ ggm_tree[i];
+@@ -65,10 +65,10 @@ public:
+ 
+ 	void ggm_tree_reconstruction(bool *b, block *m) {
+ 		int to_fill_idx = 0;
+-		TwoKeyPRP prp(zero_block, makeBlock(0, 1));
++		TwoKeyPRP prp(emp::zero_block, emp::makeBlock(0, 1));
+ 		for(int i = 1; i < depth; ++i) {
+ 			to_fill_idx = to_fill_idx * 2;
+-			ggm_tree[to_fill_idx] = ggm_tree[to_fill_idx+1] = zero_block;
++			ggm_tree[to_fill_idx] = ggm_tree[to_fill_idx+1] = emp::zero_block;
+ 			if(b[i-1] == false) {
+ 				layer_recover(i, 0, to_fill_idx, m[i-1], &prp);
+ 				to_fill_idx += 1;
+@@ -79,7 +79,7 @@ public:
+ 	void layer_recover(int depth, int lr, int to_fill_idx, block sum, TwoKeyPRP *prp) {
+ 		int layer_start = 0;
+ 		int item_n = 1<<depth;
+-		block nodes_sum = zero_block;
++		block nodes_sum = emp::zero_block;
+ 		int lr_start = lr==0?layer_start:(layer_start+1);
+ 		
+ 		for(int i = lr_start; i < item_n; i+=2)
+@@ -97,7 +97,7 @@ public:
+ 	void consistency_check_msg_gen(block *chi_alpha, block *W) {
+ 		// X
+ 		block *chi = new block[leave_n];
+-		Hash hash;
++		emp::Hash hash;
+ 		block digest[2];
+ 		hash.hash_once(digest, &secret_sum_f2, sizeof(block));
+ 		uni_hash_coeff_gen(chi, digest[0], leave_n);
+diff --git a/emp-ot/ferret/spcot_sender.h b/emp-ot/ferret/spcot_sender.h
+index 0c02f41..bbba623 100644
+--- a/emp-ot/ferret/spcot_sender.h
++++ b/emp-ot/ferret/spcot_sender.h
+@@ -14,7 +14,7 @@ class SPCOT_Sender { public:
+ 	block *ggm_tree, *m;
+ 	IO *io;
+ 	int depth, leave_n;
+-	PRG prg;
++	emp::PRG prg;
+ 	block secret_sum_f2;
+ 
+ 	SPCOT_Sender(IO *io, int depth_in) {
+@@ -48,8 +48,8 @@ class SPCOT_Sender { public:
+ 
+ 	void ggm_tree_gen(block *ot_msg_0, block *ot_msg_1, block* ggm_tree_mem, block secret) {
+ 		ggm_tree_gen(ot_msg_0, ot_msg_1, ggm_tree_mem);
+-		secret_sum_f2 = zero_block;
+-		block one = makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
++		secret_sum_f2 = emp::zero_block;
++		block one = emp::makeBlock(0xFFFFFFFFFFFFFFFFLL,0xFFFFFFFFFFFFFFFELL);
+ 		for(int i = 0; i < leave_n; ++i) {
+ 			ggm_tree[i] = ggm_tree[i] & one;
+ 			secret_sum_f2 = secret_sum_f2 ^ ggm_tree[i];
+@@ -60,7 +60,7 @@ class SPCOT_Sender { public:
+ 	// generate GGM tree from the top
+ 	void ggm_tree_gen(block *ot_msg_0, block *ot_msg_1, block* ggm_tree_mem) {
+ 		this->ggm_tree = ggm_tree_mem;
+-		TwoKeyPRP *prp = new TwoKeyPRP(zero_block, makeBlock(0, 1));
++		TwoKeyPRP *prp = new TwoKeyPRP(emp::zero_block, emp::makeBlock(0, 1));
+ 		prp->node_expand_1to2(ggm_tree, seed);
+ 		ot_msg_0[0] = ggm_tree[0];
+ 		ot_msg_1[0] = ggm_tree[1];
+@@ -68,7 +68,7 @@ class SPCOT_Sender { public:
+ 		ot_msg_0[1] = ggm_tree[0] ^ ggm_tree[2];
+ 		ot_msg_1[1] = ggm_tree[1] ^ ggm_tree[3];
+ 		for(int h = 2; h < depth-1; ++h) {
+-			ot_msg_0[h] = ot_msg_1[h] = zero_block;
++			ot_msg_0[h] = ot_msg_1[h] = emp::zero_block;
+ 			int sz = 1<<h;
+ 			for(int i = sz-4; i >=0; i-=4) {
+ 				prp->node_expand_4to8(&ggm_tree[i*2], &ggm_tree[i]);
+@@ -88,7 +88,7 @@ class SPCOT_Sender { public:
+ 	void consistency_check_msg_gen(block *V) {
+ 		// X
+ 		block *chi = new block[leave_n];
+-		Hash hash;
++		emp::Hash hash;
+ 		block digest[2];
+ 		hash.hash_once(digest, &secret_sum_f2, sizeof(block));
+ 		uni_hash_coeff_gen(chi, digest[0], leave_n);

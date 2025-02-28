@@ -12,17 +12,19 @@ class CryptoPrimitive{
         NonlinearOperator::Truncation<T>* truncation;
         int32_t num_threads;
         int party;
-        Datatype::CONV_TYPE conv_type;
+        Datatype::CONV_TYPE conv_type = Datatype::CONV_TYPE::Nest;
         CryptoPrimitive(int party, HE::HEEvaluator* HE, Datatype::CONV_TYPE conv_type, NonlinearLayer::ReLU<T, IO>* relu, NonlinearOperator::Truncation<T>* truncation, int32_t num_threads){
             this->HE = HE;
             this->relu = relu;
             this->truncation = truncation;
             this->num_threads = num_threads;
             this->party = party;
+            this->conv_type = conv_type;
         }
 
-        CryptoPrimitive(int party, HE::HEEvaluator* HE, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type,string address, int port){
+        CryptoPrimitive(int party, HE::HEEvaluator* HE, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type, Datatype::CONV_TYPE conv_type, string address, int port){
             this->party = party;
+            this->conv_type = conv_type;
             this->HE = HE;
             this->num_threads = num_threads;
             this->ioArr = new Utils::NetIO*[num_threads];
@@ -30,7 +32,11 @@ class CryptoPrimitive{
             this->reluprotocol = new NonlinearLayer::ReLUProtocol<T, IO>*[num_threads];
             this->truncationProtocol = new OTProtocol::TruncationProtocol*[num_threads];
             for (int i = 0; i < num_threads; i++) {
-                this->ioArr[i] = new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
+                if(i==0){
+                    this->ioArr[i] = HE->IO;
+                }else{
+                    this->ioArr[i] = new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
+                }
                 // TODO: change to VOLE OT
                 if (i & 1) {
                     this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
