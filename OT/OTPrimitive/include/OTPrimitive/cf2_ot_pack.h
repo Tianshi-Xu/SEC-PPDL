@@ -10,7 +10,6 @@ template <typename T>
 class IKNPOTPack : public OTPack<T> {
 
  public:
-  IKNPOTPack(T *io, int party, bool do_setup = true) : OTPack<T>(io, party, do_setup) {
   IKNPOTPack(T *io, int party, bool do_setup = true): OTPack<T>(io, party, do_setup) {
     std::cout << "using kkot pack" << std::endl;
     this->party = party;
@@ -21,7 +20,7 @@ class IKNPOTPack : public OTPack<T> {
       this->kkot[i] = new SplitKKOT<NetIO>(this->party, io, 1 << (i + 1));
       // cout << this->kkot[i]->te << endl;
     }
-cd
+
     this->iknp_straight = new SplitIKNP<NetIO>(this->party, io);
     this->iknp_reversed = new SplitIKNP<NetIO>(3 - this->party, io);
     this->do_setup = false;

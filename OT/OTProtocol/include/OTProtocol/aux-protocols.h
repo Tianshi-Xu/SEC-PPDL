@@ -66,6 +66,7 @@ public:
       // bitwidth of y
       int32_t bw_y)
     {
+        std::cout << "mux begin\n";
         assert(bw_x <= 64 && bw_y <= 64 && bw_y <= bw_x);
         uint64_t mask_x = (bw_x == 64 ? -1 : ((1ULL << bw_x) - 1));
         uint64_t mask_y = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
@@ -78,6 +79,7 @@ public:
         // y = (sel_0 + sel_1 - 2*sel_0*sel_1)*x_0 + (sel_0 + sel_1 -
         // 2*sel_0*sel_1)*x_1 y = [sel_0*x_0 + sel_1*(x_0 - 2*sel_0*x_0)]
         //     + [sel_1*x_1 + sel_0*(x_1 - 2*sel_1*x_1)]
+        std::cout << "party:" << party << std::endl;
         for (int i = 0; i < size; i++) {
             corr_data[i] = (x[i] * (1 - 2 * uint64_t(sel[i]))) & mask_y;
         }
@@ -91,6 +93,7 @@ public:
         for (int i = 0; i < size; i++) {
             y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i] - data_S[i]) & mask_y);
         }
+        std::cout << "mux end\n";
 
         delete[] corr_data;
         delete[] data_S;

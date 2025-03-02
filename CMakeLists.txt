@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED True) # 强制使用指定的C++标准
 set(CMAKE_CXX_EXTENSIONS OFF)        # 禁用编译器特定的扩展（如GNU扩展）
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# set(EMP-TOOL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-tool")
-# set(EMP-TOOL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-tool")
-# set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-ot")
-# message(STATUS "EMP-TOOL Directory: ${EMP-TOOL_INCLUDE_DIR}")
-# find_package(emp-tool REQUIRED PATHS ${EMP-TOOL_INCLUDE_DIR})
-# find_package(emp-ot REQUIRED PATHS ${EMP-OT_INCLUDE_DIR})
+set(EMP-TOOL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-tool")
+set(EMP-TOOL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-tool")
+set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/deps/emp-ot")
+message(STATUS "EMP-TOOL Directory: ${EMP-TOOL_INCLUDE_DIR}")
+find_package(emp-tool REQUIRED PATHS ${EMP-TOOL_INCLUDE_DIR})
+find_package(emp-ot REQUIRED PATHS ${EMP-OT_INCLUDE_DIR})
 # include_directories(${EMP-OT_INCLUDE_DIRS} 
 #                     ${EMP-TOOL_INCLUDE_DIRS}) 
 

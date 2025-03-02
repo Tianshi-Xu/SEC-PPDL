@@ -55,6 +55,7 @@ public:
     this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b,ot_type);
     this->triple_gen = this->millionaire->triple_gen;
     this->aux = new AuxProtocols(party, io, otpack);
+    std::cout << "relu party:" << party << std::endl;
     // configure();
   }
 
