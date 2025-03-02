@@ -35,56 +35,58 @@ void Conv2DCheetah::FindOptimalPartition(int H, int W, int h, int C, int N, int*
     }
 }
 
-Conv2DCheetah::Conv2DCheetah (size_t inputHeight, size_t inputWeight, HEEvaluator* he, const Tensor<uint64_t>& kernel, size_t stride, const Tensor<uint64_t>& bias, uint64_t padding)
-    : Conv2D(inputHeight, stride, padding, kernel, bias, he)
+
+
+Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* he)
+    : Conv2D(in_feature_size + 2 * padding, stride, padding, weight, bias, he)
 {
     this->he = he;
-    std::vector<size_t> shape = kernel.shape();
-    C = shape[1];
-    M = shape[0];
-    h = shape[2];
+    std::vector<size_t> shape = weight.shape();
+    in_channels = shape[1];
+    out_channels = shape[0];
+    kernel_size = shape[2];
     polyModulusDegree = he->polyModulusDegree;
     this->padding = padding;
-    H = inputHeight + 2 * padding;
-    W = inputWeight + 2 * padding;
-    s = stride;
-    int optimalHw = H, optimalWw = W;
-    FindOptimalPartition(H, W, h, C, polyModulusDegree, &optimalHw, &optimalWw);
+    //in_feature_size = in_feature_size + 2 * padding;
+    int optimalHw = this->in_feature_size, optimalWw = this->in_feature_size;
+    FindOptimalPartition(this->in_feature_size, this->in_feature_size, kernel_size, in_channels, polyModulusDegree, &optimalHw, &optimalWw);
     HW = optimalHw;
     WW = optimalWw;
-    CW = min(C, (polyModulusDegree / (HW * WW)));
-    MW = min(M, (polyModulusDegree / (CW * HW * WW)));
-    dM = DivUpper(M,MW);
-    dC = DivUpper(C,CW);
-    dH = DivUpper(H - h + 1 , HW - h + 1);
-    dW = DivUpper(W - h + 1 , WW - h + 1);
-    OW = HW * WW * (MW * CW - 1) + WW * (h - 1) + h - 1;
-    Hprime = (H - h + s) / s;
-    Wprime = (W - h + s) / s;
-    HWprime = (HW - h + s) / s;
-    WWprime = (WW - h + s) / s;
+    CW = min(in_channels, (polyModulusDegree / (HW * WW)));
+    MW = min(out_channels, (polyModulusDegree / (CW * HW * WW)));
+    dM = DivUpper(out_channels,MW);
+    dC = DivUpper(in_channels,CW);
+    dH = DivUpper(this->in_feature_size - kernel_size + 1 , HW - kernel_size + 1);
+    dW = DivUpper(this->in_feature_size - kernel_size + 1 , WW - kernel_size + 1);
+    OW = HW * WW * (MW * CW - 1) + WW * (kernel_size - 1) + kernel_size - 1;
+    Hprime = (this->in_feature_size - kernel_size + stride) / stride;
+    Wprime = (this->in_feature_size - kernel_size + stride) / stride;
+    HWprime = (HW - kernel_size + stride) / stride;
+    WWprime = (WW - kernel_size + stride) / stride;
     polyModulusDegree = he->polyModulusDegree;
     plain = he->plain_mod;
     weight_pt = this->PackWeight();
+    this->fused_bn = false;
 
 };
 
-
 void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
-    Tensor<uint64_t> kernelFuse({M, C, h, h}, 0);
-    for (size_t i = 0; i < M; i++){
-        for (size_t j = 0; j < C; j++){
-            for (size_t k = 0; k < h; k++){
-                for (size_t l = 0; l < h; l++){
+    Tensor<uint64_t> kernelFuse({out_channels, in_channels, kernel_size, kernel_size}, 0);
+    for (size_t i = 0; i < out_channels; i++){
+        for (size_t j = 0; j < in_channels; j++){
+            for (size_t k = 0; k < kernel_size; k++){
+                for (size_t l = 0; l < kernel_size; l++){
                     kernelFuse({i, j, k, l}) = this->weight({i, j, k, l}) * (*gamma)({i});
                 }
             }
         }
     }
     this->weight = kernelFuse;
-    Tensor<uint64_t> biasFuse({M, Hprime, Wprime}, 0);
+    Tensor<uint64_t> biasFuse({out_channels, Hprime, Wprime}, 0);
+    std::cout << "Hprime:" << Hprime << std::endl;
+    std::cout << "Wprime:" << Wprime << std::endl; 
 
-    for (size_t i = 0; i < M; i++){
+    for (size_t i = 0; i < out_channels; i++){
         for (size_t j = 0; j < Hprime; j++){
             for (size_t k = 0; k < Wprime; k++){
                 biasFuse({i, j, k}) = this->bias({i, j, k}) * (*gamma)({i}) + (*beta)({i});
@@ -95,38 +97,11 @@ void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
 }
 
 
-Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, const Tensor<uint64_t>& kernel, 
-                  size_t stride, const Tensor<uint64_t>& bias, uint64_t padding, Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta)
-    : Conv2D(Height, stride, padding, kernel, bias, he)
+Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* he,
+                                Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta)
+    : Conv2DCheetah(in_feature_size, stride, padding, weight, bias, he)
 {
     this->fused_bn = true;
-    this->he = he;
-    std::vector<size_t> shape = kernel.shape();
-    C = shape[1];
-    M = shape[0];
-    h = shape[2];
-    polyModulusDegree = he->polyModulusDegree;
-    this->padding = padding;
-    H = Height + 2 * padding;
-    W = Width + 2 * padding;
-    s = stride;
-    int optimalHw = H, optimalWw = W;
-    FindOptimalPartition(H, W, h, C, polyModulusDegree, &optimalHw, &optimalWw);
-    HW = optimalHw;
-    WW = optimalWw;
-    CW = min(C, (polyModulusDegree / (HW * WW)));
-    MW = min(M, (polyModulusDegree / (CW * HW * WW)));
-    dM = DivUpper(M,MW);
-    dC = DivUpper(C,CW);
-    dH = DivUpper(H - h + 1 , HW - h + 1);
-    dW = DivUpper(W - h + 1 , WW - h + 1);
-    OW = HW * WW * (MW * CW - 1) + WW * (h - 1) + h - 1;
-    Hprime = (H - h + s) / s;
-    Wprime = (W - h + s) / s;
-    HWprime = (HW - h + s) / s;
-    WWprime = (WW - h + s) / s;
-    polyModulusDegree = he->polyModulusDegree;
-    plain = he->plain_mod;
     this->fuse_bn(gamma, beta);
     weight_pt = this->PackWeight();
 };
@@ -134,12 +109,12 @@ Conv2DCheetah::Conv2DCheetah (size_t Height, size_t Width, HEEvaluator* he, cons
 
 // 加密张量
 Tensor<UnifiedCiphertext> Conv2DCheetah::EncryptTensor(Tensor<UnifiedPlaintext> plainTensor) {
-    std::vector<size_t> shapeTab = {dC, dH, dW};
+    std::vector<size_t> shapeTab = {dC ,dH , dW};
     Tensor<UnifiedCiphertext> TalphabetaCipher(shapeTab, he->GenerateZeroCiphertext());
     for (unsigned long gama = 0; gama < dC; gama++) {
         for (unsigned long alpha = 0; alpha < dH; alpha++) {
             for (unsigned long beta = 0; beta < dW; beta++) {
-                he->encryptor->encrypt(plainTensor({gama, alpha, beta}), TalphabetaCipher({gama, alpha, beta}));
+                he->encryptor->encrypt(plainTensor(gama * dH * dW + alpha + beta), TalphabetaCipher(gama * dH * dW + alpha * dW + beta));
             }
         }
     }
@@ -147,53 +122,45 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::EncryptTensor(Tensor<UnifiedPlaintext> 
 }
 
 Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCipher){
+    auto shapeTab = inputCipher.shape();
+    Tensor<UnifiedCiphertext> cipherMask(shapeTab,he->GenerateZeroCiphertext());
+    Tensor<UnifiedPlaintext> plainMask(shapeTab,HOST);
+    size_t numPoly = 1;
+    for (int num : shapeTab) {
+        numPoly *= num;
+    }
+    auto tensorShapeTab = shapeTab;
+    tensorShapeTab.push_back(polyModulusDegree);
+
+    Tensor<uint64_t> tensorMask(tensorShapeTab, 0);
+    UnifiedPlaintext plainMaskInv(HOST);
     if (he->server) {
-        //add mask 
-        //send ciphertext
-        Tensor<UnifiedCiphertext> cipherMask({dM, dH, dW},he->GenerateZeroCiphertext());
-        Tensor<UnifiedPlaintext> plainMask({dM, dH, dW},HOST);
-        Tensor<uint64_t> tensorMask({dM, dH, dW, polyModulusDegree}, 0);
-        UnifiedPlaintext plainMaskInv(HOST);
         int64_t mask;
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<int64_t> dist(0, plain - 1);
-
-
-        for (size_t i = 0; i < dM; i++){
-            for (size_t j = 0; j < dH; j++){
-                for (size_t k = 0; k < dW; k++){
-                    plainMask({i,j,k}).hplain().resize(polyModulusDegree);
-                    plainMaskInv.hplain().resize(polyModulusDegree);
-                    for (size_t l = 0; l < polyModulusDegree; l++){
-                        mask = dist(gen);
-                        *(plainMask({i,j,k}).hplain().data() + l) = mask;
-                        tensorMask({i, j, k, l}) = mask;
-                        mask = plain - mask;
-                        *(plainMaskInv.hplain().data() + l) = mask;   
-                    }
-                    he->evaluator->add_plain(inputCipher({i,j,k}), plainMaskInv, cipherMask({i,j,k}));
-                }
+        for (size_t i = 0; i < numPoly; i++){
+            plainMask(i).hplain().resize(polyModulusDegree);
+            plainMaskInv.hplain().resize(polyModulusDegree);
+            for (size_t l = 0; l < polyModulusDegree; l++){
+                mask = dist(gen);
+                *(plainMask(i).hplain().data() + l) = mask;
+                tensorMask((i) * polyModulusDegree + l) = mask;
+                mask = plain - mask;
+                *(plainMaskInv.hplain().data() + l) = mask;   
             }
+            he->evaluator->add_plain(inputCipher(i), plainMaskInv, cipherMask(i));
         }
         cipherMask.flatten();
         he->SendEncVec(cipherMask);
         return tensorMask;
 
     }else{
-        //receive ciphertext and decry.
-        Tensor<UnifiedCiphertext> cipherMask({dM * dH * dW},he->GenerateZeroCiphertext());
         he->ReceiveEncVec(cipherMask);
-        Tensor<UnifiedPlaintext>  plainMask({dM, dH, dW},HOST);
-        Tensor<uint64_t> tensorMask({dM, dH, dW, polyModulusDegree}, 0);
-        for (size_t i = 0; i < dM; i++){
-            for (size_t j = 0; j < dH; j++){
-                for (size_t k = 0; k < dW; k++){
-                    he->decryptor->decrypt(cipherMask({i * dH * dW + j * dW + k}), plainMask({i, j, k}));
-                    for (size_t l = 0; l < polyModulusDegree; l++){
-                        tensorMask({i, j, k, l}) = *(plainMask({i,j,k}).hplain().data() + l);
-                    }
-                }
+        for (size_t i = 0; i < numPoly; i++){
+            this->HE->decryptor->decrypt(cipherMask(i), plainMask(i));
+            for (size_t j = 0; j < polyModulusDegree; j++){
+                tensorMask(i * polyModulusDegree + j) = *(plainMask(i).hplain().data() + j);
             }
         }
         return tensorMask;
@@ -202,10 +169,10 @@ Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCiphe
 
 // 计算输入张量的 Pack 版本
 Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
-    Tensor<uint64_t> padded_x ({C, H, W} ,0);
-    for (size_t i = 0; i < C; i++){
-        for (size_t j = 0; j < (H - 2 * padding); j++){
-            for (size_t k = 0; k < (W - 2 * padding); k++){
+    Tensor<uint64_t> padded_x ({in_channels, in_feature_size, in_feature_size} ,0);
+    for (size_t i = 0; i < in_channels; i++){
+        for (size_t j = 0; j < (in_feature_size - 2 * padding); j++){
+            for (size_t k = 0; k < (in_feature_size - 2 * padding); k++){
                 padded_x({i, j + padding, k + padding}) = x({i, j, k});
             }
         }
@@ -218,7 +185,7 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
             for (unsigned long beta = 0; beta < dW; beta++){
                 //traverse 
                 for (unsigned long ic = 0; ic < CW; ic++){
-                    if ((ic + gama * CW) >= C){
+                    if ((ic + gama * CW) >= in_channels){
                         for (unsigned long jh = 0; jh < HW; jh++){
                             for (unsigned long kw = 0; kw < WW; kw++){
                                 Tsub({ic,jh,kw}) = 0;
@@ -228,7 +195,7 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
                     }
                     else{
                         for (unsigned long jh = 0; jh < HW; jh++){
-                            if ((jh + alpha * (HW - h + 1)) >= H){
+                            if ((jh + alpha * (HW - kernel_size + 1)) >= in_feature_size){
                                 for (unsigned long kw = 0; kw < WW; kw++){
                                     Tsub({ic,jh,kw}) = 0;
                                 }
@@ -236,11 +203,11 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
                             }
                             else{
                                 for (unsigned long kw = 0; kw <WW; kw++){
-                                    if ((kw + beta * (WW - h + 1)) >= W){
+                                    if ((kw + beta * (WW - kernel_size + 1)) >= in_feature_size){
                                         Tsub({ic,jh,kw}) = 0;
                                     }
                                     else{
-                                        int64_t element = padded_x({gama * CW + ic, alpha * (HW - h + 1) + jh, beta * (WW - h + 1) + kw});
+                                        int64_t element = padded_x({gama * CW + ic, alpha * (HW - kernel_size + 1) + jh, beta * (WW - kernel_size + 1) + kw});
                                         Tsub({ic,jh,kw}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                                     }
                                 }
@@ -261,43 +228,43 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
 }
 
 Tensor<UnifiedCiphertext> Conv2DCheetah::TensorTOHE(Tensor<uint64_t> PackActivationTensor) {
-    std::vector<size_t> shapeTab = {dC, dH, dW};
-    Tensor<UnifiedPlaintext> Talphabeta(shapeTab,Datatype::HOST);
-    size_t len = CW * HW * WW;
-    for (unsigned long gama = 0; gama < dC; gama++){
-        for (unsigned long alpha = 0; alpha < dH; alpha++){
-            for (unsigned long beta = 0; beta < dW; beta++){
-                //traverse 
-                vector<uint64_t> Tsubv(len, 0); 
-                for (size_t i = 0; i < len; i++){
-                    Tsubv[i] = PackActivationTensor({gama, alpha, beta, i});
-                }
-                Talphabeta({gama,alpha,beta}).hplain().resize(polyModulusDegree);
-                seal::util::modulo_poly_coeffs(Tsubv, len, plain, Talphabeta({gama,alpha,beta}).hplain().data());
-                std::fill_n(Talphabeta({gama,alpha,beta}).hplain().data() + len, polyModulusDegree - len, 0);
-            }
-        }
+    std::vector<size_t> shapeTab = PackActivationTensor.shape();
+    size_t numPoly = 1;
+    for (int num : shapeTab) {
+        numPoly *= num;
     }
-    Tensor<UnifiedCiphertext> finalpack({dC, dH, dW}, he->GenerateZeroCiphertext());
+
+    int len = shapeTab.back(); 
+    shapeTab.pop_back();
+    numPoly /= len;
+    Tensor<UnifiedPlaintext> T(shapeTab,Datatype::HOST);
+    for (size_t i = 0; i < numPoly; i++){
+        vector<uint64_t> Tsubv(len, 0);
+        for (size_t j = 0; j < len; j++){
+            Tsubv[j] = PackActivationTensor(i * len + j);
+        }
+        T(i).hplain().resize(polyModulusDegree);
+        seal::util::modulo_poly_coeffs(Tsubv, len, plain, T(i).hplain().data());
+        std::fill_n(T(i).hplain().data() + len, polyModulusDegree - len, 0);
+    }
+    Tensor<UnifiedCiphertext> finalpack(shapeTab, he->GenerateZeroCiphertext());
     if (!he->server){
         //客服端
-        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
-        enc = this->EncryptTensor(Talphabeta);
-        enc.flatten();
+        Tensor<UnifiedCiphertext> enc(shapeTab, he->GenerateZeroCiphertext());
+        for (size_t i = 0; i < numPoly; i++){
+            this->HE->encryptor->encrypt(T(i), enc(i));
+        }
+        // enc.flatten();
         he->SendEncVec(enc);
     }else{
         //服务器端
-        Tensor<UnifiedCiphertext> encflatten({dC * dH * dW}, this->he->GenerateZeroCiphertext());
+        Tensor<UnifiedCiphertext> encflatten({numPoly}, this->he->GenerateZeroCiphertext());
         he->ReceiveEncVec(encflatten);
-        Tensor<UnifiedCiphertext> enc({dC, dH, dW}, he->GenerateZeroCiphertext());
-        for (size_t i = 0; i < dC; i++){
-            for (size_t j = 0; j < dH; j++){
-                for (size_t k = 0; k < dW; k++){
-                    enc({i,j,k}) = encflatten({i * dH * dW + j * dW + k});
-                }
-            }
+        Tensor<UnifiedCiphertext> enc(shapeTab, he->GenerateZeroCiphertext());
+        for (size_t i = 0; i < numPoly; i++){
+            this->HE->evaluator->add_plain(encflatten(i), T(i), enc(i));
         }
-        finalpack = this->sumCP(enc,Talphabeta);
+        finalpack = enc;
     }
     return finalpack;
 }
@@ -318,15 +285,15 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
             vector<uint64_t> Tsubv (polyModulusDegree,0); 
             for (unsigned long it = 0; it < MW; it++){
                 for (unsigned long jg = 0; jg < CW; jg++){
-                    if (((theta * MW + it) >= M) || ((gama * CW + jg) >= C)){
-                        for (unsigned hr = 0; hr < h; hr++){
-                            for (unsigned hc = 0; hc < h; hc++){
+                    if (((theta * MW + it) >= out_channels) || ((gama * CW + jg) >= in_channels)){
+                        for (unsigned hr = 0; hr < kernel_size; hr++){
+                            for (unsigned hc = 0; hc < kernel_size; hc++){
                                 Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = 0;
                             }
                         }
                     }else{
-                        for (unsigned hr = 0; hr < h; hr++){
-                            for (unsigned hc = 0; hc < h; hc++){
+                        for (unsigned hr = 0; hr < kernel_size; hr++){
+                            for (unsigned hc = 0; hc < kernel_size; hc++){
                                 int64_t element = this->weight({theta * MW + it, gama * CW + jg, hr, hc});
                                 Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = (element >= 0) ? unsigned(element) : unsigned(element + plain);
                             }
@@ -345,7 +312,6 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
 
     return Ktg;
 }
-
 Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor){
     Tensor<UnifiedCiphertext> Talphabeta({dC, dH, dW}, HOST);
     for (size_t gama = 0; gama < dC; gama++){
@@ -360,7 +326,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(Tensor<UnifiedPlaintext> weight_pt, Tensor<UnifiedCiphertext> ac_ct)
+Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct)
 {
 //Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     std::vector<size_t> shapeTab = {dM, dH, dW};
@@ -385,18 +351,18 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(Tensor<UnifiedPlaintext> weig
 }
 
 Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
-    Tensor<uint64_t> finalResult ({M, Hprime, Wprime});
+    Tensor<uint64_t> finalResult ({out_channels, Hprime, Wprime});
     int checkl = 0;
 
-    for (size_t cprime = 0; cprime < M; cprime++){
+    for (size_t cprime = 0; cprime < out_channels; cprime++){
         for (size_t iprime = 0; iprime < Hprime; iprime++){
             for (size_t jprime = 0; jprime < Wprime; jprime++){
                 size_t c = cprime % MW;
-                size_t i = (iprime * s) % (HW - h + 1);
-                size_t j = (jprime * s) % (WW - h + 1);
+                size_t i = (iprime * stride) % (HW - kernel_size + 1);
+                size_t j = (jprime * stride) % (WW - kernel_size + 1);
                 size_t theta = cprime / MW;
-                size_t alpha = (iprime * s) / (HW - h + 1);
-                size_t beta = (jprime * s) / (WW - h + 1);
+                size_t alpha = (iprime * stride) / (HW - kernel_size + 1);
+                size_t beta = (jprime * stride) / (WW - kernel_size + 1);
                 size_t des = OW - c * CW * HW * WW + i  * WW + j;
                 finalResult({cprime, iprime, jprime}) = out({theta, alpha, beta, des});
             }
@@ -407,17 +373,11 @@ Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
 }
 
 Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> x){
-    std::cout << "1";
     auto pack = this->PackActivation(x);
-    std::cout << "2";
-    auto Cipher = this->TensorTOHE(pack);
-    std::cout << "3";
+    auto Cipher = Operator::SSToHE_coeff(pack, he);
     auto ConvResult = this->HECompute(weight_pt, Cipher);
-    std::cout << "4";
-    auto share = this->HETOTensor(ConvResult);
-    std::cout << "5";
+    auto share = Operator::HEToSS_coeff(ConvResult, he);
     auto finalR = this->DepackResult(share);
-    std::cout << "6";
     return finalR;
 }
 
