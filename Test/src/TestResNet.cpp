@@ -7,7 +7,7 @@ using namespace Model;
 #define MAX_THREADS 4
 
 int port = 32000;
-int num_threads = 1;
+int num_threads = 2;
 string address = "127.0.0.1";
 
 int bitlength = 16;

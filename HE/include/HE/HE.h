@@ -35,7 +35,7 @@ class HEEvaluator {
         Utils::NetIO &IO,
         bool server,
         size_t polyModulusDegree=8192,
-        size_t plainWidth=20,
+        size_t plainWidth=60,
         LOCATION backend = HOST
     ){
         this->IO = &IO;

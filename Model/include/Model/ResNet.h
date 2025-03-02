@@ -16,6 +16,7 @@ class Bottleneck{
         bool has_shortcut = false;
         ReLU<T, IO> *relu;
         Truncation<T> *truncation;
+        // TODO: can be simplified to use pointer
         Conv2D* conv1;
         Conv2D* conv2;
         Conv2D* conv3;
@@ -60,7 +61,7 @@ class Bottleneck{
             x = conv1->operator()(x);
             x.print_shape();
             cout << "conv1 done" << endl;
-            (*relu)(x);
+            (*relu)(&x);
             x.print_shape();
             cout << "relu done" << endl;
             uint8_t *msb_x = new uint8_t[x.size()];
@@ -70,7 +71,7 @@ class Bottleneck{
             cout << "truncation done" << endl;
             x = conv2->operator()(x);
             cout << "conv2 done" << endl;
-            (*relu)(x);
+            (*relu)(&x);
             cout << "relu done" << endl;
             uint8_t *msb_x1 = new uint8_t[x.size()];
             memset(msb_x1, 0, x.size());

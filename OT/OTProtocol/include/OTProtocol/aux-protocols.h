@@ -45,6 +45,8 @@ public:
       // bitwidth of y
       int32_t bw_y)
     {
+        cout << "bw_x = " << bw_x << endl;
+        cout << "bw_y = " << bw_y << endl;
         assert(bw_x <= 64 && bw_y <= 64 && bw_y <= bw_x);
         uint64_t mask_x = (bw_x == 64 ? -1 : ((1ULL << bw_x) - 1));
         uint64_t mask_y = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
@@ -60,12 +62,18 @@ public:
         for (int i = 0; i < size; i++) {
             corr_data[i] = (x[i] * (1 - 2 * uint64_t(sel[i]))) & mask_y;
         }
+        cout << "OK Here" << endl;
+        cout << "party = " << party << endl;
         if (party == Utils::ALICE) {
             otpack->iknp_straight->send_cot(data_S, corr_data, size, bw_y);
+            cout << "party 1, send cot done" << endl;
             otpack->iknp_reversed->recv_cot(data_R, (bool *)sel, size, bw_y);
+            cout << "party 1, recv cot done" << endl;
         } else {  // party == BOB
             otpack->iknp_straight->recv_cot(data_R, (bool *)sel, size, bw_y);
+            cout << "party 2, recv cot done" << endl;
             otpack->iknp_reversed->send_cot(data_S, corr_data, size, bw_y);
+            cout << "party 2, send cot done" << endl;
         }
         for (int i = 0; i < size; i++) {
             y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i] - data_S[i]) & mask_y);

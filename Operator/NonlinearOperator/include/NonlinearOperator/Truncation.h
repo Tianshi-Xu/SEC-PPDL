@@ -14,6 +14,7 @@ class Truncation {
         }
         // for now, only support uint64_t
         void operator()(Tensor<T> &x, int32_t shift, int32_t bw, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
+            auto shape = x.shape();
             int dim = x.size();
             x.flatten();
             T* x_flatten = x.data().data();
@@ -26,6 +27,7 @@ class Truncation {
             for (int i = 0; i < num_threads; i++) {
                 truncation_threads[i].join();
             }
+            x.reshape(shape);
         }
 
     private:

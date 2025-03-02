@@ -10,8 +10,7 @@
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
-using namespace OTPrimitive;
-using namespace std;
+
 namespace OTPrimitive {
 
 template <typename IO> 
@@ -56,7 +55,7 @@ public:
   uint8_t *extended_r = nullptr;
   IO *io = nullptr;
 
-  SplitKKOT(int party, IO *io, int N) : OT<IO>() {
+  SplitKKOT(int party, IO *io, int N) {
     assert(party == ALICE || party == BOB);
     this->party = party;
     this->io = io;
@@ -171,6 +170,7 @@ public:
   }
 
   void setup_send(bool is256, block256 *in_k0 = nullptr, bool *in_s = nullptr) override {
+    std::cout << "split kkot setup send" << std::endl;
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block256));

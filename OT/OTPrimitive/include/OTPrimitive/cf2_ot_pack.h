@@ -6,11 +6,11 @@ using namespace OTPrimitive;
 using namespace std;
 
 namespace OTPrimitive {
-template <typename T>
-class IKNPOTPack : public OTPack<T> {
+template <typename IO>
+class IKNPOTPack : public OTPack<IO> {
 
  public:
-  IKNPOTPack(T *io, int party, bool do_setup = true): OTPack<T>(io, party, do_setup) {
+  IKNPOTPack(IO *io, int party, bool do_setup = true): OTPack<IO>(io, party, do_setup) {
     std::cout << "using kkot pack" << std::endl;
     this->party = party;
     this->do_setup = do_setup;
@@ -25,9 +25,7 @@ class IKNPOTPack : public OTPack<T> {
     this->iknp_reversed = new SplitIKNP<Utils::NetIO>(3 - this->party, io);
     this->do_setup = false;
     if (do_setup) {
-      // cout << "SetupBaseOTs" << endl;
       SetupBaseOTs();
-      // cout << "SetupBaseOTs done" << endl;
     }
   }
 
@@ -68,11 +66,11 @@ class IKNPOTPack : public OTPack<T> {
    * implementation does not support this.
    */
 
-  void copy(OTPack<T> *copy_from) {
+  void copy(OTPack<IO> *copy_from) {
     assert(this->do_setup == false && copy_from->do_setup == true);
-    SplitKKOT<T> *kkot_base = copy_from->kkot[0];
-    SplitIKNP<T> *iknp_s_base = copy_from->iknp_straight;
-    SplitIKNP<T> *iknp_r_base = copy_from->iknp_reversed;
+    SplitKKOT<IO> *kkot_base = copy_from->kkot[0];
+    SplitIKNP<IO> *iknp_s_base = copy_from->iknp_straight;
+    SplitIKNP<IO> *iknp_r_base = copy_from->iknp_reversed;
 
     switch (this->party) {
       case 1:

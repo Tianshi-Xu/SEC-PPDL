@@ -21,7 +21,7 @@ template <typename T, typename IO> class ReLUProtocol {
 };
 
 
-template <typename T, typename IO>
+template <typename T, typename IO> 
 class ReLURingProtocol : public ReLUProtocol<T, IO> {
 public:
   IO *io = nullptr;
@@ -33,16 +33,6 @@ public:
   int algeb_str;
   int l, b;
   int num_cmps;
-  uint8_t two_small = 1 << 1;
-  uint8_t zero_small = 0;
-  uint64_t mask_take_32 = -1;
-  uint64_t msb_one;
-  uint64_t cut_mask;
-  uint64_t relu_comparison_rhs;
-  T mask_l;
-  T relu_comparison_rhs_type;
-  T cut_mask_type;
-  T msb_one_type;
 
   // Constructor
   ReLURingProtocol(int party, IO *io, int l, int b,
@@ -55,49 +45,22 @@ public:
     this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b,ot_type);
     this->triple_gen = this->millionaire->triple_gen;
     this->aux = new AuxProtocols(party, io, otpack);
-    // configure();
   }
 
   // Destructor
-  virtual ~ReLURingProtocol() { delete millionaire; }
-
-  void configure() {
-    if (this->l != 32 && this->l != 64) {
-      mask_l = (T)((1ULL << l) - 1);
-    } else if (this->l == 32) {
-      mask_l = -1;
-    } else { // l = 64
-      mask_l = -1ULL;
-    }
-    if (sizeof(T) == sizeof(uint64_t)) {
-      msb_one = (1ULL << (this->l - 1));
-      relu_comparison_rhs_type = msb_one - 1ULL;
-      relu_comparison_rhs = relu_comparison_rhs_type;
-      cut_mask_type = relu_comparison_rhs_type;
-      cut_mask = cut_mask_type;
-    } else {
-      msb_one_type = (1 << (this->l - 1));
-      relu_comparison_rhs_type = msb_one_type - 1;
-      relu_comparison_rhs = relu_comparison_rhs_type + 0ULL;
-      cut_mask_type = relu_comparison_rhs_type;
-      cut_mask = cut_mask_type + 0ULL;
-    }
-  }
+  virtual ~ReLURingProtocol() { delete this->millionaire; }
 
   void relu(T *result, T *share, int num_relu,
                 uint8_t *msb, bool skip_ot) {
-        cout << "num_relu = " << num_relu << endl;
         uint8_t *msb_tmp = new uint8_t[num_relu];
-        cout << "share[0] = " << share[0] << endl;
         if(msb!=nullptr){
           memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
         }
         else{
           this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
         }
-        printf("msb_tmp[0] = %d\n", msb_tmp[0]);
         for (int i = 0; i < num_relu; i++) {
-            if (party == Utils::ALICE) {
+            if (this->party == Utils::ALICE) {
                 msb_tmp[i] = msb_tmp[i] ^ 1;
             }
         }
@@ -120,6 +83,7 @@ class ReLU : public Module{
       }
 
       void operator()(Tensor<T> *x){
+        auto shape = x->shape();
         int dim = x->size();
         x->flatten();
         T* x_flatten = x->data().data();
@@ -139,6 +103,7 @@ class ReLU : public Module{
         for (int i = 0; i < num_threads; ++i) {
             relu_threads[i].join();
         }
+        x->reshape(shape);
       }
       
     private:

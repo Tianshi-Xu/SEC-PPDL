@@ -7,8 +7,8 @@
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
-using namespace std;
-using namespace OTPrimitive;
+
+
 namespace OTPrimitive {
 template <typename IO> 
 class SplitIKNP : public OT<IO> {
@@ -43,7 +43,7 @@ public:
   // This is corrected in the online phase when actual choice_input comes.
   uint8_t *r_off;
   int N = 2;
-  SplitIKNP(int party, IO *io) : OT<IO>() {
+  SplitIKNP(int party, IO *io) {
     assert(party == ALICE || party == BOB);
     this->party = party;
     this->io = io;
@@ -151,7 +151,7 @@ public:
     }
   }
 
-  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) override {
+  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) {
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -166,7 +166,7 @@ public:
       G0[i].reseed(&k0[i]);
   }
 
-  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) override {
+  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) {
     setup = true;
     if (in_k0 != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -923,17 +923,17 @@ public:
    *            Send/Recv wrapper functions                *
    ********************************************************/
 
-  void send(const block128 *data0, const block128 *data1, int length) override {
+  void send(const block128 *data0, const block128 *data1, int length)  {
     send_pre(length);
     got_send_post(data0, data1, length);
   }
 
-  void recv(block128 *data, const bool *b, int length) override {
+  void recv(block128 *data, const bool *b, int length)  {
     recv_pre((bool *)b, length);
     got_recv_post(data, b, length);
   }
 
-  void send(uint64_t **data, int length, int l) override {
+  void send(uint64_t **data, int length, int l)  {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -946,7 +946,7 @@ public:
     }
   }
 
-  void recv(uint64_t *data, uint8_t *b, int length, int l) override {
+  void recv(uint64_t *data, uint8_t *b, int length, int l)  {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -959,7 +959,7 @@ public:
     }
   }
 
-  void send(uint8_t **data, int length, int l) override {
+  void send(uint8_t **data, int length, int l)  {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {
@@ -973,7 +973,7 @@ public:
     }
   }
 
-  void recv(uint8_t *data, uint8_t *b, int length, int l) override {
+  void recv(uint8_t *data, uint8_t *b, int length, int l)  {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {
@@ -987,13 +987,13 @@ public:
     }
   }
 
-  void send_cot(uint64_t *data0, uint64_t *corr, int length, int l) override {
+  void send_cot(uint64_t *data0, uint64_t *corr, int length, int l)  {
     this->l = l;
     send_pre(length);
     cot_send_post(data0, corr, length);
   }
 
-  void recv_cot(uint64_t *data, bool *b, int length, int l) override {
+  void recv_cot(uint64_t *data, bool *b, int length, int l)  {
     this->l = l;
     recv_pre(b, length);
     cot_recv_post(data, b, length);
