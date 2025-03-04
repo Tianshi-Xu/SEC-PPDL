@@ -67,7 +67,7 @@ public:
     switch (method) {
     case Ideal: {
       int num_bytes = ceil((double)num_triples / 8);
-      if (party == Utils::ALICE) {
+      if (party == ALICE) {
         uint8_t *a = new uint8_t[num_bytes];
         uint8_t *b = new uint8_t[num_bytes];
         uint8_t *c = new uint8_t[num_bytes];
@@ -157,12 +157,12 @@ public:
     //     v = new uint8_t[num_triples];
     //     io->sync();
     //     switch (party) {
-    //         case Utils::ALICE: {
+    //         case ALICE: {
     //             otpack->silent_ot_reversed->template recv_ot_rm_rc<uint8_t>(u, (bool*)a, num_triples, 1);
     //             otpack->silent_ot->send_ot_rm_rc(v, b, num_triples, 1);
     //             break;
     //         }
-    //         case Utils::BOB: {
+    //         case BOB: {
     //             otpack->silent_ot_reversed->template send_ot_rm_rc<uint8_t>(v, b, num_triples, 1);
     //             otpack->silent_ot->recv_ot_rm_rc(u, (bool*)a, num_triples, 1);
     //             break;
@@ -205,7 +205,7 @@ public:
       prg->random_bool((bool *)a, num_triples);
       prg->random_bool((bool *)b, num_triples);
       switch (party) {
-      case Utils::ALICE: {
+      case ALICE: {
         prg->random_bool((bool *)c, num_triples);
         uint8_t **ot_messages; // (num_triples/2) X 16
         ot_messages = new uint8_t *[num_triples / 2];
@@ -228,7 +228,7 @@ public:
         delete[] ot_messages;
         break;
       }
-      case Utils::BOB: {
+      case BOB: {
         uint8_t *ot_selection = new uint8_t[(size_t)num_triples / 2];
         uint8_t *ot_result = new uint8_t[(size_t)num_triples / 2];
         for (int i = 0; i < num_triples; i += 2) {
@@ -276,7 +276,7 @@ public:
       }
       prg->random_bool((bool *)b, num_triples);
       switch (party) {
-      case Utils::ALICE: {
+      case ALICE: {
         prg->random_bool((bool *)c, num_triples);
         uint8_t **ot_messages; // (num_triples/2) X 8
         ot_messages = new uint8_t *[num_triples / 2];
@@ -303,7 +303,7 @@ public:
         delete[] ot_messages;
         break;
       }
-      case Utils::BOB: {
+      case BOB: {
         uint8_t *ot_selection = new uint8_t[(size_t)num_triples / 2];
         uint8_t *ot_result = new uint8_t[(size_t)num_triples / 2];
         for (int i = 0; i < num_triples; i += 2 * offset) {

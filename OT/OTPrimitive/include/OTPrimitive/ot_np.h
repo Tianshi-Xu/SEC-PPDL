@@ -36,7 +36,7 @@ public:
   IO *io;
   Utils::Group *G = nullptr;
   bool delete_G = true;
-  OTNP(IO *io, Utils::Group *_G = nullptr) : OT<IO>() {
+  OTNP(IO *io, Utils::Group *_G = nullptr) {
     this->io = io;
     if (_G == nullptr)
       G = new Utils::Group();
@@ -50,7 +50,7 @@ public:
       delete G;
   }
 
-  void send(const block128 *data0, const block128 *data1, int length) override {
+  void send(const block128 *data0, const block128 *data1, int length) {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -82,9 +82,9 @@ public:
       pk0[i] = pk0[i].mul(r[i]);
       Utils::Point inv = pk0[i].inv();
       pk1 = Cr[i].add(inv);
-      m[0] = Hash::KDF128(pk0[i]);
+      m[0] = Utils::Hash::KDF128(pk0[i]);
       m[0] = xorBlocks(data0[i], m[0]);
-      m[1] = Hash::KDF128(pk1);
+      m[1] = Utils::Hash::KDF128(pk1);
       m[1] = xorBlocks(data1[i], m[1]);
       io->send_data(m, 2 * sizeof(block128));
     }
@@ -96,7 +96,7 @@ public:
     delete[] pk0;
   }
 
-  void send(const block256 *data0, const block256 *data1, int length) override {
+  void send(const block256 *data0, const block256 *data1, int length) {
     Utils::BigInt d;
     G->get_rand_bn(d);
     Utils::Point C = G->mul_gen(d);
@@ -128,9 +128,9 @@ public:
       pk0[i] = pk0[i].mul(r[i]);
       Utils::Point inv = pk0[i].inv();
       pk1 = Cr[i].add(inv);
-      m[0] = Hash::KDF256(pk0[i]);
+      m[0] = Utils::Hash::KDF256(pk0[i]);
       m[0] = xorBlocks(data0[i], m[0]);
-      m[1] = Hash::KDF256(pk1);
+      m[1] = Utils::Hash::KDF256(pk1);
       m[1] = xorBlocks(data1[i], m[1]);
       io->send_data(m, 2 * sizeof(block256));
     }
@@ -142,7 +142,7 @@ public:
     delete[] pk0;
   }
 
-  void recv(block128 *data, const bool *b, int length) override {
+  void recv(block128 *data, const bool *b, int length) {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];
@@ -171,13 +171,13 @@ public:
     for (int i = 0; i < length; ++i) {
       int ind = b[i] ? 1 : 0;
       io->recv_data(m, 2 * sizeof(block128));
-      data[i] = xorBlocks(m[ind], Hash::KDF128(gr[i]));
+      data[i] = xorBlocks(m[ind], Utils::Hash::KDF128(gr[i]));
     }
     delete[] k;
     delete[] gr;
   }
 
-  void recv(block256 *data, const bool *b, int length) override {
+  void recv(block256 *data, const bool *b, int length) {
     Utils::BigInt *k = new Utils::BigInt[length];
     Utils::Point *gr = new Utils::Point[length];
     Utils::Point pk[2];
@@ -206,7 +206,7 @@ public:
     for (int i = 0; i < length; ++i) {
       int ind = b[i] ? 1 : 0;
       io->recv_data(m, 2 * sizeof(block256));
-      data[i] = xorBlocks(m[ind], Hash::KDF256(gr[i]));
+      data[i] = xorBlocks(m[ind], Utils::Hash::KDF256(gr[i]));
     }
     delete[] k;
     delete[] gr;

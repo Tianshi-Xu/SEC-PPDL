@@ -24,7 +24,7 @@ Enquiries about further applications and development opportunities are welcome.
 
 Modified by Deevashwer Rathee
 */
-#pragma once
+
 #ifndef UTIL_BLOCK_H__
 #define UTIL_BLOCK_H__
 #include <algorithm>
@@ -44,36 +44,6 @@ Modified by Deevashwer Rathee
 namespace Utils {
 typedef __m128i block128;
 typedef __m256i block256;
-
-//// Start: block
-typedef __m128i block;
-
-#ifdef __x86_64__
-__attribute__((target("sse2")))
-inline block makeBlock(uint64_t high, uint64_t low) {
-	return _mm_set_epi64x(high, low);
-}
-#elif __aarch64__
-inline block makeBlock(uint64_t high, uint64_t low) {
-	return (block)vcombine_u64((uint64x1_t)low, (uint64x1_t)high);
-}
-#endif
-
-const block global_zero_block = makeBlock(0, 0);
-const block global_all_one_block = makeBlock(0xFFFFFFFFFFFFFFFF,0xFFFFFFFFFFFFFFFF);
-
-/* Linear orthomorphism function
- * [REF] Implementation of "Efficient and Secure Multiparty Computation from Fixed-Key Block Ciphers"
- * https://eprint.iacr.org/2019/074.pdf
- */
-#ifdef __x86_64__
-__attribute__((target("sse2")))
-#endif
-inline block sigma(block a) {
-	return _mm_shuffle_epi32(a, 78) ^ (a & makeBlock(0xFFFFFFFFFFFFFFFF, 0x00));
-}
-//// End: block
-
 
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__ICC)
 static inline void __attribute__((__always_inline__))
@@ -158,6 +128,8 @@ __attribute__((target("sse2"))) inline block128 zero_block() {
 inline block128 one_block() {
   return makeBlock128(0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL);
 }
+
+const block128 select_mask[2] = {zero_block(), one_block()};
 
 __attribute__((target("sse2"))) inline block128 make_delta(const block128 &a) {
   return _mm_or_si128(makeBlock128(0L, 1L), a);
@@ -256,80 +228,31 @@ __attribute__((target("sse4.1,sse2"))) inline bool isOne(const block128 *b) {
   return _mm_testz_si128(neq, neq) > 0;
 }
 
+/* Linear orthomorphism function
+ * [REF] Implementation of "Efficient and Secure Multiparty Computation from
+ * Fixed-Key Block Ciphers" https://eprint.iacr.org/2019/074.pdf
+ */
+#ifdef __x86_64__
+__attribute__((target("sse2")))
+#endif
+inline block128
+sigma(block128 a) {
+  return _mm_shuffle_epi32(a, 78) ^
+         (a & makeBlock128(0xFFFFFFFFFFFFFFFF, 0x00));
+}
+
+inline block128 set_bit(const block128 &a, int i) {
+  if (i < 64)
+    return makeBlock128(0L, 1ULL << i) | a;
+  else
+    return makeBlock128(1ULL << (i - 64), 0) | a;
+}
+
 // Modified from
 // https://mischasan.wordpress.com/2011/10/03/the-full-sse2-bit-matrix-transpose-routine/
 // with inner most loops changed to _mm_set_epi8 and _mm_set_epi16
 #define INP(x, y) inp[(x)*ncols / 8 + (y) / 8]
 #define OUT(x, y) out[(y)*nrows / 8 + (x) / 8]
-
-__attribute__((target("sse2"))) inline void
-sse_trans(uint8_t *out, uint8_t const *inp, uint64_t nrows, uint64_t ncols) {
-  uint64_t rr, cc;
-  int i, h;
-  union {
-    __m128i x;
-    uint8_t b[16];
-  } tmp;
-  __m128i vec;
-  assert(nrows % 8 == 0 && ncols % 8 == 0);
-
-  // Do the main body in 16x8 blocks:
-  for (rr = 0; rr <= nrows - 16; rr += 16) {
-    for (cc = 0; cc < ncols; cc += 8) {
-      vec = _mm_set_epi8(INP(rr + 15, cc), INP(rr + 14, cc), INP(rr + 13, cc),
-                         INP(rr + 12, cc), INP(rr + 11, cc), INP(rr + 10, cc),
-                         INP(rr + 9, cc), INP(rr + 8, cc), INP(rr + 7, cc),
-                         INP(rr + 6, cc), INP(rr + 5, cc), INP(rr + 4, cc),
-                         INP(rr + 3, cc), INP(rr + 2, cc), INP(rr + 1, cc),
-                         INP(rr + 0, cc));
-      for (i = 8; --i >= 0; vec = _mm_slli_epi64(vec, 1))
-        *(uint16_t *)&OUT(rr, cc + i) = _mm_movemask_epi8(vec);
-    }
-  }
-  if (rr == nrows)
-    return;
-
-  // The remainder is a block128 of 8x(16n+8) bits (n may be 0).
-  //  Do a PAIR of 8x8 blocks in each step:
-  if ((ncols % 8 == 0 && ncols % 16 != 0) ||
-      (nrows % 8 == 0 && nrows % 16 != 0)) {
-    // The fancy optimizations in the else-branch don't work if the above
-    // if-condition holds, so we use the simpler non-simd variant for that case.
-    for (cc = 0; cc <= ncols - 16; cc += 16) {
-      for (i = 0; i < 8; ++i) {
-        tmp.b[i] = h = *(uint16_t const *)&INP(rr + i, cc);
-        tmp.b[i + 8] = h >> 8;
-      }
-      for (i = 8; --i >= 0; tmp.x = _mm_slli_epi64(tmp.x, 1)) {
-        OUT(rr, cc + i) = h = _mm_movemask_epi8(tmp.x);
-        OUT(rr, cc + i + 8) = h >> 8;
-      }
-    }
-  } else {
-    for (cc = 0; cc <= ncols - 16; cc += 16) {
-      vec = _mm_set_epi16(*(uint16_t const *)&INP(rr + 7, cc),
-                          *(uint16_t const *)&INP(rr + 6, cc),
-                          *(uint16_t const *)&INP(rr + 5, cc),
-                          *(uint16_t const *)&INP(rr + 4, cc),
-                          *(uint16_t const *)&INP(rr + 3, cc),
-                          *(uint16_t const *)&INP(rr + 2, cc),
-                          *(uint16_t const *)&INP(rr + 1, cc),
-                          *(uint16_t const *)&INP(rr + 0, cc));
-      for (i = 8; --i >= 0; vec = _mm_slli_epi64(vec, 1)) {
-        OUT(rr, cc + i) = h = _mm_movemask_epi8(vec);
-        OUT(rr, cc + i + 8) = h >> 8;
-      }
-    }
-  }
-  if (cc == ncols)
-    return;
-
-  //  Do the remaining 8x8 block128:
-  for (i = 0; i < 8; ++i)
-    tmp.b[i] = INP(rr + i, cc);
-  for (i = 8; --i >= 0; tmp.x = _mm_slli_epi64(tmp.x, 1))
-    OUT(rr, cc + i) = _mm_movemask_epi8(tmp.x);
-}
 
 const char fix_key[] = "\x61\x7e\x8d\xa2\xa0\x51\x1e\x96"
                        "\x5e\x41\xc2\x9b\x15\x3f\xc7\x7a";
@@ -397,5 +320,5 @@ __attribute__((target("sse2"))) inline block128 RIGHTSHIFT(block128 bl) {
   bl = _mm_slli_epi64(bl, 1);
   return _mm_xor_si128(bl, tmp);
 }
-} // namespace Utils
+} // namespace sci
 #endif // UTIL_BLOCK_H__

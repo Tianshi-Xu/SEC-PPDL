@@ -1,11 +1,22 @@
-#include <LinearLayer/Conv.h>
+// #include <LinearLayer/Conv.h>
+#include <Model/ResNet.h>
+#include <fstream>
+#include <iostream>
 
+int party, port = 32000;
+int num_threads = 2;
+string address = "127.0.0.1";
+
+using namespace std;
 using namespace LinearLayer;
 int main(int argc, char **argv){
-    bool party = std::stoi(argv[1]);
-    const char* address = "127.0.0.1";
-    int port = 32000;
-    Utils::NetIO netio(party==0?nullptr:address, port);
+    ArgMapping amap;
+    amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
+    amap.arg("p", port, "Port Number");
+    amap.arg("ip", address, "IP Address of server (ALICE)");
+
+    amap.parse(argc, argv);
+    Utils::NetIO* netio = new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port);
     std::cout << "netio generated" << std::endl;
     HE::HEEvaluator HE(netio, party);
     HE.GenerateNewKey();

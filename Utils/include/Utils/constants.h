@@ -1,57 +1,14 @@
-/*
-Original Work Copyright (c) 2018 Xiao Wang (wangxiao@gmail.com)
-Modified Work Copyright (c) 2020 Microsoft Research
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Enquiries about further applications and development opportunities are welcome.
-
-Modified by Deevashwer Rathee
-*/
-#pragma once
-#ifndef CONFIG_H__
-#define CONFIG_H__
 #include <map>
-#include <stdint.h>
-
-// using namespace Utils;
+#include <bits/types.h>
 
 namespace Utils {
-const static int AES_BATCH_SIZE = 2048;
-// const static int AES_BATCH_SIZE = 256;
-const static int HASH_BUFFER_SIZE = 1024 * 8;
-const static int NETWORK_BUFFER_SIZE =
-    1024 * 16; // Should change depending on the network
-const static int FILE_BUFFER_SIZE = 1024 * 16;
-const static int CHECK_BUFFER_SIZE = 1024 * 8;
 
-const static int ALICE = 1;
-const static int BOB = 2;
 
-#ifdef SCI_HE
-const std::map<int32_t, uint64_t> default_prime_mod{
-    {32, 4293918721},    {33, 8585084929},   {34, 17171218433},
-    {35, 34359214081},   {36, 68686184449},  {37, 137352314881},
-    {38, 274824036353},  {39, 549753716737}, {40, 1099480956929},
-    {41, 2198100901889}, {50,1125899906826241}
-};
-#endif
+typedef __uint8_t uint8_t;
+typedef __uint16_t uint16_t;
+typedef __uint32_t uint32_t;
+typedef __uint64_t uint64_t;
 
 const static uint64_t WH_Code[256][4] = {
     {0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
@@ -566,9 +523,4 @@ const static uint64_t WH_Code[256][4] = {
      0xc33c3cc33cc3c33c},
     {0x6996966996696996, 0x9669699669969669, 0x9669699669969669,
      0x6996966996696996}};
-
-#if defined(unix) || defined(__unix__) || defined(__unix) || defined(__APPLE__)
-#define UNIX_PLATFORM
-#endif
-} // namespace Utils
-#endif // CONFIG_H__
+}

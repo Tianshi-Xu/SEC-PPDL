@@ -17,10 +17,10 @@ class Bottleneck{
         ReLU<T, IO> *relu;
         Truncation<T> *truncation;
         // TODO: can be simplified to use pointer
-        Conv2D* conv1;
-        Conv2D* conv2;
-        Conv2D* conv3;
-        Conv2D* shortcut;
+        Conv2D *conv1;
+        Conv2D *conv2;
+        Conv2D *conv3;
+        Conv2D *shortcut;
 
         Bottleneck(uint64_t in_feature_size, uint64_t in_planes, uint64_t planes, uint64_t stride, CryptoPrimitive<T, IO> *cryptoPrimitive){
             this->in_planes = in_planes;
@@ -47,7 +47,7 @@ class Bottleneck{
             {
             case Datatype::CONV_TYPE::Nest:
                 conv = new Conv2DNest(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
-                cout << "Conv2DNest created" << endl;
+                // cout << "Conv2DNest created" << endl;
                 break;
             }
             return conv;
@@ -56,33 +56,33 @@ class Bottleneck{
         Tensor<T> operator()(Tensor<T> &x){
             Tensor<T> x_res = x;
             x.print_shape();
-            cout << "Bottleneck operator called" << endl;
+            // cout << "Bottleneck operator called" << endl;
             // conv1->weight.print_shape();
-            x = conv1->operator()(x);
+            x = (*conv1)(x);
             x.print_shape();
-            cout << "conv1 done" << endl;
-            (*relu)(&x);
+            // cout << "conv1 done" << endl;
+            (*relu)(x);
             x.print_shape();
-            cout << "relu done" << endl;
+            // cout << "relu1 done" << endl;
             uint8_t *msb_x = new uint8_t[x.size()];
             memset(msb_x, 0, x.size());
             (*truncation)(x,17,43,true,msb_x);
             x.print_shape();
-            cout << "truncation done" << endl;
-            x = conv2->operator()(x);
-            cout << "conv2 done" << endl;
-            (*relu)(&x);
-            cout << "relu done" << endl;
+            // cout << "truncation1 done" << endl;
+            x = (*conv2)(x);
+            // cout << "conv2 done" << endl;
+            (*relu)(x);
+            // cout << "relu2 done" << endl;
             uint8_t *msb_x1 = new uint8_t[x.size()];
             memset(msb_x1, 0, x.size());
             (*truncation)(x,17,43,true,msb_x1);
-            cout << "truncation done" << endl;
-            x = conv3->operator()(x);
-            cout << "conv3 done" << endl;
+            // cout << "truncation2 done" << endl;
+            x = (*conv3)(x);
+            // cout << "conv3 done" << endl;
             (*truncation)(x,17,43,true,msb_x1);
-            cout << "truncation done" << endl;
+            // cout << "truncation3 done" << endl;
             if (has_shortcut){
-                x_res = shortcut->operator()(x_res);
+                x_res = (*shortcut)(x_res);
             }
             return x + x_res;
         }
@@ -91,4 +91,5 @@ class Bottleneck{
 class ResNet {
     
 };
+
 }

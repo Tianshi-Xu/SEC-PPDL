@@ -9,7 +9,7 @@
 #pragma once
 namespace HE {
 
-class NetIO {
+class HEIO {
 private:
     int sockfd;  // 套接字文件描述符
     struct sockaddr_in address;
@@ -17,8 +17,8 @@ private:
     int counter = 0;
 
 public:
-    NetIO(const char* ip, int port, bool server = false);
-    ~NetIO();
+    HEIO(const char* ip, int port, bool server = false);
+    ~HEIO();
 
     void send_data(const void* data, int nbyte);
     void recv_data(void* data, int nbyte);

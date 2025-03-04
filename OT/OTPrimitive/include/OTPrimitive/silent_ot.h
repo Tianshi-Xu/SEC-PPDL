@@ -7,14 +7,14 @@
 
 #include "ot_utils.h"
 #include "ot.h"
-#include <Utils/mitccrh.h>
+#include <emp-tool/utils/mitccrh.h>
 #include <Utils/performance.h>
 
-
+using namespace emp;
 namespace OTPrimitive {
 
 template <typename IO>
-class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
+class SilentOT : public OTPrimitive::OT<IO> {
  public:
   FerretCOT<IO>* ferret;
   Utils::MITCCRH<8> mitccrh;
@@ -24,50 +24,49 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
            bool warm_up = true) {
     // run_setup = false;
     // warm_up = false;
-    ferret = new FerretCOT<IO>(party, threads, ios, malicious, run_setup, pre_file);
+    PrimalLPNParameter param = ferret_b13;
+    ferret = new emp::FerretCOT<IO>(party, threads, ios, malicious, run_setup, param, pre_file);
     
     if (warm_up) {
       block tmp;
+      std::cout << "begin warm up" << std::endl;
       ferret->rcot(&tmp, 1);
+      std::cout << "warm up done" << std::endl;
     }
   }
 
   ~SilentOT() { delete ferret; }
 
-  void send(const block* data0, const block* data1, int64_t length) {
+  void send(const block128* data0, const block128* data1, int length) override {
     send_ot_cm_cc(data0, data1, length);
   }
 
-  void recv(block* data, const bool* b, int64_t length) {
+  void recv(block128* data, const bool* b, int length) override {
     recv_ot_cm_cc(data, b, length);
   }
 
-  template <typename T>
-  void send(T** data, int length, int l) {
+  void send(uint8_t** data, int length, int l) override {
+    std::cout << "in send" << std::endl;
     send_ot_cm_cc(data, length, l);
   }
 
-  template <typename T>
-  void recv(T* data, const uint8_t* b, int length, int l) {
+  void recv(uint8_t *data, uint8_t* b, int length, int l) override {
     recv_ot_cm_cc(data, b, length, l);
   }
 
-  template <typename T>
-  void send(T** data, int length, int N, int l) {
+  void send(uint8_t** data, int length, int N, int l)override {
     send_ot_cm_cc(data, length, N, l);
   }
 
-  template <typename T>
-  void recv(T* data, const uint8_t* b, int length, int N, int l) {
+  void recv(uint8_t* data, const uint8_t* b, int length, int N, int l)override {
     recv_ot_cm_cc(data, b, length, N, l);
   }
 
-  void send_cot(uint64_t* data0, const uint64_t* corr, int length, int l) {
-    puts("in client ot send_cot");
+  void send_cot(uint64_t* data0, uint64_t* corr, int length, int l) override {
     send_ot_cam_cc(data0, corr, length, l);
   }
 
-  void recv_cot(uint64_t* data, const bool* b, int length, int l) {
+  void recv_cot(uint64_t* data, bool* b, int length, int l) override {
     recv_ot_cam_cc(data, b, length, l);
   }
 
@@ -221,22 +220,25 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
   // Here, the 2nd dim of data is always 2. We use T** instead of T*[2] or two
   // arguments of T*, in order to be general and compatible with the API of
   // 1-out-of-N OT.
-  template <typename T>
-  void send_ot_cm_cc(T** data, int64_t length, int l) {
+  void send_ot_cm_cc(uint8_t** data, int64_t length, int l) {
     block* rcm_data = new block[length];
+    std::cout << "in send_ot_cm_cc" << std::endl;
     send_ot_rcm_cc(rcm_data, length);
-
+    std::cout << "send_ot_rcm_cc done" << std::endl;
     block s;
     ferret->prg.random_block(&s, 1);
+    std::cout << "send block" << std::endl;
     ferret->io->send_block(&s, 1);
+    std::cout << "set s" << std::endl;
     ferret->mitccrh.setS(s);
+    std::cout << "flush" << std::endl;
     ferret->io->flush();
 
     block pad[2 * ot_bsize];
     uint32_t y_size =
-        (uint32_t)ceil((2 * ot_bsize * l) / ((float)sizeof(T) * 8));
+        (uint32_t)ceil((2 * ot_bsize * l) / ((float)sizeof(uint8_t) * 8));
     uint32_t corrected_y_size, corrected_bsize;
-    T y[y_size];
+    uint8_t y[y_size];
 
     for (int64_t i = 0; i < length; i += ot_bsize) {
       for (int64_t j = i; j < std::min(i + ot_bsize, length); ++j) {
@@ -250,13 +252,13 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
       ferret->mitccrh.template hash<ot_bsize, 2>(pad);
 
       corrected_y_size = (uint32_t)ceil((2 * std::min(ot_bsize, length - i) * l) /
-                                        ((float)sizeof(T) * 8));
+                                        ((float)sizeof(uint8_t) * 8));
       corrected_bsize = std::min(ot_bsize, length - i);
 
-      OTPrimitive::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
+      OTPrimitive::pack_ot_messages<uint8_t>((uint8_t*)y, data + i, pad, corrected_y_size,
                                corrected_bsize, l, 2);
 
-      ferret->io->send_data(y, sizeof(T) * (corrected_y_size));
+      ferret->io->send_data(y, sizeof(uint8_t) * (corrected_y_size));
     }
     delete[] rcm_data;
   }
@@ -264,8 +266,7 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
   // chosen message, chosen choice
   // Here, r[i]'s value is always 0 or 1. We use uint8_t instead of bool, in
   // order to be general and compatible with the API of 1-out-of-N OT.
-  template <typename T>
-  void recv_ot_cm_cc(T* data, const uint8_t* r, int64_t length, int l) {
+  void recv_ot_cm_cc(uint8_t* data, const uint8_t* r, int64_t length, int l) {
     block* rcm_data = new block[length];
     recv_ot_rcm_cc(rcm_data, (const bool*)r, length);
 
@@ -277,21 +278,21 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
     block pad[ot_bsize];
 
     uint32_t recvd_size =
-        (uint32_t)ceil((2 * ot_bsize * l) / ((float)sizeof(T) * 8));
+        (uint32_t)ceil((2 * ot_bsize * l) / ((float)sizeof(uint8_t) * 8));
     uint32_t corrected_recvd_size, corrected_bsize;
-    T recvd[recvd_size];
+    uint8_t recvd[recvd_size];
 
     for (int64_t i = 0; i < length; i += ot_bsize) {
       corrected_recvd_size = (uint32_t)ceil(
-          (2 * std::min(ot_bsize, length - i) * l) / ((float)sizeof(T) * 8));
+          (2 * std::min(ot_bsize, length - i) * l) / ((float)sizeof(uint8_t) * 8));
       corrected_bsize = std::min(ot_bsize, length - i);
 
-      ferret->io->recv_data(recvd, sizeof(T) * (corrected_recvd_size));
+      ferret->io->recv_data(recvd, sizeof(uint8_t) * (corrected_recvd_size));
 
       memcpy(pad, rcm_data + i, std::min(ot_bsize, length - i) * sizeof(block));
       ferret->mitccrh.template hash<ot_bsize, 1>(pad);
 
-      OTPrimitive::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
+      OTPrimitive::unpack_ot_messages<uint8_t>(data + i, r + i, (uint8_t*)recvd, pad,
                                  corrected_bsize, l, 2);
     }
     delete[] rcm_data;
@@ -423,8 +424,7 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
 
   // chosen message, chosen choice.
   // One-oo-N OT, where each message has l bits. Here, the 2nd dim of data is N.
-  template <typename T>
-  void send_ot_cm_cc(T** data, int64_t length, int N, int l) {
+  void send_ot_cm_cc(uint8_t** data, int64_t length, int N, int l) {
     int logN = (int)ceil(log2(N));
 
     block* rm_data0 = new block[length * logN];
@@ -433,9 +433,9 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
 
     block pad[ot_bsize * N];
     uint32_t y_size =
-        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(T) * 8));
+        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(uint8_t) * 8));
     uint32_t corrected_y_size, corrected_bsize;
-    T y[y_size];
+    uint8_t y[y_size];
 
     block* hash_in0 = new block[N - 1];
     block* hash_in1 = new block[N - 1];
@@ -443,8 +443,8 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
     int idx = 0;
     for (int x = 0; x < logN; x++) {
       for (int y = 0; y < (1 << x); y++) {
-        hash_in0[idx] = Utils::makeBlock(y, 0);
-        hash_in1[idx] = Utils::makeBlock((1 << x) + y, 0);
+        hash_in0[idx] = makeBlock(y, 0);
+        hash_in1[idx] = makeBlock((1 << x) + y, 0);
         idx++;
       }
     }
@@ -472,13 +472,13 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
       }
 
       corrected_y_size = (uint32_t)ceil((std::min(ot_bsize, length - i) * N * l) /
-                                        ((float)sizeof(T) * 8));
+                                        ((float)sizeof(uint8_t) * 8));
       corrected_bsize = std::min(ot_bsize, length - i);
 
-      OTPrimitive::pack_ot_messages<T>((T*)y, data + i, pad, corrected_y_size,
+      OTPrimitive::pack_ot_messages<uint8_t>((uint8_t*)y, data + i, pad, corrected_y_size,
                                corrected_bsize, l, N);
 
-      ferret->io->send_data(y, sizeof(T) * (corrected_y_size));
+      ferret->io->send_data(y, sizeof(uint8_t) * (corrected_y_size));
     }
 
     delete[] hash_in0;
@@ -491,8 +491,7 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
   // chosen message, chosen choice
   // One-oo-N OT, where each message has l bits. Here, r[i]'s value is in [0,
   // N).
-  template <typename T>
-  void recv_ot_cm_cc(T* data, const uint8_t* r, int64_t length, int N, int l) {
+  void recv_ot_cm_cc(uint8_t* data, const uint8_t* r, int64_t length, int N, int l) {
     int logN = (int)ceil(log2(N));
 
     block* rm_data = new block[length * logN];
@@ -507,24 +506,24 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
     block pad[ot_bsize];
 
     uint32_t recvd_size =
-        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(T) * 8));
+        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(uint8_t) * 8));
     uint32_t corrected_recvd_size, corrected_bsize;
-    T recvd[recvd_size];
+    uint8_t recvd[recvd_size];
 
     block* hash_out = new block[logN];
     block* hash_in = new block[logN];
 
     for (int64_t i = 0; i < length; i += ot_bsize) {
       corrected_recvd_size = (uint32_t)ceil(
-          (std::min(ot_bsize, length - i) * N * l) / ((float)sizeof(T) * 8));
+          (std::min(ot_bsize, length - i) * N * l) / ((float)sizeof(uint8_t) * 8));
       corrected_bsize = std::min(ot_bsize, length - i);
 
-      ferret->io->recv_data(recvd, sizeof(T) * (corrected_recvd_size));
+      ferret->io->recv_data(recvd, sizeof(uint8_t) * (corrected_recvd_size));
 
 	  std::memset(pad, 0, sizeof(block) * ot_bsize);
       for (int64_t j = i; j < std::min(i + ot_bsize, length); ++j) {
         for (int64_t s = 0; s < logN; s++)
-          hash_in[s] = Utils::makeBlock(r[j] & ((1 << (s + 1)) - 1), 0);
+          hash_in[s] = makeBlock(r[j] & ((1 << (s + 1)) - 1), 0);
         mitccrh.renew_ks(rm_data + j * logN, logN);
         mitccrh.hash_single(hash_out, hash_in, logN);
 
@@ -533,7 +532,7 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
         }
       }
 
-      OTPrimitive::unpack_ot_messages<T>(data + i, r + i, (T*)recvd, pad,
+      OTPrimitive::unpack_ot_messages<uint8_t>(data + i, r + i, (uint8_t*)recvd, pad,
                                  corrected_bsize, l, N);
     }
     delete[] hash_in;
@@ -565,7 +564,7 @@ class SilentOT : public OTPrimitive::OT<SilentOT<IO>> {
 };
 
 template <typename IO>
-class SilentOTN : public OTPrimitive::OT<SilentOTN<IO>> {
+class SilentOTN : public OTPrimitive::OT<IO> {
  public:
   SilentOT<IO>* silent_ot;
   int N;
@@ -575,13 +574,26 @@ class SilentOTN : public OTPrimitive::OT<SilentOTN<IO>> {
     this->N = N;
   }
 
-  template <typename T>
-  void send(T** data, int length, int l) {
+  void send(uint8_t** data, int length, int l) {
     silent_ot->send(data, length, N, l);
   }
 
-  template <typename T>
-  void recv(T* data, const uint8_t* b, int length, int l) {
+  void recv(uint8_t* data, uint8_t* b, int length, int l) {
+    silent_ot->recv(data, b, length, N, l);
+  }
+
+  void send(const block128* data0, const block128* data1, int length) override {
+    silent_ot->send(data0, data1, length);
+  }
+
+  void recv(block128* data, const bool* b, int length) override {
+    silent_ot->recv(data, b, length);
+  }
+  void send(uint8_t** data, int length, int N, int l)override {
+    silent_ot->send(data, length, N, l);
+  }
+
+  void recv(uint8_t* data, const uint8_t* b, int length, int N, int l)override {
     silent_ot->recv(data, b, length, N, l);
   }
 };

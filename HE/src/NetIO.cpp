@@ -1,7 +1,7 @@
 #include <HE/NetIO.h>
 using namespace HE;
 
-NetIO::NetIO(const char* ip, int port, bool server) {
+HEIO::HEIO(const char* ip, int port, bool server) {
     is_server = server;
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
@@ -36,13 +36,13 @@ NetIO::NetIO(const char* ip, int port, bool server) {
     }
 }
 
-NetIO::~NetIO() {
+HEIO::~HEIO() {
     close(sockfd);
     std::cout << "Connection closed.\n";
 }
 
 
-void NetIO::send_data(const void* data, int nbyte) {
+void HEIO::send_data(const void* data, int nbyte) {
     counter += nbyte;
     int sent = 0;
     while (sent < nbyte) {
@@ -57,7 +57,7 @@ void NetIO::send_data(const void* data, int nbyte) {
 }
 
 
-void NetIO::recv_data(void* data, int nbyte) {
+void HEIO::recv_data(void* data, int nbyte) {
     int received = 0;
     while (received < nbyte) {
         int res = recv(sockfd, (char*)data + received, nbyte - received, 0);

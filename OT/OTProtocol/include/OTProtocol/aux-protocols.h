@@ -62,23 +62,23 @@ public:
         for (int i = 0; i < size; i++) {
             corr_data[i] = (x[i] * (1 - 2 * uint64_t(sel[i]))) & mask_y;
         }
-        cout << "OK Here" << endl;
-        cout << "party = " << party << endl;
-        if (party == Utils::ALICE) {
+        // cout << "OK Here" << endl;
+        // cout << "party = " << party << endl;
+        if (party == ALICE) {
             otpack->iknp_straight->send_cot(data_S, corr_data, size, bw_y);
-            cout << "party 1, send cot done" << endl;
+            // cout << "party 1, send cot done" << endl;
             otpack->iknp_reversed->recv_cot(data_R, (bool *)sel, size, bw_y);
-            cout << "party 1, recv cot done" << endl;
+            // cout << "party 1, recv cot done" << endl;
         } else {  // party == BOB
             otpack->iknp_straight->recv_cot(data_R, (bool *)sel, size, bw_y);
-            cout << "party 2, recv cot done" << endl;
+            // cout << "party 2, recv cot done" << endl;
             otpack->iknp_reversed->send_cot(data_S, corr_data, size, bw_y);
-            cout << "party 2, send cot done" << endl;
+            // cout << "party 2, send cot done" << endl;
         }
         for (int i = 0; i < size; i++) {
             y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i] - data_S[i]) & mask_y);
         }
-        cout << "y[0] = " << y[0] << endl;
+        // cout << "y[0] = " << y[0] << endl;
         delete[] corr_data;
         delete[] data_S;
         delete[] data_R;
@@ -131,7 +131,7 @@ public:
         for (int i = 0; i < size; i++) {
             tmp_x[i] = x[i] & shift_mask;
             msb_xb[i] = (x[i] >> shift) & 1;
-            if (party == Utils::BOB) tmp_x[i] = (shift_mask - tmp_x[i]) & shift_mask;
+            if (party == BOB) tmp_x[i] = (shift_mask - tmp_x[i]) & shift_mask;
         }
 
         mill->compare(msb_x, tmp_x, size, bw_x - 1, true);  // computing greater_than

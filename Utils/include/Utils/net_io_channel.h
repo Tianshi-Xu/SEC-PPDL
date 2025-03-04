@@ -26,7 +26,7 @@ Enquiries about further applications and development opportunities are welcome.
 #define NETWORK_IO_CHANNEL
 
 #include "Utils/io_channel.h"
-#include "Utils/constants.h"
+#include <emp-tool/utils/constants.h>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,10 +111,10 @@ public:
     }
     set_nodelay();
     stream = fdopen(consocket, "wb+");
-    buffer = new char[Utils::NETWORK_BUFFER_SIZE];
-    memset(buffer, 0, Utils::NETWORK_BUFFER_SIZE);
+    buffer = new char[NETWORK_BUFFER_SIZE];
+    memset(buffer, 0, NETWORK_BUFFER_SIZE);
 	// NOTE(Zhicong): we need _IONBF for the best network performance
-    setvbuf(stream, buffer, _IOFBF, Utils::NETWORK_BUFFER_SIZE);
+    setvbuf(stream, buffer, _IOFBF, NETWORK_BUFFER_SIZE);
     if (!quiet)
       std::cout << "connected\n";
   }

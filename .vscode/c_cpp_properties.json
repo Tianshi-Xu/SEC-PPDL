@@ -4,26 +4,14 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/*",
-                "${workspaceFolder}/Extern/SEAL/build/native/src",
-                "${workspaceFolder}/Datatype/include",
-                "${workspaceFolder}/Extern/SEAL/native/src",
-                "${workspaceFolder}/OT/include",
-                "${workspaceFolder}/Layer/LinearLayer/include",
-                "${workspaceFolder}/OT/OTPrimitive/include",
-                "${workspaceFolder}/Extern/SEAL/build/thirdparty/msgsl-src/include",
-                "${workspaceFolder}/Extern/hexl/hexl_build/include",
-                "${workspaceFolder}/HE/include",
-                "${workspaceFolder}/Operator/LinearOperator/include"
+                "${workspaceFolder}/Utils/include/Utils"
             ],
             "defines": [],
             "compilerPath": "/opt/rh/devtoolset-11/root/bin/gcc",
             "cStandard": "c17",
             "cppStandard": "gnu++17",
             "intelliSenseMode": "linux-gcc-x64",
-            "compileCommands": [
-                "${workspaceFolder}/build/compile_commands.json"
-            ]
+            "configurationProvider": "ms-vscode.cmake-tools"
         }
     ],
     "version": 4

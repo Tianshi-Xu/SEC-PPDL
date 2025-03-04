@@ -27,7 +27,7 @@ Modified by Deevashwer Rathee
 #pragma once
 #ifndef IO_CHANNEL_H__
 #define IO_CHANNEL_H__
-#include "Utils/block.h"
+#include <emp-tool/utils/block.h>
 #include "Utils/group.h"
 #include <memory> // std::align
 

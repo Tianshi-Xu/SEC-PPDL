@@ -60,7 +60,7 @@ void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
 
   uint64_t *inA_orig = new uint64_t[dim];
 
-  if (party == Utils::ALICE) {
+  if (party == ALICE) {
     for (int i = 0; i < dim; i++) {
       inA_orig[i] = inA[i];
       inA[i] = ((inA[i] + (1ULL << (bw - 1))) & mask_bw);
@@ -79,14 +79,14 @@ void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
   for (int i = 0; i < dim; i++) {
     inA_lower[i] = inA[i] & mask_shift;
     inA_upper[i] = (inA[i] >> shift) & mask_upper;
-    if (party == Utils::BOB) {
+    if (party == BOB) {
       inA_upper[i] = (mask_upper - inA_upper[i]) & mask_upper;
     }
   }
 
   this->aux->wrap_computation(inA_lower, wrap_lower, dim, shift);
   for (int i = 0; i < dim; i++) {
-    if (party == Utils::BOB) {
+    if (party == BOB) {
       inA_lower[i] = (-1 * inA_lower[i]) & mask_shift;
     }
   }
@@ -103,7 +103,7 @@ void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
   // if MSB was 1, and the lower shift bits were not all 0, add 1 as
   // div_correction
   for (int i = 0; i < dim; i++) {
-    if (party == Utils::ALICE) {
+    if (party == ALICE) {
       zero_test_lower[i] ^= 1;
       msb_upper[i] ^= 1;
     }
@@ -124,7 +124,7 @@ void TruncationProtocol::div_pow2(int32_t dim, uint64_t *inA, uint64_t *outB,
         mask_bw;
   }
 
-  if (signed_arithmetic && (party == Utils::ALICE)) {
+  if (signed_arithmetic && (party == ALICE)) {
     for (int i = 0; i < dim; i++) {
       outB[i] = ((outB[i] - (1ULL << (bw - shift - 1))) & mask_bw);
       inA[i] = inA_orig[i];
@@ -165,7 +165,7 @@ void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
 
   // uint64_t *inA_orig = new uint64_t[dim];
 
-  if (signed_arithmetic && (party == Utils::ALICE)) {
+  if (signed_arithmetic && (party == ALICE)) {
     for (int i = 0; i < dim; i++) {
       // inA_orig[i] = inA[i];
       inA[i] = ((inA[i] + (1ULL << (bw - 1))) & mask_bw);
@@ -181,7 +181,7 @@ void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
   for (int i = 0; i < dim; i++) {
     inA_lower[i] = inA[i] & mask_shift;
     inA_upper[i] = (inA[i] >> shift) & mask_upper;
-    if (party == Utils::BOB) {
+    if (party == BOB) {
       inA_upper[i] = (mask_upper - inA_upper[i]) & mask_upper;
     }
   }
@@ -198,7 +198,7 @@ void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
     if (signed_arithmetic) {
       uint8_t *inv_msb_x = new uint8_t[dim];
       for (int i = 0; i < dim; i++) {
-        inv_msb_x[i] = msb_x[i] ^ (party == Utils::ALICE ? 1 : 0);
+        inv_msb_x[i] = msb_x[i] ^ (party == ALICE ? 1 : 0);
       }
       this->aux->MSB_to_Wrap(inA, inv_msb_x, wrap_upper, dim, bw);
       delete[] inv_msb_x;
@@ -218,7 +218,7 @@ void TruncationProtocol::truncate(int32_t dim, uint64_t *inA, uint64_t *outB,
               mask_bw;
   }
 
-  if (signed_arithmetic && (party == Utils::ALICE)) {
+  if (signed_arithmetic && (party == ALICE)) {
     for (int i = 0; i < dim; i++) {
       outB[i] = ((outB[i] - (1ULL << (bw - shift - 1))) & mask_bw);
       // inA[i] = inA_orig[i];

@@ -10,7 +10,7 @@
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
-
+using namespace emp;
 namespace OTPrimitive {
 
 template <typename IO> 

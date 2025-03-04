@@ -62,7 +62,7 @@ public:
                       int radix_base = MILL_PARAM) {
     uint8_t N = 1 << bitlength;
     uint8_t mask = N - 1;
-    if (party == Utils::ALICE) {
+    if (party == ALICE) {
       Utils::PRG128 prg;
       prg.random_data(res_eq, num_eqs * sizeof(uint8_t));
       uint8_t **leaf_messages = new uint8_t *[num_eqs];
@@ -140,7 +140,7 @@ public:
     // ======================
 
     // Set leaf OT messages now
-    if (party == Utils::ALICE) {
+    if (party == ALICE) {
       uint8_t **leaf_ot_messages; // (num_digits * num_eqs) X beta_pow (=2^beta)
       leaf_ot_messages = new uint8_t *[num_digits * num_eqs];
       for (int i = 0; i < num_digits * num_eqs; i++)
@@ -187,7 +187,7 @@ public:
       for (int i = 0; i < num_digits * num_eqs; i++)
         delete[] leaf_ot_messages[i];
       delete[] leaf_ot_messages;
-    } else // party = Utils::BOB
+    } else // party = BOB
     {
       // Perform Leaf OTs
       if (r == 1) {
@@ -266,7 +266,7 @@ public:
       int size_used =
           ((counter_triples_used - old_counter_triples_used) * num_eqs) / 8;
 
-      if (party == Utils::ALICE) {
+      if (party == ALICE) {
         // Send share of e and f
         io->send_data(ei + offset, size_used);
         io->send_data(ei + offset, size_used);
@@ -277,7 +277,7 @@ public:
         io->recv_data(e + offset, size_used);
         io->recv_data(f + offset, size_used);
         io->recv_data(f + offset, size_used);
-      } else // party = Utils::BOB
+      } else // party = BOB
       {
         // Receive share of e and f
         io->recv_data(e + offset, size_used);

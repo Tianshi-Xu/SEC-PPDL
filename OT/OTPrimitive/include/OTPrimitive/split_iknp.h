@@ -201,7 +201,7 @@ public:
         G0[i].random_data(q + (i * block_size / 128), block_size / 8);
         io->recv_data(tmp, block_size / 8);
         if (s[i])
-          xorBlocks_arr(q + (i * block_size / 128), q + (i * block_size / 128),
+          Utils::xorBlocks_arr(q + (i * block_size / 128), q + (i * block_size / 128),
                         tmp, block_size / 128);
       }
       sse_trans((uint8_t *)(qT + j * block_size), (uint8_t *)q, 128,
@@ -236,8 +236,8 @@ public:
       for (int i = 0; i < lambda; ++i) {
         G0[i].random_data(t + (i * block_size / 128), block_size / 8);
         G1[i].random_data(tmp, block_size / 8);
-        xorBlocks_arr(tmp, t + (i * block_size / 128), tmp, block_size / 128);
-        xorBlocks_arr(tmp, block_r + (j * block_size / 128), tmp,
+        Utils::xorBlocks_arr(tmp, t + (i * block_size / 128), tmp, block_size / 128);
+        Utils::xorBlocks_arr(tmp, block_r + (j * block_size / 128), tmp,
                       block_size / 128);
         io->send_data(tmp, block_size / 8);
       }

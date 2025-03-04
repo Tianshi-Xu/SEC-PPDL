@@ -5,16 +5,20 @@
 #include "Utils/ArgMapping/ArgMapping.h"
 
 #include "Utils/aes-ni.h"
-#include "Utils/aes.h"
-#include "Utils/aes_opt.h"
-#include "Utils/block.h"
+#include <emp-tool/utils/aes.h>
+#include <emp-tool/utils/aes_opt.h>
+#include <emp-tool/utils/block.h>
 #include "Utils/ccrf.h"
-#include "Utils/constants.h"
-#include "Utils/crh.h"
+#include <emp-tool/utils/constants.h>
+#include <emp-tool/utils/crh.h>
 #include "Utils/group.h"
-#include "Utils/hash.h"
-#include "Utils/prg.h"
-#include "Utils/prp.h"
+#include <emp-tool/utils/hash.h>
+// #include <emp-tool/utils/prg.h>
+#include "prg.h"
+#include <emp-tool/utils/prp.h>
 #include "Utils/utils.h"
+#include "Utils/mitccrh.h"
+#include "Utils/hash.h"
+#include "Utils/constants.h"
 
 #include <future>

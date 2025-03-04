@@ -25,9 +25,10 @@ Enquiries about further applications and development opportunities are welcome.
 Modified by Deevashwer Rathee
 */
 #pragma once
-#include "Utils/block.h"
-#include "Utils/prg.h"
-#include "Utils/constants.h"
+#include <emp-tool/utils/block.h>   
+#include <emp-tool/utils/prg.h>
+#include <emp-tool/utils/constants.h>
+#include "block.h"
 #include <chrono>
 #include <cstddef>
 // #include <gmp.h>
@@ -41,6 +42,7 @@ Modified by Deevashwer Rathee
 using std::string;
 using std::chrono::high_resolution_clock;
 using std::chrono::time_point;
+using namespace emp;
 
 namespace Utils {
 template <typename T> void inline delete_array_null(T *ptr);
@@ -59,7 +61,7 @@ std::string Party(int p);
 
 // block128 conversions
 template <typename T = uint64_t> std::string m128i_to_string(const __m128i var);
-Utils::block128 bool_to128(const bool *data);
+block128 bool_to128(const bool *data);
 void int64_to_bool(bool *data, uint64_t input, int length);
 inline void uint8_to_bool(uint8_t *data, uint8_t input, int length);
 
@@ -207,9 +209,9 @@ inline void parse_party_and_port(char ** arg, int argc, int * party, int * port)
 }
 
 inline std::string Party(int p) {
-    if (p == Utils::ALICE)
+    if (p == ALICE)
         return "ALICE";
-    else if (p == Utils::BOB)
+    else if (p == BOB)
         return "BOB";
     else return "PUBLIC";
 }
@@ -246,11 +248,11 @@ inline uint64_t bool_to64(const bool * data) {
     }
     return res;
 }
-inline Utils::block128 bool_to128(const bool * data) {
-    return Utils::makeBlock128(bool_to64(data+64), bool_to64(data));
+inline block128 bool_to128(const bool * data) {
+    return makeBlock128(bool_to64(data+64), bool_to64(data));
 }
-inline Utils::block256 bool_to256(const bool * data) {
-    return Utils::makeBlock256(bool_to128(data+128), bool_to128(data));
+inline block256 bool_to256(const bool * data) {
+    return makeBlock256(bool_to128(data+128), bool_to128(data));
 }
 
 inline void int64_to_bool(bool * data, uint64_t input, int length) {
@@ -298,8 +300,8 @@ inline int8_t neg_mod(int8_t val, int8_t mod) {
     return ((val % mod) + mod) % mod;
 }
 // Converts  uint64_t values to __m128i or block128
-inline Utils::block128 toBlock(uint64_t high_u64, uint64_t low_u64) { return _mm_set_epi64x(high_u64, low_u64); }
-inline Utils::block128 toBlock(uint64_t low_u64) { return toBlock(0, low_u64); }
+inline block128 toBlock(uint64_t high_u64, uint64_t low_u64) { return _mm_set_epi64x(high_u64, low_u64); }
+inline block128 toBlock(uint64_t low_u64) { return toBlock(0, low_u64); }
 
 
 
@@ -504,14 +506,14 @@ inline bool file_exists(const std::string &name) {
 }
 
 
-inline Utils::block bool_to_block(const bool * data) {
-	return Utils::makeBlock(Utils::bool_to_int<uint64_t>(data+64), Utils::bool_to_int<uint64_t>(data));
+inline block bool_to_block(const bool * data) {
+	return makeBlock(bool_to_int<uint64_t>(data+64), bool_to_int<uint64_t>(data));
 }
 
-inline void  block_to_bool(bool * data, Utils::block b) {
+inline void  block_to_bool(bool * data, block b) {
 	uint64_t* ptr = (uint64_t*)(&b);
-	Utils::int_to_bool<uint64_t>(data, ptr[0], 64);
-	Utils::int_to_bool<uint64_t>(data+64, ptr[1], 64);
+	int_to_bool<uint64_t>(data, ptr[0], 64);
+	int_to_bool<uint64_t>(data+64, ptr[1], 64);
 }
 
 template<typename T>

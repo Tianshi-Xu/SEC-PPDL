@@ -32,12 +32,12 @@ class VOLEOTPack : public OTPack<T> {
 
     ios[0] = io;
     silent_ot = new SilentOT<T>(party, 1, ios, false, true,
-                                         party == Utils::ALICE
+                                         party == ALICE
                                              ? PRE_OT_DATA_REG_SEND_FILE_ALICE
                                              : PRE_OT_DATA_REG_RECV_FILE_BOB);
     silent_ot_reversed = new SilentOT<T>(
         3 - party, 1, ios, false, true,
-        party == Utils::ALICE ? PRE_OT_DATA_REG_RECV_FILE_ALICE
+        party == ALICE ? PRE_OT_DATA_REG_RECV_FILE_ALICE
                             : PRE_OT_DATA_REG_SEND_FILE_BOB);
 
     for (int i = 0; i < KKOT_TYPES; i++) {

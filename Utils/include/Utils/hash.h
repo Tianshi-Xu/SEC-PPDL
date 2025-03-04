@@ -1,38 +1,9 @@
-/*
-Original Work Copyright (c) 2018 Xiao Wang (wangxiao@gmail.com)
-Modified Work Copyright (c) 2020 Microsoft Research
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Enquiries about further applications and development opportunities are welcome.
-
-Modified by Deevashwer Rathee
-*/
-#pragma once
-#ifndef HASH_H__
-#define HASH_H__
-
 #include "Utils/block.h"
-#include "Utils/constants.h"
+#include <emp-tool/utils/constants.h>
+#include <emp-tool/utils/group.h>
 #include <openssl/sha.h>
 #include <stdio.h>
-#include "Utils/group_openssl.h"
+
 /** @addtogroup BP
   @{
  */
@@ -90,7 +61,7 @@ public:
     return _mm256_load_si256((__m256i *)&digest[0]);
   }
 
-  static block128 KDF128(Utils::Point &in, uint64_t id = 1) {
+  static block128 KDF128(Point &in, uint64_t id = 1) {
     size_t len = in.size();
     in.group->resize_scratch(len + 8);
     unsigned char *tmp = in.group->scratch;
@@ -100,7 +71,7 @@ public:
     return ret;
   }
 
-  static block256 KDF256(Utils::Point &in, uint64_t id = 1) {
+  static block256 KDF256(Point &in, uint64_t id = 1) {
     size_t len = in.size();
     in.group->resize_scratch(len + 8);
     unsigned char *tmp = in.group->scratch;
@@ -109,27 +80,6 @@ public:
     alignas(32) block256 ret = hash_for_block256(tmp, len + 8);
     return ret;
   }
-
-  	static block KDF(Utils::Point &in, uint64_t id = 1) {
-		size_t len = in.size();
-		in.group->resize_scratch(len+8);
-		unsigned char * tmp = in.group->scratch;
-		in.to_bin(tmp, len);
-		memcpy(tmp+len, &id, 8);
-		block ret = hash_for_block(tmp, len+8);
-		return ret;
-	}
-
-    	#ifdef __x86_64__
-	__attribute__((target("sse2")))
-	#endif
-	static block hash_for_block(const void * data, int nbyte) {
-		char digest[DIGEST_SIZE];
-		hash_once(digest, data, nbyte);
-		return _mm_load_si128((__m128i*)&digest[0]);
-	}
-
 };
 } // namespace Utils
 /**@}*/
-#endif // HASH_H__

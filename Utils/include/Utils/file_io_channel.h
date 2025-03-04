@@ -4,7 +4,8 @@
 
 #include <iostream>
 #include "Utils/io_channel.h"
-#include "Utils/constants.h"
+#include <emp-tool/utils/constants.h>
+using namespace emp;
 namespace Utils {
 class FileIO: public IOChannel<FileIO> { public:
 	uint64_t bytes_sent = 0;
@@ -16,9 +17,9 @@ class FileIO: public IOChannel<FileIO> { public:
 			stream = fopen(file, "rb+");
 		else
 			stream = fopen(file, "wb+");
-		buffer = new char[Utils::FILE_BUFFER_SIZE];
-		memset(buffer, 0, Utils::FILE_BUFFER_SIZE);
-		setvbuf(stream, buffer, _IOFBF, Utils::FILE_BUFFER_SIZE);
+		buffer = new char[FILE_BUFFER_SIZE];
+		memset(buffer, 0, FILE_BUFFER_SIZE);
+		setvbuf(stream, buffer, _IOFBF, FILE_BUFFER_SIZE);
 	}
 
 	~FileIO(){

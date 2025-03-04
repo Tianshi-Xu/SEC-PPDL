@@ -48,19 +48,19 @@ public:
   }
 
   // Destructor
-  virtual ~ReLURingProtocol() { delete this->millionaire; }
+  virtual ~ReLURingProtocol() { delete millionaire; }
 
   void relu(T *result, T *share, int num_relu,
                 uint8_t *msb, bool skip_ot) {
         uint8_t *msb_tmp = new uint8_t[num_relu];
         if(msb!=nullptr){
-          memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
+            memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
         }
         else{
-          this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
+            this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
         }
         for (int i = 0; i < num_relu; i++) {
-            if (this->party == Utils::ALICE) {
+            if (this->party == ALICE) {
                 msb_tmp[i] = msb_tmp[i] ^ 1;
             }
         }
@@ -82,11 +82,11 @@ class ReLU : public Module{
         this->reluProtocol = reluprotocol;
       }
 
-      void operator()(Tensor<T> *x){
-        auto shape = x->shape();
-        int dim = x->size();
-        x->flatten();
-        T* x_flatten = x->data().data();
+      void operator()(Tensor<T> &x){
+        auto shape = x.shape();
+        int dim = x.size();
+        x.flatten();
+        T* x_flatten = x.data().data();
         std::thread relu_threads[num_threads];
         int chunk_size = dim / num_threads;
         for (int i = 0; i < num_threads; ++i) {
@@ -103,7 +103,7 @@ class ReLU : public Module{
         for (int i = 0; i < num_threads; ++i) {
             relu_threads[i].join();
         }
-        x->reshape(shape);
+        x.reshape(shape);
       }
       
     private:

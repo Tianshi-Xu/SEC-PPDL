@@ -22,34 +22,37 @@ class CryptoPrimitive{
             this->conv_type = conv_type;
         }
 
-        CryptoPrimitive(int party, HE::HEEvaluator* HE, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type, Datatype::CONV_TYPE conv_type, string address, int port){
+        CryptoPrimitive(int party, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type, int32_t polyModulusDegree, int32_t plainWidth, Datatype::CONV_TYPE conv_type, string address, int port){
             this->party = party;
             this->conv_type = conv_type;
-            this->HE = HE;
             this->num_threads = num_threads;
-            this->ioArr = new Utils::NetIO*[num_threads];
-            this->otpackArr = new OTPrimitive::OTPack<Utils::NetIO>*[num_threads];
+            this->ioArr = new IO*[num_threads];
+            this->otpackArr = new OTPrimitive::OTPack<IO>*[num_threads];
             this->reluprotocol = new NonlinearLayer::ReLUProtocol<T, IO>*[num_threads];
             this->truncationProtocol = new OTProtocol::TruncationProtocol*[num_threads];
             for (int i = 0; i < num_threads; i++) {
-                if(i==0){
-                    this->ioArr[i] = HE->IO;
-                }else{
-                    this->ioArr[i] = new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port + i);
-                }
+                std::cout << "before, i = " << i << std::endl;
+                this->ioArr[i] = new IO(party == Utils::ALICE ? nullptr : address.c_str(), port + i + 1);
+                std::cout << "i = " << i << std::endl;
                 // TODO: change to VOLE OT
                 if (i & 1) {
-                    this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party);
+                    this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(this->ioArr[i], party);
                 } else {
-                    this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
+                    this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(this->ioArr[i], party);
                 }
-                this->reluprotocol[i] = new NonlinearLayer::ReLURingProtocol<T, IO>(party, ioArr[i], bit_length, MILL_PARAM, otpackArr[i], ot_type);
-                this->truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
+                this->reluprotocol[i] = new NonlinearLayer::ReLURingProtocol<T, IO>(party, this->ioArr[i], bit_length, MILL_PARAM, this->otpackArr[i], ot_type);
+                this->truncationProtocol[i] = new TruncationProtocol(party, this->ioArr[i], this->otpackArr[i]);
             }
             this->relu = new NonlinearLayer::ReLU<T, IO>(reluprotocol, bit_length, num_threads);
             this->truncation = new NonlinearOperator::Truncation<T>(truncationProtocol, num_threads);
+            cout << "begin to generate HEIO" << endl;
+            this->io = ioArr[0];
+            this->HE = new HE::HEEvaluator(io, party, polyModulusDegree, plainWidth);
+            this->HE->GenerateNewKey();
+            cout << "CryptoPrimitive constructor finished" << endl;
         }
     private:
+        IO *io;
         IO **ioArr;
         OTPrimitive::OTPack<IO> **otpackArr;
         NonlinearLayer::ReLUProtocol<T, IO> **reluprotocol;

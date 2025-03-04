@@ -26,20 +26,21 @@ class HEEvaluator {
     PublicKey *publicKeys = nullptr;
     SecretKey *secretKeys= nullptr;
     bool server = false;
-    NetIO *IO = nullptr;
+    Utils::NetIO *IO = nullptr;
     uint64_t polyModulusDegree = 8192;
     uint64_t plainWidth = 20;
     uint64_t plain_mod = 1048576;
 
     HEEvaluator(
-        Utils::NetIO &IO,
-        bool server,
+        Utils::NetIO *IO,
+        int party,
         size_t polyModulusDegree=8192,
         size_t plainWidth=60,
         LOCATION backend = HOST
     ){
-        this->IO = &IO;
-        this->server = server;
+        this->IO = IO;
+        this->server = party == Datatype::PARTY::SERVER;
+        cout << "server = " << server << endl;
         if (backend == LOCATION::HOST_AND_DEVICE) {
             throw std::invalid_argument("Currently not supported");
         }
@@ -67,8 +68,11 @@ class HEEvaluator {
             uint64_t gk_sze{0};
             this->IO->recv_data(&pk_sze, sizeof(uint64_t));
             this->IO->recv_data(&gk_sze, sizeof(uint64_t));
+            cout << "pk_sze = " << pk_sze << endl;
+            cout << "gk_sze = " << gk_sze << endl;
             char *key_buf = new char[pk_sze + gk_sze];
             this->IO->recv_data(key_buf, pk_sze + gk_sze);
+            cout << "key_buf received" << endl;
             std::stringstream is;
             is.write(key_buf, pk_sze);
             publicKeys->load(context->hcontext(), is);
@@ -101,9 +105,12 @@ class HEEvaluator {
             galoisKeys->save(os);
             uint64_t gk_size = (uint64_t)os.tellp() - pk_sze;
             const std::string &keys_str = os.str();
+            cout << "pk_sze = " << pk_sze << endl;
+            cout << "gk_size = " << gk_size << endl;
             this->IO->send_data(&pk_sze, sizeof(uint64_t));
             this->IO->send_data(&gk_size,sizeof(uint64_t));
             this->IO->send_data(keys_str.c_str(),pk_sze + gk_size);
+            cout << "size =" << keys_str.size() << endl;
             // std::cout << "Client send: " << keys_str.c_str() << "\n";
             // std::cout << "Client send: " << pk_sze << "\n";
         }

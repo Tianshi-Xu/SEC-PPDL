@@ -61,7 +61,7 @@ public:
     if (bitlength <= beta) {
       uint8_t N = 1 << bitlength;
       uint8_t mask = N - 1;
-      if (party == Utils::ALICE) {
+      if (party == ALICE) {
         Utils::PRG128 prg;
         prg.random_data(res, num_cmps * sizeof(uint8_t));
         uint8_t **leaf_messages = new uint8_t *[num_cmps];
@@ -77,8 +77,9 @@ public:
           }
         }
         if (bitlength > 1) {
-          printf("KKOT OT");
+          std::cout << "bitlength:" << bitlength << std::endl;
           otpack->kkot[bitlength - 1]->send(leaf_messages, num_cmps, 1);
+          std::cout << "send done " << std::endl;
         } else {
           otpack->iknp_straight->send(leaf_messages, num_cmps, 1);
         }
@@ -93,6 +94,7 @@ public:
         }
         if (bitlength > 1) {
           otpack->kkot[bitlength - 1]->recv(res, choice, num_cmps, 1);
+          std::cout << "recv done " << std::endl;
         } else {
           otpack->iknp_straight->recv(res, choice, num_cmps, 1);
         }
@@ -135,7 +137,7 @@ public:
               (uint8_t)(data_ext[j] >> i * beta) & mask_beta;
 
 
-    if (party == Utils::ALICE) {
+    if (party == ALICE) {
       uint8_t *
           *leaf_ot_messages; // (num_digits * num_cmps) X beta_pow (=2^beta)
       leaf_ot_messages = new uint8_t *[num_digits * num_cmps];
@@ -155,6 +157,7 @@ public:
                                  greater_than, false);
           } else if (i == (num_digits - 1) && (r > 0)) {
             if (ot_type == Datatype::VOLE) {
+              printf("VOLE OT\n");
               set_leaf_ot_messages(leaf_ot_messages[i * num_cmps + j],
                                    digits[i * num_cmps + j], beta_pow,
                                    leaf_res_cmp[i * num_cmps + j],
@@ -233,7 +236,7 @@ public:
         delete[] leaf_ot_messages[i];
       delete[] leaf_ot_messages;
     } 
-    else // party = Utils::BOB
+    else // party = BOB
     {
       // Perform Leaf OTs
       if (ot_type == Datatype::VOLE) {
@@ -396,7 +399,7 @@ public:
           ((num_triples_std + 2 * old_counter_corr) * num_cmps) / 8;
       int size_corr = (2 * (counter_corr - old_counter_corr) * num_cmps) / 8;
 
-      if (party == Utils::ALICE) {
+      if (party == ALICE) {
         io->send_data(ei + offset_std, size_std);
         io->send_data(ei + offset_corr, size_corr);
         io->send_data(fi + offset_std, size_std);
@@ -405,7 +408,7 @@ public:
         io->recv_data(e + offset_corr, size_corr);
         io->recv_data(f + offset_std, size_std);
         io->recv_data(f + offset_corr, size_corr);
-      } else // party = Utils::BOB
+      } else // party = BOB
       {
         io->recv_data(e + offset_std, size_std);
         io->recv_data(e + offset_corr, size_corr);
@@ -546,7 +549,7 @@ public:
     assert(num_ANDs % 8 == 0);
     for (int i = 0; i < num_ANDs; i += 8) {
       uint8_t temp_z;
-      if (party == Utils::ALICE)
+      if (party == ALICE)
         temp_z = e[i / 8] & f[i / 8];
       else
         temp_z = 0;

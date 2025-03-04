@@ -2,9 +2,11 @@
 #ifndef CCRF_H__
 #define CCRF_H__
 #include "Utils/aes-ni.h"
-#include "Utils/aes_opt.h"
-#include "Utils/prg.h"
+#include <emp-tool/utils/aes_opt.h>
+#include <emp-tool/utils/prg.h>
+#include "aes_opt.h"
 #include <stdio.h>
+using namespace emp;
 /** @addtogroup BP
   @{
   */
