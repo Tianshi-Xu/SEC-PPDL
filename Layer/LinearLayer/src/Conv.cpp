@@ -7,13 +7,13 @@ using namespace HE::unified;
 
 namespace LinearLayer {
 // Extract shared parameters. Let dim(w) = {Co, Ci, k, k}
-Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* he)
+Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : in_feature_size(in_feature_size), 
       stride(stride),
       padding(padding),
       weight(weight), 
       bias(bias), 
-      he(he)
+      HE(HE)
 {
     std::vector<size_t> weight_shape = weight.shape();
 
@@ -27,16 +27,16 @@ Conv2D::Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, cons
     out_feature_size = (in_feature_size + 2 * padding - kernel_size) / stride + 1;
 };
 
-Conv2D::Conv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HEEvaluator* he)
+Conv2D::Conv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HEEvaluator* HE)
     : in_feature_size(in_feature_size),
       in_channels(in_channels),
       out_channels(out_channels),
       kernel_size(kernel_size),
       stride(stride),
-      he(he)
+      HE(HE)
       {
         this->padding = (kernel_size - 1) / 2;
-        if(he->server) {
+        if(HE->server) {
             cout << "server Conv2D constructor called" << endl;
             this->weight = Tensor<uint64_t>({out_channels, in_channels, kernel_size, kernel_size});
             this->bias = Tensor<uint64_t>({out_channels});
