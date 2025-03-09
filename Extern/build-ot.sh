@@ -10,6 +10,15 @@ else
   git clone https://github.com/emp-toolkit/emp-ot.git $WORK_DIR/emp-ot
 fi
 
+cd emp-tool
+git checkout 44b1dde
+git apply ../patch/emp-tool.patch
+cd ..
+
+cd emp-ot
+git checkout 0342af5
+git apply ../patch/emp-ot.patch
+
 # target=emp-tool
 # cd $DEPS_DIR/$target
 # git checkout 44b1dde
