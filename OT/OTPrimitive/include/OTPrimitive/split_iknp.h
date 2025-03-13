@@ -7,7 +7,7 @@
 #include "ot_utils.h"
 #include "ot.h"
 #include "split_utils.h"
-
+using namespace std;
 
 namespace OTPrimitive {
 template <typename IO> 
@@ -15,7 +15,6 @@ class SplitIKNP : public OT<IO> {
 public:
   OTNP<IO> *base_ot;
   PRG128 prg;
-  int party;
   const int lambda = 128;
   int block_size = 1024 * 16;
 
@@ -51,7 +50,7 @@ public:
     s = new bool[lambda];
     k0 = new block128[lambda];
     k1 = new block128[lambda];
-    switch (party) {
+    switch (this->party) {
     case ALICE: {
       h = new uint8_t *[N];
       h64 = new uint64_t *[N];
@@ -83,7 +82,7 @@ public:
     delete[] s;
     delete[] k0;
     delete[] k1;
-    switch (party) {
+    switch (this->party) {
     case ALICE: {
       for (int i = 0; i < N; i++) {
         delete[] h[i];
@@ -111,7 +110,7 @@ public:
   void set_precomp_batch_size(int batch_size) {
     this->precomp_batch_size = batch_size;
     this->counter = batch_size;
-    switch (party) {
+    switch (this->party) {
     case ALICE: {
       for (int i = 0; i < N; i++) {
         delete[] h[i];
@@ -130,7 +129,7 @@ public:
       break;
     }
     }
-    switch (party) {
+    switch (this->party) {
     case ALICE:
       h = new uint8_t *[N];
       h64 = new uint64_t *[N];
@@ -151,7 +150,8 @@ public:
     }
   }
 
-  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) {
+  void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) override {
+    cout << "iknp setup_send" << endl;
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -166,7 +166,8 @@ public:
       G0[i].reseed(&k0[i]);
   }
 
-  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) {
+  void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) override {
+    cout << "iknp setup_recv" << endl;
     setup = true;
     if (in_k0 != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -256,7 +257,7 @@ public:
    ********************************************************/
 
   void preprocess() {
-    switch (party) {
+    switch (this->party) {
     case ALICE: {
       send_pre(counter);
       got_send_offline(counter);
@@ -277,7 +278,7 @@ public:
   }
 
   void got_send_offline(int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     block128 *pad = new block128[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       for (int j = i; j < i + bsize and j < length; ++j) {
@@ -297,7 +298,7 @@ public:
   }
 
   void got_recv_offline(int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     block128 *pad = new block128[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       if (bsize <= length - i)
@@ -314,7 +315,7 @@ public:
   }
 
   template <typename T> void got_send_online(T **data, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     int bits_in_sel_input = 1;
     uint32_t y_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(T) * 8));
@@ -362,7 +363,7 @@ public:
 
   template <typename T>
   void got_recv_online(T *data, const uint8_t *r, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     int bits_in_sel_input = 1;
     uint32_t res_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(T) * 8));
@@ -409,7 +410,7 @@ public:
    ********************************************************/
 
   void got_send_post(const block128 *data0, const block128 *data1, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       for (int j = i; j < i + bsize and j < length; ++j) {
@@ -427,7 +428,7 @@ public:
   }
 
   void got_recv_post(block128 *data, const bool *r, int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     block128 res[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       io->recv_data(res, 2 * sizeof(block128) * std::min(bsize, length - i));
@@ -443,7 +444,7 @@ public:
   }
 
   template <typename T> void got_send_post(T **data, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     uint32_t y_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(T) * 8));
@@ -476,7 +477,7 @@ public:
 
   template <typename T>
   void got_recv_post(T *data, const uint8_t *r, int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     uint32_t recvd_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(T) * 8));
     uint32_t corrected_recvd_size, corrected_bsize;
@@ -525,7 +526,7 @@ public:
         new uint8_t[dim * msgs_per_ot * (sizeof(uint64_t) / sizeof(uint8_t))];
 
     int num_hashes = ceil((l * msgs_per_ot) / 128.0);
-    int bsize = std::min(int(ceil(AES_BATCH_SIZE / double(num_hashes))), dim) *
+    int bsize = std::min(int(ceil(Utils::AES_BATCH_SIZE / double(num_hashes))), dim) *
                 num_hashes;
     for (int j = 0; j < dim; j += (bsize / num_hashes)) {
       for (int k = j; k < j + (bsize / num_hashes) and k < dim; k++) {
@@ -578,7 +579,7 @@ public:
     delete[] qT;
 
     /*
-            const int bsize = AES_BATCH_SIZE/2;
+            const int bsize = Utils::AES_BATCH_SIZE/2;
             block128 pad[2*bsize];
             uint32_t y_size = (uint32_t)ceil((2*bsize*l)/(float(64)));
             uint32_t corrected_y_size, corrected_bsize;
@@ -619,7 +620,7 @@ public:
         new uint8_t[dim * msgs_per_ot * (sizeof(uint64_t) / sizeof(uint8_t))];
 
     int num_hashes = ceil((l * msgs_per_ot) / 128.0);
-    int bsize = std::min(int(ceil(AES_BATCH_SIZE / double(num_hashes))), dim) *
+    int bsize = std::min(int(ceil(Utils::AES_BATCH_SIZE / double(num_hashes))), dim) *
                 num_hashes;
     for (int j = 0; j < dim; j += (bsize / num_hashes)) {
       int lnum_ot = std::min(bsize / num_hashes, dim - j);
@@ -665,7 +666,7 @@ public:
     delete[] tT;
 
     /*
-            const int bsize = AES_BATCH_SIZE;
+            const int bsize = Utils::AES_BATCH_SIZE;
             uint32_t recvd_size = (uint32_t)ceil((2*bsize*l)/(float(64)));
             uint32_t corrected_recvd_size, corrected_bsize;
             uint64_t recvd[recvd_size];
@@ -698,15 +699,17 @@ public:
    ********************************************************/
 
   void cot_send_post(uint64_t *data0, uint64_t *corr, int length) {
+    // cout << "begin send, length = " << length << endl;
     uint64_t modulo_mask = (1ULL << this->l) - 1;
     if (this->l == 64)
       modulo_mask = -1;
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     uint32_t y_size = (uint32_t)ceil((bsize * this->l) / (float(64)));
     uint32_t corrected_y_size, corrected_bsize;
     uint64_t y[y_size];
     uint64_t corr_data[bsize];
+    // cout <<"y_size = " << y_size << endl;
     for (int i = 0; i < length; i += bsize) {
       for (int j = i; j < i + bsize and j < length; ++j) {
         pad[2 * (j - i)] = qT[j];
@@ -725,26 +728,36 @@ public:
       corrected_bsize = std::min(bsize, length - i);
       pack_cot_messages(y, corr_data, corrected_y_size, corrected_bsize,
                         this->l);
+      // cout << "corrected_y_size = " << corrected_y_size << endl;
+      // for(int ii = 0;ii<corrected_y_size;ii++) {
+      //   cout << "y[" << ii << "] = " << y[ii] << endl;
+      // }
       io->send_data(y, sizeof(uint64_t) * (corrected_y_size));
+      // cout << "i:" << i << " done" << endl;
     }
     delete[] qT;
   }
 
   void cot_recv_post(uint64_t *data, const bool *r, int length) {
+    // cout << "begin receive, length = " << length << endl;
     uint64_t modulo_mask = (1ULL << this->l) - 1;
     if (this->l == 64)
       modulo_mask = -1;
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     uint32_t recvd_size = (uint32_t)ceil((bsize * this->l) / (float(64)));
     uint32_t corrected_recvd_size, corrected_bsize;
     uint64_t corr_data[bsize];
     uint64_t recvd[recvd_size];
-
+    // cout << "recvd_size = " << recvd_size << endl;
     for (int i = 0; i < length; i += bsize) {
+      
       corrected_recvd_size =
           (uint32_t)ceil((std::min(bsize, length - i) * this->l) / (float(64)));
       corrected_bsize = std::min(bsize, length - i);
+      // cout << "corrected_recvd_size = " << corrected_recvd_size << endl;
       io->recv_data(recvd, sizeof(uint64_t) * corrected_recvd_size);
+      // cout << "recv_post i = " << i << endl;
+      // cout << "recv done" << endl;
       if (bsize <= length - i)
         crh.H<bsize>(tT + i, tT + i);
       else
@@ -793,7 +806,7 @@ public:
       uint64_t lmodulo_mask = modulo_mask[bit_idx];
       int num_hashes = ceil((lmsg_len * msgs_per_ot) / 128.0);
       int bsize =
-          std::min(int(ceil(AES_BATCH_SIZE / double(num_hashes))), dim) *
+          std::min(int(ceil(Utils::AES_BATCH_SIZE / double(num_hashes))), dim) *
           num_hashes;
       for (int j = 0; j < dim; j += (bsize / num_hashes)) {
         for (int k = j; k < j + (bsize / num_hashes) and k < dim; k++) {
@@ -876,7 +889,7 @@ public:
       int lmsg_len = msg_len[bit_idx];
       int num_hashes = ceil((lmsg_len * msgs_per_ot) / 128.0);
       int bsize =
-          std::min(int(ceil(AES_BATCH_SIZE / double(num_hashes))), dim) *
+          std::min(int(ceil(Utils::AES_BATCH_SIZE / double(num_hashes))), dim) *
           num_hashes;
       for (int j = 0; j < dim; j += (bsize / num_hashes)) {
         int lnum_ot = std::min(bsize / num_hashes, dim - j);
@@ -923,17 +936,17 @@ public:
    *            Send/Recv wrapper functions                *
    ********************************************************/
 
-  void send(const block128 *data0, const block128 *data1, int length)  {
+  void send(const block128 *data0, const block128 *data1, int length)override  {
     send_pre(length);
     got_send_post(data0, data1, length);
   }
 
-  void recv(block128 *data, const bool *b, int length)  {
+  void recv(block128 *data, const bool *b, int length)override  {
     recv_pre((bool *)b, length);
     got_recv_post(data, b, length);
   }
 
-  void send(uint64_t **data, int length, int l)  {
+  void send(uint64_t **data, int length, int l)override {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -946,7 +959,7 @@ public:
     }
   }
 
-  void recv(uint64_t *data, uint8_t *b, int length, int l)  {
+  void recv(uint64_t *data, uint8_t *b, int length, int l)override  {
     this->l = l;
     if (length <= precomp_batch_size) {
       if (length > (precomp_batch_size - counter)) {
@@ -959,7 +972,7 @@ public:
     }
   }
 
-  void send(uint8_t **data, int length, int l)  {
+  void send(uint8_t **data, int length, int l)override  {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {
@@ -973,7 +986,7 @@ public:
     }
   }
 
-  void recv(uint8_t *data, uint8_t *b, int length, int l)  {
+  void recv(uint8_t *data, uint8_t *b, int length, int l)override  {
     assert(l <= 8 && l >= 1);
     this->l = l;
     if (length <= precomp_batch_size) {
@@ -987,15 +1000,26 @@ public:
     }
   }
 
-  void send_cot(uint64_t *data0, uint64_t *corr, int length, int l)  {
+  void send_cot(uint64_t *data0, uint64_t *corr, int length, int l) override  {
     this->l = l;
     send_pre(length);
+    // cout << "send_pre done" << endl;
+    // cout << "this->party = " << this->party << endl;
+    // if(this->party == ALICE){
+    //   exit(0);
+    // }
     cot_send_post(data0, corr, length);
+    // cout << "cot_send_post done" << endl;
   }
 
-  void recv_cot(uint64_t *data, bool *b, int length, int l)  {
+  void recv_cot(uint64_t *data, bool *b, int length, int l) override {
     this->l = l;
     recv_pre(b, length);
+    // for(int i = 0; i < length; i++) {
+    //   cout << "b[" << i << "] = " << b[i] << endl;
+    // }
+    // cout << "recv_pre done" << endl;
+    // cout << "this->party = " << this->party << endl;
     cot_recv_post(data, b, length);
   }
 };

@@ -4,18 +4,19 @@
 #include <iostream>
 using namespace std;
 using namespace NonlinearLayer;
-#define MAX_THREADS 1
+using IO = Utils::NetIO;
+#define MAX_THREADS 4
 
 int party, port = 32000;
-int num_threads = 1;
+int num_threads = 2;
 string address = "127.0.0.1";
 
 int bitlength = 16;
 int32_t kScale = 12;
-Utils::NetIO *io;
-Utils::NetIO *ioArr[MAX_THREADS];
-OTPrimitive::OTPack<Utils::NetIO> *otpackArr[MAX_THREADS];
-ReLUProtocol<int32_t, Utils::NetIO> *reluprotocol[MAX_THREADS];
+IO *io;
+IO *ioArr[MAX_THREADS];
+OTPrimitive::OTPack<IO> *otpackArr[MAX_THREADS];
+ReLUProtocol<int32_t, IO> *reluprotocol[MAX_THREADS];
 TruncationProtocol *truncationProtocol[MAX_THREADS];
 
 uint64_t comm_threads[MAX_THREADS];
@@ -37,11 +38,11 @@ int main(int argc, char **argv) {
   /********** Setup IO and Base OTs ***********/
   /********************************************/
   for (int i = 0; i < num_threads; i++) {
-    ioArr[i] = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
-    // otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i],party);
-    otpackArr[i] = new VOLEOTPack<Utils::NetIO>(ioArr[i], party);
-    reluprotocol[i] = new ReLURingProtocol<int32_t, Utils::NetIO>(party, ioArr[i], 4, MILL_PARAM, otpackArr[i], Datatype::VOLE);
-    truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
+    ioArr[i] = new IO(party == ALICE ? nullptr : address.c_str(), port + i);
+    otpackArr[i] = new OTPrimitive::IKNPOTPack<IO>(ioArr[i],party);
+    // otpackArr[i] = new VOLEOTPack<Utils::NetIO>(ioArr[i], party);
+    reluprotocol[i] = new ReLURingProtocol<int32_t, IO>(party, ioArr[i], 4, MILL_PARAM, otpackArr[i], Datatype::IKNP);
+    // truncationProtocol[i] = new TruncationProtocol(party, ioArr[i], otpackArr[i]);
   }
   io = ioArr[0];
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
@@ -52,7 +53,7 @@ int main(int argc, char **argv) {
               << std::endl;
   }
   // test_relu();
-  uint32_t dim = 16;
+  uint32_t dim = 4;
   Tensor<int32_t> input({dim});
   Tensor<int32_t> input2({dim});
   if(party == BOB) {
@@ -62,7 +63,7 @@ int main(int argc, char **argv) {
   input2 = input;
   input.print();
 
-  ReLU<int32_t> relu(reluprotocol, 4, num_threads);
+  ReLU<int32_t, IO> relu(reluprotocol, 4, num_threads);
   relu(input);
   input.print();
   uint64_t totalComm = 0;

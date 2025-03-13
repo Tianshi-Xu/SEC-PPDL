@@ -4,6 +4,13 @@
 
 namespace Utils {
 
+const static int AES_BATCH_SIZE = 2048;
+// const static int AES_BATCH_SIZE = 256;
+const static int HASH_BUFFER_SIZE = 1024 * 8;
+const static int NETWORK_BUFFER_SIZE =
+    1024 * 16; // Should change depending on the network
+const static int FILE_BUFFER_SIZE = 1024 * 16;
+const static int CHECK_BUFFER_SIZE = 1024 * 8;
 
 typedef __uint8_t uint8_t;
 typedef __uint16_t uint16_t;

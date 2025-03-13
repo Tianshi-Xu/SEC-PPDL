@@ -170,7 +170,7 @@ public:
   }
 
   void setup_send(bool is256, block256 *in_k0 = nullptr, bool *in_s = nullptr) override {
-    std::cout << "split kkot setup send" << std::endl;
+    // std::cout << "split kkot setup send" << std::endl;
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block256));

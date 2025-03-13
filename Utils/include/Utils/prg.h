@@ -8,7 +8,8 @@
 #else
 #include <x86intrin.h>
 #endif
-
+#pragma once
+using namespace emp;
 /** @addtogroup BP
   @{
  */

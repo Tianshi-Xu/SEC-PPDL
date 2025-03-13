@@ -1,6 +1,4 @@
 #pragma once
-#ifndef PERFORMANCE_H
-#define PERFORMANCE_H
 
 #include <ctime>
 #include <string>
@@ -38,4 +36,3 @@ inline double time_log(string tag) {
     }
 }
 
-#endif // PERFORMANCE_H

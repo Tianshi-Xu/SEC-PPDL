@@ -32,11 +32,11 @@ class CryptoPrimitive{
             this->truncationProtocol = new OTProtocol::TruncationProtocol*[num_threads];
             for (int i = 0; i < num_threads; i++) {
                 std::cout << "before, i = " << i << std::endl;
-                this->ioArr[i] = new IO(party == Utils::ALICE ? nullptr : address.c_str(), port + i + 1);
+                this->ioArr[i] = new IO(party == ALICE ? nullptr : address.c_str(), port + i + 1);
                 std::cout << "i = " << i << std::endl;
                 // TODO: change to VOLE OT
-                if (i & 1) {
-                    this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(this->ioArr[i], party);
+                if (ot_type == Datatype::VOLE) {
+                    this->otpackArr[i] = new VOLEOTPack<Utils::NetIO>(this->ioArr[i], party);
                 } else {
                     this->otpackArr[i] = new IKNPOTPack<Utils::NetIO>(this->ioArr[i], party);
                 }

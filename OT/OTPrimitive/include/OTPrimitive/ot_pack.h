@@ -19,6 +19,7 @@ class OTPack {
   bool do_setup = false;
 
   OTPack(IO *io, int party, bool do_setup = true) {
+    std::cout << "OTPack constructor" << std::endl;
   };
 
   ~OTPack() {

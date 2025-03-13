@@ -1,29 +1,4 @@
-/*
-Copyright (c) 2018 Xiao Wang (wangxiao@gmail.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Enquiries about further applications and development opportunities are welcome.
-*/
 #pragma once
-#ifndef NETWORK_IO_CHANNEL
-#define NETWORK_IO_CHANNEL
 
 #include "Utils/io_channel.h"
 #include <emp-tool/utils/constants.h>
@@ -34,6 +9,7 @@ Enquiries about further applications and development opportunities are welcome.
 #include <string>
 #include <memory> // std::align
 using std::string;
+using namespace std;
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -133,6 +109,7 @@ public:
 
   ~NetIO() {
     fflush(stream);
+    fclose(stream);
     close(consocket);
     delete[] buffer;
   }
@@ -156,13 +133,15 @@ public:
     }
     int sent = 0;
     while (sent < len) {
-      int res = fwrite(sent + (char *)data, 1, len - sent, stream);
+      int res = fwrite((char *)data + sent, 1, len - sent, stream);
+      // cout << "send res = " << res << endl;
       if (res >= 0)
         sent += res;
       else
         fprintf(stderr, "error: net_send_data %d\n", res);
     }
     has_sent = true;
+    flush();
   }
 
   void recv_data_internal(void *data, int len) {
@@ -175,7 +154,7 @@ public:
     has_sent = false;
     int sent = 0;
     while (sent < len) {
-      int res = fread(sent + (char *)data, 1, len - sent, stream);
+      int res = fread((char *)data + sent, 1, len - sent, stream);
       if (res >= 0)
         sent += res;
       else
@@ -186,4 +165,3 @@ public:
 /**@}*/
 
 } // namespace Utils
-#endif // NETWORK_IO_CHANNEL

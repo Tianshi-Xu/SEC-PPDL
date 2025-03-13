@@ -1,7 +1,4 @@
 #pragma once
-#ifndef EMP_FILE_IO_CHANNEL_H__
-#define EMP_FILE_IO_CHANNEL_H__
-
 #include <iostream>
 #include "Utils/io_channel.h"
 #include <emp-tool/utils/constants.h>
@@ -59,5 +56,3 @@ class FileIO: public IOChannel<FileIO> { public:
 };
 
 }
-#endif
-

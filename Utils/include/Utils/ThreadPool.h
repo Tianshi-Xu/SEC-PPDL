@@ -23,8 +23,6 @@ freely, subject to the following restrictions:
    distribution.
 */
 #pragma once
-#ifndef THREAD_POOL_H
-#define THREAD_POOL_H
 
 #include <condition_variable>
 #include <functional>
@@ -113,5 +111,3 @@ inline ThreadPool::~ThreadPool() {
   for (std::thread &worker : workers)
     worker.join();
 }
-
-#endif

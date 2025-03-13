@@ -7,7 +7,7 @@ using namespace Model;
 #define MAX_THREADS 4
 
 int party, port = 32000;
-int num_threads = 1;
+int num_threads = 2;
 string address = "127.0.0.1";
 
 int bitlength = 16;
@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
   assert(num_threads <= MAX_THREADS);
   
   cout << "io2 generated" << endl;
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::IKNP, 8192, 60, Datatype::CONV_TYPE::Nest, address, port);
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Datatype::CONV_TYPE::Nest, address, port);
   Bottleneck<uint64_t> bottleneck(16, 32, 64, 1, cryptoPrimitive);
   Tensor<uint64_t> input({32, 16, 16});
   if (party == ALICE) {

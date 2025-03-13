@@ -55,19 +55,19 @@ class Bottleneck{
         // TODO: can be simplified
         Tensor<T> operator()(Tensor<T> &x){
             Tensor<T> x_res = x;
-            x.print_shape();
+            // x.print_shape();
             // cout << "Bottleneck operator called" << endl;
             // conv1->weight.print_shape();
             x = (*conv1)(x);
-            x.print_shape();
+            // x.print_shape();
             // cout << "conv1 done" << endl;
             (*relu)(x);
-            x.print_shape();
+            // x.print_shape();
             // cout << "relu1 done" << endl;
             uint8_t *msb_x = new uint8_t[x.size()];
             memset(msb_x, 0, x.size());
             (*truncation)(x,17,43,true,msb_x);
-            x.print_shape();
+            // x.print_shape();
             // cout << "truncation1 done" << endl;
             x = (*conv2)(x);
             // cout << "conv2 done" << endl;

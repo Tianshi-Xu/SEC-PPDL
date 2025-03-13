@@ -27,6 +27,8 @@ Modified by Deevashwer Rathee
 
 #pragma once
 #include "ot.h"
+#include <emp-tool/utils/group.h>
+using namespace emp;
 /** @addtogroup OT
         @{
 */
@@ -34,12 +36,12 @@ namespace OTPrimitive {
 template <typename IO> class OTNP : public OT<IO> {
 public:
   IO *io;
-  Utils::Group *G = nullptr;
+  Group *G = nullptr;
   bool delete_G = true;
-  OTNP(IO *io, Utils::Group *_G = nullptr) {
+  OTNP(IO *io, Group *_G = nullptr) {
     this->io = io;
     if (_G == nullptr)
-      G = new Utils::Group();
+      G = new Group();
     else {
       G = _G;
       delete_G = false;
@@ -51,16 +53,16 @@ public:
   }
 
   void send(const block128 *data0, const block128 *data1, int length) {
-    Utils::BigInt d;
+    BigInt d;
     G->get_rand_bn(d);
-    Utils::Point C = G->mul_gen(d);
+    Point C = G->mul_gen(d);
     io->send_pt(&C);
     io->flush();
 
-    Utils::BigInt *r = new Utils::BigInt[length];
-    Utils::BigInt *rc = new Utils::BigInt[length];
-    Utils::Point *pk0 = new Utils::Point[length], pk1, *gr = new Utils::Point[length],
-               *Cr = new Utils::Point[length];
+    BigInt *r = new BigInt[length];
+    BigInt *rc = new BigInt[length];
+    Point *pk0 = new Point[length], pk1, *gr = new Point[length],
+               *Cr = new Point[length];
     for (int i = 0; i < length; ++i) {
       G->get_rand_bn(r[i]);
       gr[i] = G->mul_gen(r[i]);
@@ -80,7 +82,7 @@ public:
     block128 m[2];
     for (int i = 0; i < length; ++i) {
       pk0[i] = pk0[i].mul(r[i]);
-      Utils::Point inv = pk0[i].inv();
+      Point inv = pk0[i].inv();
       pk1 = Cr[i].add(inv);
       m[0] = Utils::Hash::KDF128(pk0[i]);
       m[0] = xorBlocks(data0[i], m[0]);
@@ -97,16 +99,16 @@ public:
   }
 
   void send(const block256 *data0, const block256 *data1, int length) {
-    Utils::BigInt d;
+    BigInt d;
     G->get_rand_bn(d);
-    Utils::Point C = G->mul_gen(d);
+    Point C = G->mul_gen(d);
     io->send_pt(&C);
     io->flush();
 
-    Utils::BigInt *r = new Utils::BigInt[length];
-    Utils::BigInt *rc = new Utils::BigInt[length];
-    Utils::Point *pk0 = new Utils::Point[length], pk1, *gr = new Utils::Point[length],
-               *Cr = new Utils::Point[length];
+    BigInt *r = new BigInt[length];
+    BigInt *rc = new BigInt[length];
+    Point *pk0 = new Point[length], pk1, *gr = new Point[length],
+               *Cr = new Point[length];
     for (int i = 0; i < length; ++i) {
       G->get_rand_bn(r[i]);
       gr[i] = G->mul_gen(r[i]);
@@ -126,7 +128,7 @@ public:
     alignas(32) block256 m[2];
     for (int i = 0; i < length; ++i) {
       pk0[i] = pk0[i].mul(r[i]);
-      Utils::Point inv = pk0[i].inv();
+      Point inv = pk0[i].inv();
       pk1 = Cr[i].add(inv);
       m[0] = Utils::Hash::KDF256(pk0[i]);
       m[0] = xorBlocks(data0[i], m[0]);
@@ -143,11 +145,11 @@ public:
   }
 
   void recv(block128 *data, const bool *b, int length) {
-    Utils::BigInt *k = new Utils::BigInt[length];
-    Utils::Point *gr = new Utils::Point[length];
-    Utils::Point pk[2];
+    BigInt *k = new BigInt[length];
+    Point *gr = new Point[length];
+    Point pk[2];
     block128 m[2];
-    Utils::Point C;
+    Point C;
     for (int i = 0; i < length; ++i)
       G->get_rand_bn(k[i]);
 
@@ -156,7 +158,7 @@ public:
     for (int i = 0; i < length; ++i) {
       if (b[i]) {
         pk[1] = G->mul_gen(k[i]);
-        Utils::Point inv = pk[1].inv();
+        Point inv = pk[1].inv();
         pk[0] = C.add(inv);
       } else {
         pk[0] = G->mul_gen(k[i]);
@@ -178,11 +180,11 @@ public:
   }
 
   void recv(block256 *data, const bool *b, int length) {
-    Utils::BigInt *k = new Utils::BigInt[length];
-    Utils::Point *gr = new Utils::Point[length];
-    Utils::Point pk[2];
+    BigInt *k = new BigInt[length];
+    Point *gr = new Point[length];
+    Point pk[2];
     alignas(32) block256 m[2];
-    Utils::Point C;
+    Point C;
     for (int i = 0; i < length; ++i)
       G->get_rand_bn(k[i]);
 
@@ -191,7 +193,7 @@ public:
     for (int i = 0; i < length; ++i) {
       if (b[i]) {
         pk[1] = G->mul_gen(k[i]);
-        Utils::Point inv = pk[1].inv();
+        Point inv = pk[1].inv();
         pk[0] = C.add(inv);
       } else {
         pk[0] = G->mul_gen(k[i]);

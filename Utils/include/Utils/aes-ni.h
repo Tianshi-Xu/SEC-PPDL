@@ -12,7 +12,7 @@
 #if defined(HAVE__ALIGNED_MALLOC)
 #include <malloc.h>
 #endif
-#include <emp-tool/utils/block.h>
+#include "block.h"
 
 #define MODULE_NAME _AESNI
 #define BLOCK_SIZE 16

@@ -159,7 +159,7 @@ public:
   }
 
   void got_send_post(const block128 *data0, const block128 *data1, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       for (int j = i; j < i + bsize and j < length; ++j) {
@@ -177,7 +177,7 @@ public:
   }
 
   void got_recv_post(block128 *data, const bool *r, int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     block128 res[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       io->recv_data(res, 2 * sizeof(block128) * std::min(bsize, length - i));
@@ -194,7 +194,7 @@ public:
 
   void got_send_post(uint64_t **data, int length) {
     assert(this->l <= 64 && this->l > 8);
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     uint32_t pad2_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(uint64_t) * 8));
@@ -277,7 +277,7 @@ public:
 
   void got_recv_post(uint64_t *data, const uint8_t *r, int length) {
     assert(this->l <= 64 && this->l > 8);
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     uint32_t res_size =
         (uint32_t)ceil((2 * bsize * this->l) / ((float)sizeof(uint64_t) * 8));
     uint64_t res[res_size];
@@ -327,7 +327,7 @@ public:
   }
 
   void cot_send_post(block128 *data0, block128 delta, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     block128 tmp[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
@@ -347,7 +347,7 @@ public:
   }
 
   void cot_recv_post(block128 *data, const bool *r, int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     block128 res[bsize];
     for (int i = 0; i < length; i += bsize) {
       io->recv_data(res, sizeof(block128) * std::min(bsize, length - i));
@@ -364,7 +364,7 @@ public:
   }
 
   void rot_send_post(block128 *data0, block128 *data1, int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     for (int i = 0; i < length; i += bsize) {
       for (int j = i; j < i + bsize and j < length; ++j) {
@@ -381,7 +381,7 @@ public:
   }
 
   void rot_recv_post(block128 *data, const bool *r, int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     for (int i = 0; i < length; i += bsize) {
       if (bsize <= length - i)
         crh.H<bsize>(data + i, tT + i);
@@ -488,9 +488,9 @@ public:
                             //  assuming numChunks<=256, we get 128 -- which is
                             //  the maximum number of 128 bit blocks which can
                             //  get added in one OT. So, declare an array of
-                            //  size AES_BATCH_SIZE + 130.
+                            //  size Utils::AES_BATCH_SIZE + 130.
     block128 *dataToBeSent =
-        new block128[AES_BATCH_SIZE + (senderMatmulDims / 2) + 10];
+        new block128[Utils::AES_BATCH_SIZE + (senderMatmulDims / 2) + 10];
     uint64_t dataToBeSentByteAlignedPtr = 0;
     uint64_t corrPtr = 0;
     for (int i = 0; i < numOTs; i++) {
@@ -531,7 +531,7 @@ public:
 
       // If either enough data is accumulated or this is the last OT, send the
       // data
-      if ((dataToBeSentByteAlignedPtr >= (AES_BATCH_SIZE * 16)) ||
+      if ((dataToBeSentByteAlignedPtr >= (Utils::AES_BATCH_SIZE * 16)) ||
           (i == numOTs - 1)) { // Each 128 bit block has 16 bytes
         // Send this data to receiver for pipelining
         io->send_data(dataToBeSent, dataToBeSentByteAlignedPtr);
@@ -548,7 +548,7 @@ public:
                             const uint32_t *chunkSizes,
                             const uint32_t *numChunks, const int numOTs,
                             int senderMatmulDims) {
-    block128 dataToBeRecvd[AES_BATCH_SIZE + (senderMatmulDims / 2) +
+    block128 dataToBeRecvd[Utils::AES_BATCH_SIZE + (senderMatmulDims / 2) +
                            10]; // For logic of this bound, refer to the
                                 // function above.
 
@@ -567,7 +567,7 @@ public:
             Also, since this can be a large array, allocating on heap is better.
     */
     block128 *hashesStored =
-        new block128[AES_BATCH_SIZE + (senderMatmulDims / 2) + 10 + numOTs];
+        new block128[Utils::AES_BATCH_SIZE + (senderMatmulDims / 2) + 10 + numOTs];
     uint64_t hashesStoredPtr =
         0; // Indexes into hashesStored to keep track of which hash block to be
            // used to start storing hashes
@@ -600,7 +600,7 @@ public:
       uint64_t bytesToBeRecvd = ceil_val(curNumChunks * curChunkSize, 8);
       dataToBeRecvdCummulativeCtr += bytesToBeRecvd;
       hashesStoredPtr += curNumHashes;
-      if ((dataToBeRecvdCummulativeCtr >= (AES_BATCH_SIZE * 16)) ||
+      if ((dataToBeRecvdCummulativeCtr >= (Utils::AES_BATCH_SIZE * 16)) ||
           (i == numOTs - 1)) { // Each 128 bit block has 16 bytes
         // Expect these many bytes from the sender
         io->recv_data(dataToBeRecvd, dataToBeRecvdCummulativeCtr);
@@ -712,7 +712,7 @@ public:
   template <typename intType>
   void cot_send_post_moduloAdd(intType *rdata, const intType *delta,
                                const int length) {
-    const int bsize = AES_BATCH_SIZE / 2;
+    const int bsize = Utils::AES_BATCH_SIZE / 2;
     block128 pad[2 * bsize];
     intType tmp[bsize];
     for (int i = 0; i < length; i += bsize) {
@@ -737,7 +737,7 @@ public:
   template <typename intType>
   void cot_recv_post_moduloAdd(intType *data, const uint8_t *choices,
                                const int length) {
-    const int bsize = AES_BATCH_SIZE;
+    const int bsize = Utils::AES_BATCH_SIZE;
     intType res[bsize];
     block128 hashes[bsize];
     for (int i = 0; i < length; i += bsize) {

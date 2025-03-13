@@ -72,7 +72,11 @@ public:
         } else {  // party == BOB
             otpack->iknp_straight->recv_cot(data_R, (bool *)sel, size, bw_y);
             // cout << "party 2, recv cot done" << endl;
+            // for(int i = 0; i < size; i++) {
+            //     cout << "data_S[" << i << "] = " << data_S[i] << endl;
+            // }
             otpack->iknp_reversed->send_cot(data_S, corr_data, size, bw_y);
+
             // cout << "party 2, send cot done" << endl;
         }
         for (int i = 0; i < size; i++) {

@@ -59,6 +59,7 @@ public:
         else{
             this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
         }
+        std::cout << "MSB done" << std::endl;
         for (int i = 0; i < num_relu; i++) {
             if (this->party == ALICE) {
                 msb_tmp[i] = msb_tmp[i] ^ 1;

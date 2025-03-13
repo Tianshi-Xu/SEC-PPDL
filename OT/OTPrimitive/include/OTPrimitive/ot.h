@@ -7,6 +7,7 @@ namespace OTPrimitive {
 template <typename IO> 
 class OT {
 public:
+  int party;
   OT() {}
   virtual ~OT() {}
   virtual void send(const block128 *data0, const block128 *data1, int length){Utils::error("send not implemented");}
@@ -19,10 +20,9 @@ public:
   virtual void recv(uint8_t *data, const uint8_t *b, int length, int N, int l){Utils::error("recv not implemented");}
   virtual void recv(uint8_t *data, uint8_t *b, int length, int N, int l){Utils::error("recv not implemented");}
   virtual void send(uint8_t **data, int length, int l){Utils::error("send not implemented");}
-  // virtual void recv(uint8_t *data, const uint8_t *b, int length, int l){Utils::error("recv not implemented");}
+  virtual void recv(uint8_t *data, const uint8_t *b, int length, int l){Utils::error("recv not implemented");}
   
   virtual void recv(uint8_t *data, uint8_t *b, int length, int l){
-    std::cout << "recv(uint8_t *data, uint8_t *b, int length, int l) not implemented" << std::endl;
     Utils::error("recv not implemented");
   }
   virtual void send(uint64_t **data, int length, int l){Utils::error("send not implemented");}
