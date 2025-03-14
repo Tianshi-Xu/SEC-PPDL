@@ -1,3 +1,18 @@
 [submodule "Extern/phantom"]
 	path = Extern/phantom
 	url = https://github.com/encryptorion-lab/phantom-fhe.git
+[submodule "Extern/SEAL"]
+	path = Extern/SEAL
+	url = https://github.com/microsoft/SEAL.git
+[submodule "Extern/emp-tool"]
+	path = Extern/emp-tool
+	url = https://github.com/emp-toolkit/emp-tool.git
+[submodule "Extern/emp-ot"]
+	path = Extern/emp-ot
+	url = https://github.com/emp-toolkit/emp-ot.git
+[submodule "Extern/hexl"]
+	path = Extern/hexl
+	url = https://github.com/intel/hexl.git
+[submodule "Extern/phantom-fhe"]
+	path = Extern/phantom-fhe
+	url = https://github.com/encryptorion-lab/phantom-fhe.git
