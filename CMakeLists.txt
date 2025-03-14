@@ -14,6 +14,8 @@ set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/emp-ot")
 # message(STATUS "emp ot found ${EMP-OT_FOUND}")
 include_directories(${EMP-OT_INCLUDE_DIR} 
                     ${EMP-TOOL_INCLUDE_DIR}) 
+
+
 add_subdirectory(Datatype)
 add_subdirectory(Utils)
 add_subdirectory(HE)

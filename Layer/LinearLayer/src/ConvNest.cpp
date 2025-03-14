@@ -39,12 +39,12 @@ void Conv2DNest::compute_he_params(uint64_t in_feature_size) {
     this->tiled_out_channels = out_channels / this->tile_size + (out_channels % this->tile_size != 0);
     this->input_rot = std::sqrt(this->tile_size);  // to be checked
     this->out_feature_size = (in_feature_size + 2 * this->padding - kernel_size) / stride + 1;
-    cout << "padded_feature_size: " << this->padded_feature_size << endl;
-    cout << "tile_size: " << this->tile_size << endl;
-    cout << "tiled_in_channels: " << this->tiled_in_channels << endl;
-    cout << "tiled_out_channels: " << this->tiled_out_channels << endl;
-    cout << "input_rot: " << this->input_rot << endl;
-    cout << "out_feature_size: " << this->out_feature_size << endl;
+    // cout << "padded_feature_size: " << this->padded_feature_size << endl;
+    // cout << "tile_size: " << this->tile_size << endl;
+    // cout << "tiled_in_channels: " << this->tiled_in_channels << endl;
+    // cout << "tiled_out_channels: " << this->tiled_out_channels << endl;
+    // cout << "input_rot: " << this->input_rot << endl;
+    // cout << "out_feature_size: " << this->out_feature_size << endl;
 }
 
 Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE)
@@ -60,7 +60,7 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t 
 Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
     uint64_t offset = (kernel_size - 1) * (padded_feature_size + 1);
-    Tensor<UnifiedPlaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size}, HE->evaluator->backend());
+    Tensor<UnifiedPlaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size}, HE->Backend());
 
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
         for (uint64_t j = 0; j < tiled_out_channels; j++) {
@@ -150,7 +150,9 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_in_channels; j++) {
                 if (i) {
+                    cout << "rot1:" << padded_feature_size * padded_feature_size << endl;
                     HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_feature_size * padded_feature_size, *keys, ac_rot_ct({i, j}));
+                    
                 }
                 else {
                     ac_rot_ct({i, j}) = ac_ct(j);
@@ -182,7 +184,9 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
             out_ct(i) = int_ct({i, 0});
             // Complete output rotation to reduce along this dimension
             for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
+                cout << "rot2:" << padded_feature_size * padded_feature_size * input_rot << endl;
                 HE->evaluator->rotate_rows(out_ct(i), padded_feature_size * padded_feature_size * input_rot, *keys, out_ct(i));
+                
                 HE->evaluator->add_inplace(out_ct(i), int_ct({i, j}));
             }
         }
@@ -227,16 +231,28 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
 }
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
-    std::cout << "Conv2DNest operator called" << std::endl;
+    cout << "in Conv2DNest operator" << endl;
+    cout << "x.shape" << endl;
+    x.print_shape();
+    cout << "weight.shape" << endl;
+    this->weight.print_shape();
+    if (this->in_feature_size != x.shape()[1]) {
+        cout << "in_feature_size:" << this->in_feature_size << endl;
+        cout << "wrong input feature size" << endl;
+        exit(1);
+    }
+    // std::cout << "Conv2DNest operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    std::cout << "ac_msg generated" << std::endl;
+    // std::cout << "ac_msg generated" << std::endl;
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
-    std::cout << "ac_ct generated" << std::endl;
+    // std::cout << "ac_ct generated" << std::endl;
     Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    std::cout << "out_ct generated: " << out_ct(0).location() << std::endl;
+    // std::cout << "out_ct generated: " << out_ct(0).location() << std::endl;
+
+    
     Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
-    std::cout << "out_msg generated" << std::endl;
-    out_msg.print_shape();
+    // std::cout << "out_msg generated" << std::endl;
+    // out_msg.print_shape();
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
     std::cout << "y generated" << std::endl;
 

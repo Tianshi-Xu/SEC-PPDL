@@ -13,7 +13,12 @@ class Truncation {
             this->truncationProtocol = truncationProtocol;
         }
         // for now, only support uint64_t
-        void operator()(Tensor<T> &x, int32_t shift, int32_t bw, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
+        void operator()(Tensor<T> &x, int32_t shift, int32_t bw, bool signed_arithmetic=true, bool msb_zero=false){
+            uint8_t *msb_x = nullptr;
+            if (msb_zero){
+                msb_x = new uint8_t[x.size()];
+                memset(msb_x, 0, x.size());
+            }
             auto shape = x.shape();
             int dim = x.size();
             x.flatten();

@@ -45,8 +45,8 @@ public:
       // bitwidth of y
       int32_t bw_y)
     {
-        cout << "bw_x = " << bw_x << endl;
-        cout << "bw_y = " << bw_y << endl;
+        // cout << "bw_x = " << bw_x << endl;
+        // cout << "bw_y = " << bw_y << endl;
         assert(bw_x <= 64 && bw_y <= 64 && bw_y <= bw_x);
         uint64_t mask_x = (bw_x == 64 ? -1 : ((1ULL << bw_x) - 1));
         uint64_t mask_y = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
@@ -145,7 +145,7 @@ public:
             // cout << "msb_xb[" << i << "] = " << msb_xb[i] << endl;
             msb_x[i] = msb_x[i] ^ msb_xb[i];
         }
-        printf("msb_x[0] = %d\n", msb_x[0]);
+        // printf("msb_x[0] = %d\n", msb_x[0]);
         delete[] tmp_x;
         delete[] msb_xb;
     }

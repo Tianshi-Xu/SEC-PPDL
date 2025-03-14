@@ -1,25 +1,28 @@
 cmake_minimum_required(VERSION 3.10)
 # set(SEAL_DIR "/root/IOTest/seal/SEAL/build/cmake/")
 project(HE_test LANGUAGES CXX)
-
-option(USE_HE_GPU OFF)
-
 set(FATHER_PROJECT_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
 # find_package(SEAL CONFIG REQUIRED)
 find_package(SEAL 4.1.2 EXACT QUIET PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/SEAL/build" NO_DEFAULT_PATH)
 
+# if(DEFINED USE_HE_GPU)
+#     unset(USE_HE_GPU CACHE)
+# endif()
+# option(USE_HE_GPU "Use GPU backend for HE" OFF)
+message(STATUS "USE_HE_GPU: ${USE_HE_GPU}")
 # Phantom: GPU backend for HE
 if(USE_HE_GPU)
     find_package(CUDAToolkit REQUIRED)
-    find_package(Phantom CONFIG PATHS "${FATHER_PROJECT_SOURCE_DIR}/build/extern/phantom")
+    message(STATUS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
+    find_package(Phantom CONFIG PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
     if(NOT Phantom_FOUND)
         message(STATUS "Phantom was not found: install locally")
-        execute_process(COMMAND ${CMAKE_COMMAND} -S . -B build -DCMAKE_INSTALL_PREFIX=${FATHER_PROJECT_SOURCE_DIR}/build/extern/phantom
+        execute_process(COMMAND ${CMAKE_COMMAND} -S . -B build -DCMAKE_INSTALL_PREFIX=${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom
                 WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
         execute_process(COMMAND ${CMAKE_COMMAND} --build build --target install --parallel
                 WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-        find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/build/extern/phantom")
+        find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
     endif()
 endif()
 

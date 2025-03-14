@@ -35,15 +35,16 @@ Conv2D::Conv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_chan
       stride(stride),
       HE(HE)
       {
+        cout << "---------in Conv2D constructor-----------" << endl;
+        cout << "in_feature_size, in_channels, out_channels, kernel_size, stride: " << in_feature_size << ", " << in_channels << ", " << out_channels << ", " << kernel_size << ", " << stride << endl;
         this->padding = (kernel_size - 1) / 2;
         if(HE->server) {
-            cout << "server Conv2D constructor called" << endl;
+            // cout << "server Conv2D constructor called" << endl;
             this->weight = Tensor<uint64_t>({out_channels, in_channels, kernel_size, kernel_size});
             this->bias = Tensor<uint64_t>({out_channels});
             this->weight.randomize(16);
             this->bias.randomize(16);
-            cout << "server Conv2D constructor done" << endl;
+            // cout << "server Conv2D constructor done" << endl;
         }
       }
-
 } // namespace LinearLayer

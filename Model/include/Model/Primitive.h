@@ -22,7 +22,7 @@ class CryptoPrimitive{
             this->conv_type = conv_type;
         }
 
-        CryptoPrimitive(int party, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type, int32_t polyModulusDegree, int32_t plainWidth, Datatype::CONV_TYPE conv_type, string address, int port){
+        CryptoPrimitive(int party, int32_t num_threads, int32_t bit_length, Datatype::OT_TYPE ot_type, int32_t polyModulusDegree, int32_t plainWidth, Datatype::CONV_TYPE conv_type,Datatype::LOCATION backend, string address, int port){
             this->party = party;
             this->conv_type = conv_type;
             this->num_threads = num_threads;
@@ -47,7 +47,7 @@ class CryptoPrimitive{
             this->truncation = new NonlinearOperator::Truncation<T>(truncationProtocol, num_threads);
             cout << "begin to generate HEIO" << endl;
             this->io = ioArr[0];
-            this->HE = new HE::HEEvaluator(io, party, polyModulusDegree, plainWidth);
+            this->HE = new HE::HEEvaluator(io, party, polyModulusDegree, plainWidth, backend);
             this->HE->GenerateNewKey();
             cout << "CryptoPrimitive constructor finished" << endl;
         }
@@ -58,4 +58,5 @@ class CryptoPrimitive{
         NonlinearLayer::ReLUProtocol<T, IO> **reluprotocol;
         OTProtocol::TruncationProtocol **truncationProtocol;
 };
+
 }

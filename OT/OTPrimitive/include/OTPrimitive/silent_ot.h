@@ -222,16 +222,16 @@ class SilentOT : public OTPrimitive::OT<IO> {
   // 1-out-of-N OT.
   void send_ot_cm_cc(uint8_t** data, int64_t length, int l) {
     block* rcm_data = new block[length];
-    std::cout << "in send_ot_cm_cc" << std::endl;
+    // std::cout << "in send_ot_cm_cc" << std::endl;
     send_ot_rcm_cc(rcm_data, length);
-    std::cout << "send_ot_rcm_cc done" << std::endl;
+    // std::cout << "send_ot_rcm_cc done" << std::endl;
     block s;
     ferret->prg.random_block(&s, 1);
-    std::cout << "send block" << std::endl;
+    // std::cout << "send block" << std::endl;
     ferret->io->send_block(&s, 1);
-    std::cout << "set s" << std::endl;
+    // std::cout << "set s" << std::endl;
     ferret->mitccrh.setS(s);
-    std::cout << "flush" << std::endl;
+    // std::cout << "flush" << std::endl;
     ferret->io->flush();
 
     block pad[2 * ot_bsize];

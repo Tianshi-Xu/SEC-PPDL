@@ -16,13 +16,13 @@ int main(int argc, char **argv){
     amap.arg("ip", address, "IP Address of server (ALICE)");
 
     amap.parse(argc, argv);
-    Utils::NetIO* netio = new Utils::NetIO(party == Utils::ALICE ? nullptr : address.c_str(), port);
+    Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
     std::cout << "netio generated" << std::endl;
-    HE::HEEvaluator HE(netio, party);
+    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::DEVICE);
     HE.GenerateNewKey();
     
-    uint64_t Ci = 32; uint64_t Co = 64; uint64_t H = 16; uint64_t W = 16;
-    uint64_t p = 1; uint64_t s = 1; uint64_t k = 1; uint64_t Ho = 16; uint64_t Wo = 16;
+    uint64_t Ci = 64; uint64_t Co = 64; uint64_t H =8; uint64_t W = 8;
+    uint64_t p = 1; uint64_t s = 1; uint64_t k = 3;
     Tensor<uint64_t> input({Ci, H, W}); 
     Tensor<uint64_t> weight({Co, Ci, k, k});
     Tensor<uint64_t> bias({Co});
@@ -47,17 +47,7 @@ int main(int argc, char **argv){
     // Conv2DNest conv(H, s, p, weight, bias, &HE);
     conv1->weight.print_shape();
     Tensor<uint64_t> output = conv1->operator()(input);
-    if (!party) {
-        for (uint64_t i = 0; i < Co; i++){
-            std::cout << i << std::endl;
-            for (uint64_t j = 0; j < Ho; j++){
-                for (uint64_t l = 0; l < Wo; l++){
-                    std::cout << output({i, j, l}) << " ";
-                }
-                std::cout << std::endl;
-            }
-        }
-    }
+    output.print_shape();
 
     return 0;
 }

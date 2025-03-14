@@ -4,10 +4,10 @@
 using namespace std;
 using namespace NonlinearLayer;
 using namespace Model;
-#define MAX_THREADS 8
+#define MAX_THREADS 4
 
 int party, port = 32000;
-int num_threads = 8;
+int num_threads = 2;
 string address = "127.0.0.1";
 
 int bitlength = 16;
@@ -26,17 +26,22 @@ int main(int argc, char **argv) {
   amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
   amap.arg("p", port, "Port Number");
   amap.arg("ip", address, "IP Address of server (ALICE)");
+
   amap.parse(argc, argv);
+
   assert(num_threads <= MAX_THREADS);
   
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, VOLE, 8192, 60, Nest, DEVICE, address, port);
-  ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);
-  Tensor<uint64_t> input({3, 32, 32});
+  cout << "io2 generated" << endl;
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Datatype::CONV_TYPE::Nest, address, port);
+  Bottleneck<uint64_t> bottleneck(16, 32, 64, 1, cryptoPrimitive);
+  Tensor<uint64_t> input({32, 16, 16});
   if (party == ALICE) {
     input.randomize(16);
+    // input.print();
   }
-  Tensor<uint64_t> output = model(input);
-  cout << "resnet done" << endl;
+  // test_tensor(input);
+  Tensor<uint64_t> output = bottleneck(input);
+  cout << "bottleneck done" << endl;
   output.print_shape();
   // output.print();
   /************ Generate Test Data ************/
