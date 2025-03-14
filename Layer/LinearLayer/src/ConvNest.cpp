@@ -150,7 +150,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_in_channels; j++) {
                 if (i) {
-                    cout << "rot1:" << padded_feature_size * padded_feature_size << endl;
+                    // cout << "rot1:" << padded_feature_size * padded_feature_size << endl;
                     HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_feature_size * padded_feature_size, *keys, ac_rot_ct({i, j}));
                     
                 }
@@ -184,7 +184,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
             out_ct(i) = int_ct({i, 0});
             // Complete output rotation to reduce along this dimension
             for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
-                cout << "rot2:" << padded_feature_size * padded_feature_size * input_rot << endl;
+                // cout << "rot2:" << padded_feature_size * padded_feature_size * input_rot << endl;
                 HE->evaluator->rotate_rows(out_ct(i), padded_feature_size * padded_feature_size * input_rot, *keys, out_ct(i));
                 
                 HE->evaluator->add_inplace(out_ct(i), int_ct({i, j}));

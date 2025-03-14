@@ -46,7 +46,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
   }
 
   void send(uint8_t** data, int length, int l) override {
-    std::cout << "in send" << std::endl;
+    // std::cout << "in send" << std::endl;
     send_ot_cm_cc(data, length, l);
   }
 

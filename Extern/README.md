@@ -21,7 +21,7 @@ cmake --install build
 ```
 git clone https://github.com/encryptorion-lab/phantom-fhe.git
 cd phantom-fhe
-git apply ../patch/0001-more-flexible.patch
+git apply ../patch/phantom.patch
 cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_INSTALL_PREFIX=build_phantom
 cmake --build build --target install --parallel
 ```

@@ -192,7 +192,7 @@ public:
     }
 
     Tensor & operator=(const Tensor &other) {
-        std::cout << "[warning] deep copy" << std::endl;
+        // std::cout << "[warning] deep copy" << std::endl;
         shape_ = other.shape_;
         strides_ = other.strides_;
         data_ = other.data_;

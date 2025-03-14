@@ -26,7 +26,7 @@ class AvgPool2D{
             C = shape[0];
             H = shape[1];
             W = shape[2];
-            cout << "C,H,W: " << C << "," << H << "," << W << endl;
+            // cout << "C,H,W: " << C << "," << H << "," << W << endl;
             Hout = (H - kernel_size + 2 * padding) / stride + 1;
             Wout = (W - kernel_size + 2 * padding) / stride + 1;
             Tensor<T> y({C,Hout,Wout});
