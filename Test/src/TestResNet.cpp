@@ -28,8 +28,8 @@ int main(int argc, char **argv) {
   amap.arg("ip", address, "IP Address of server (ALICE)");
   amap.parse(argc, argv);
   assert(num_threads <= MAX_THREADS);
-  
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, VOLE, 8192, 60, Nest, DEVICE, address, port);
+
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, VOLE, 8192, 60, Nest, HOST, address, port);
   ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);
   Tensor<uint64_t> input({3, 32, 32});
   if (party == ALICE) {

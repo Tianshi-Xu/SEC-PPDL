@@ -14,16 +14,17 @@ message(STATUS "USE_HE_GPU: ${USE_HE_GPU}")
 # Phantom: GPU backend for HE
 if(USE_HE_GPU)
     find_package(CUDAToolkit REQUIRED)
-    message(STATUS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-    find_package(Phantom CONFIG PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-    if(NOT Phantom_FOUND)
-        message(STATUS "Phantom was not found: install locally")
-        execute_process(COMMAND ${CMAKE_COMMAND} -S . -B build -DCMAKE_INSTALL_PREFIX=${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom
-                WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-        execute_process(COMMAND ${CMAKE_COMMAND} --build build --target install --parallel
-                WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-        find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom")
-    endif()
+    message(STATUS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe")
+    find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe/build_phantom")
+    message(STATUS "Phantom_FOUND:${Phantom_FOUND}")
+    # if(NOT Phantom_FOUND)
+    #     message(STATUS "Phantom was not found: install locally")
+    #     execute_process(COMMAND ${CMAKE_COMMAND} -S . -B build -DCMAKE_INSTALL_PREFIX=${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe
+    #             WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe")
+    #     execute_process(COMMAND ${CMAKE_COMMAND} --build build --target install --parallel
+    #             WORKING_DIRECTORY "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe")
+    #     find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe")
+    # endif()
 endif()
 
 # Set source files

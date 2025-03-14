@@ -1,5 +1,5 @@
 .cache
-.vscode/
+.vscode
 build/
 Extern/SEAL/
 Extern/hexl/
