@@ -12,7 +12,7 @@
    This project depends on *Phantom*, and a patch needs to be applied to it. Follow these steps:
 
    ``` bash
-   cd Extern/phantom # Navigate to the root directory of the Phantom
+   cd Extern/phantom-fhe # Navigate to the root directory of the Phantom
    git apply ../0001-more-flexible.patch
    ```
 

@@ -90,6 +90,14 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         tmp_vec[l * padded_feature_size * padded_feature_size + m] = tmp_ntt[m];
                     }
                 }
+                
+                bool zero_flag = 1;
+                for (uint64_t l = 0; l < HE->polyModulusDegree; l++) {
+                    zero_flag = zero_flag && (tmp_vec[l] == 0);
+                }
+                if (zero_flag) {
+                    tmp_vec[HE->polyModulusDegree - 1] = 1; // set unused slots to non-zero values to avoid transparent ciphertext error
+                }
                 HE->encoder->encode(tmp_vec, weight_pt({i, j, k}));
             }
         }
@@ -241,17 +249,17 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci
         cout << "wrong input feature size" << endl;
         exit(1);
     }
-    // std::cout << "Conv2DNest operator called" << std::endl;
+    std::cout << "Conv2DNest operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
-    // std::cout << "ac_msg generated" << std::endl;
+    std::cout << "ac_msg generated" << std::endl;
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}
-    // std::cout << "ac_ct generated" << std::endl;
+    std::cout << "ac_ct generated" << std::endl;
     Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);  // out_ct.shape = {co}
-    // std::cout << "out_ct generated: " << out_ct(0).location() << std::endl;
+    std::cout << "out_ct generated: " << out_ct(0).location() << std::endl;
 
     
     Tensor<uint64_t> out_msg = Operator::HEToSS(out_ct, HE);  // out_msg.shape = {co, N}
-    // std::cout << "out_msg generated" << std::endl;
+    std::cout << "out_msg generated" << std::endl;
     // out_msg.print_shape();
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
     std::cout << "y generated" << std::endl;
