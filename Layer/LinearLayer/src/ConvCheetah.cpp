@@ -65,6 +65,7 @@ Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_
     WWprime = (WW - kernel_size + stride) / stride;
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
+    std::cout << "plain" << plain;
     weight_pt = this->PackWeight();
     this->fused_bn = false;
 
@@ -168,7 +169,7 @@ Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCiphe
 }
 
 // 计算输入张量的 Pack 版本
-Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
+Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> &x){
     Tensor<uint64_t> padded_x ({in_channels, in_feature_size, in_feature_size} ,0);
     for (size_t i = 0; i < in_channels; i++){
         for (size_t j = 0; j < (in_feature_size - 2 * padding); j++){
@@ -326,7 +327,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct)
+Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
 //Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     std::vector<size_t> shapeTab = {dM, dH, dW};
@@ -350,7 +351,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
     return ConvRe;
 }
 
-Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
+Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> &out){
     Tensor<uint64_t> finalResult ({out_channels, Hprime, Wprime});
     int checkl = 0;
 
@@ -372,7 +373,7 @@ Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
 
 }
 
-Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> x){
+Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> &x){
     auto pack = this->PackActivation(x);
     auto Cipher = Operator::SSToHE_coeff(pack, HE);
     auto ConvResult = this->HECompute(weight_pt, Cipher);
