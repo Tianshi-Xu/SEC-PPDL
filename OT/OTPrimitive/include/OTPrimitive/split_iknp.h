@@ -151,7 +151,7 @@ public:
   }
 
   void setup_send(block128 *in_k0 = nullptr, bool *in_s = nullptr) override {
-    cout << "iknp setup_send" << endl;
+    // cout << "iknp setup_send" << endl;
     setup = true;
     if (in_s != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));
@@ -167,7 +167,7 @@ public:
   }
 
   void setup_recv(block128 *in_k0 = nullptr, block128 *in_k1 = nullptr) override {
-    cout << "iknp setup_recv" << endl;
+    // cout << "iknp setup_recv" << endl;
     setup = true;
     if (in_k0 != nullptr) {
       memcpy(k0, in_k0, lambda * sizeof(block128));

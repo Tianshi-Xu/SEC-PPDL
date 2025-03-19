@@ -4,6 +4,7 @@
 using namespace std;
 using namespace NonlinearLayer;
 using namespace Model;
+using namespace Datatype;
 #define MAX_THREADS 8
 
 int party, port = 32000;
@@ -29,15 +30,21 @@ int main(int argc, char **argv) {
   amap.parse(argc, argv);
   assert(num_threads <= MAX_THREADS);
 
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, VOLE, 8192, 60, Nest, DEVICE, address, port);
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::IKNP, 8192, 60, Nest, Datatype::HOST, address, port);
+
   ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);
   Tensor<uint64_t> input({3, 32, 32});
-  if (party == ALICE) {
-    input.randomize(16);
-  }
+  input.randomize(16);
+  auto start = high_resolution_clock::now();
   Tensor<uint64_t> output = model(input);
+  cout << "time:" << ((high_resolution_clock::now() - start)).count()/1e+9 << "s" << endl;
   cout << "resnet done" << endl;
   output.print_shape();
+
+  uint64_t totalComm = cryptoPrimitive->get_total_comm();
+  cout << "totalComm: " << totalComm << " bytes" << endl;
+  uint64_t totalRounds = cryptoPrimitive->get_total_rounds();
+  cout << "totalRounds: " << totalRounds << endl;
   // output.print();
   /************ Generate Test Data ************/
   /********************************************/

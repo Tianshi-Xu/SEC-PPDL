@@ -11,7 +11,7 @@ class IKNPOTPack : public OTPack<IO> {
 
  public:
   IKNPOTPack(IO *io, int party, bool do_setup = true): OTPack<IO>(io, party, do_setup) {
-    std::cout << "using kkot pack" << std::endl;
+    // std::cout << "using kkot pack" << std::endl;
     this->party = party;
     this->do_setup = do_setup;
     this->io = io;
@@ -20,11 +20,11 @@ class IKNPOTPack : public OTPack<IO> {
       this->kkot[i] = new SplitKKOT<IO>(this->party, io, 1 << (i + 1));
       // cout << this->kkot[i]->te << endl;
     }
-    cout << "iknp_straight" << endl;
+    // cout << "iknp_straight" << endl;
     this->iknp_straight = new SplitIKNP<IO>(this->party, io);
-    cout << "iknp_straight.party = " << this->iknp_straight->party << endl;
+    // cout << "iknp_straight.party = " << this->iknp_straight->party << endl;
     this->iknp_reversed = new SplitIKNP<IO>(3 - this->party, io);
-    cout << "iknp_reversed.party = " << this->iknp_reversed->party << endl;
+    // cout << "iknp_reversed.party = " << this->iknp_reversed->party << endl;
     this->do_setup = false;
     if (do_setup) {
       SetupBaseOTs();

@@ -231,16 +231,6 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
 }
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
-    cout << "in Conv2DNest operator" << endl;
-    cout << "x.shape" << endl;
-    x.print_shape();
-    cout << "weight.shape" << endl;
-    this->weight.print_shape();
-    if (this->in_feature_size != x.shape()[1]) {
-        cout << "in_feature_size:" << this->in_feature_size << endl;
-        cout << "wrong input feature size" << endl;
-        exit(1);
-    }
     // std::cout << "Conv2DNest operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
     // std::cout << "ac_msg generated" << std::endl;
@@ -254,8 +244,6 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci
     // std::cout << "out_msg generated" << std::endl;
     // out_msg.print_shape();
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
-    std::cout << "y generated" << std::endl;
-
     return y;
 };
 

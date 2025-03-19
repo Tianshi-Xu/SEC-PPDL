@@ -26,10 +26,8 @@ class Conv2D : public Module {
         Tensor<uint64_t> bias;
         HE::HEEvaluator* HE;
         bool fused_bn;
-        // TODO: remove the parameter `in_feature_size`
-        Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
 
-        // TODO: implement this constructor
+        Conv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
         Conv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE);
     
         virtual ~Conv2D() = default;
@@ -42,7 +40,6 @@ class Conv2D : public Module {
         virtual Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) = 0;
         virtual Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) = 0;
         virtual Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out) = 0;
-        // virtual void compute_he_params(Tensor<uint64_t> &x) = 0;
 };
 
 

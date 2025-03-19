@@ -46,7 +46,6 @@ class BasicBlock{
                 shortcut = CreateConv<T, IO>(in_feature_size, in_planes, planes, 1, stride, cryptoPrimitive);
             }
         }
-        
 
         Tensor<T> operator()(Tensor<T> &x){
             Tensor<T> x_res = x;

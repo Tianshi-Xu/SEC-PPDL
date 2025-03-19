@@ -4,20 +4,15 @@ using namespace std;
 
 
 int main(){
-    Tensor<double> tensor({2, 3});
-    tensor.randomize();
-    tensor.print();
-    Tensor<uint64_t> tensor2({2, 3});
-    tensor2.randomize(8);
-    tensor2.print();
-    Tensor<int> tensor3({2, 3});
-    tensor3.randomize(4);
-    tensor3.print();
+    Tensor<double> tensor1({2, 3});
+    tensor1.randomize();
+    tensor1.print();
+    tensor1.print_shape();
+    Tensor<double> tensor2({2, 3});
+    Tensor<double> tensor3 = tensor1 + tensor2;
+    tensor3({0,1}) = 100;
     cout << tensor3({0,1}) << endl;
-    printf("%d\n", tensor3({0,1}));
-    // Tensor<double> *tensor2 = &tensor;
-    // tensor({0,0}) = 100;
-    // tensor2->print();
-    // tensor.print();
+    tensor3.reshape({3, 2});
+    tensor3.flatten();
     return 0;
 }

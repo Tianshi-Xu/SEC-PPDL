@@ -31,9 +31,9 @@ class CryptoPrimitive{
             this->reluprotocol = new NonlinearLayer::ReLUProtocol<T, IO>*[num_threads];
             this->truncationProtocol = new OTProtocol::TruncationProtocol*[num_threads];
             for (int i = 0; i < num_threads; i++) {
-                std::cout << "before, i = " << i << std::endl;
+                // std::cout << "before, i = " << i << std::endl;
                 this->ioArr[i] = new IO(party == ALICE ? nullptr : address.c_str(), port + i + 1);
-                std::cout << "i = " << i << std::endl;
+                // std::cout << "i = " << i << std::endl;
                 // TODO: change to VOLE OT
                 if (ot_type == Datatype::VOLE) {
                     this->otpackArr[i] = new VOLEOTPack<Utils::NetIO>(this->ioArr[i], party);
@@ -45,11 +45,22 @@ class CryptoPrimitive{
             }
             this->relu = new NonlinearLayer::ReLU<T, IO>(reluprotocol, bit_length, num_threads);
             this->truncation = new NonlinearOperator::Truncation<T>(truncationProtocol, num_threads);
-            cout << "begin to generate HEIO" << endl;
+            // cout << "begin to generate HEIO" << endl;
             this->io = ioArr[0];
             this->HE = new HE::HEEvaluator(io, party, polyModulusDegree, plainWidth, backend);
             this->HE->GenerateNewKey();
-            cout << "CryptoPrimitive constructor finished" << endl;
+            // cout << "CryptoPrimitive constructor finished" << endl;
+        }
+
+        uint64_t get_total_comm(){
+            uint64_t totalComm = 0;
+            for (int i = 0; i < num_threads; i++) {
+                totalComm += (ioArr[i]->counter);
+            }
+            return totalComm;
+        }
+        uint64_t get_total_rounds(){
+            return ioArr[0]->num_rounds;
         }
     private:
         IO *io;

@@ -9,7 +9,7 @@ find_package(SEAL 4.1.2 EXACT QUIET PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/S
 # if(DEFINED USE_HE_GPU)
 #     unset(USE_HE_GPU CACHE)
 # endif()
-# option(USE_HE_GPU "Use GPU backend for HE" OFF)
+option(USE_HE_GPU "Use GPU backend for HE" OFF)
 message(STATUS "USE_HE_GPU: ${USE_HE_GPU}")
 # Phantom: GPU backend for HE
 if(USE_HE_GPU)

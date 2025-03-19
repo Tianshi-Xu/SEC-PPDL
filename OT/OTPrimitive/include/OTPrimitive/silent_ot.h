@@ -29,9 +29,9 @@ class SilentOT : public OTPrimitive::OT<IO> {
     
     if (warm_up) {
       block tmp;
-      std::cout << "begin warm up" << std::endl;
+      // std::cout << "begin warm up" << std::endl;
       ferret->rcot(&tmp, 1);
-      std::cout << "warm up done" << std::endl;
+      // std::cout << "warm up done" << std::endl;
     }
   }
 
