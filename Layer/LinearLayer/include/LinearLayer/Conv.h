@@ -70,7 +70,6 @@ class Conv2DCheetah : public Conv2D {
         unsigned long N, HW, WW, CW, MW, dM, dC, dH, dW, OW, Hprime, Wprime, HWprime, WWprime;
         size_t polyModulusDegree = 8192;
         uint64_t plain;
-        HEEvaluator* HE;
 
         Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
 
