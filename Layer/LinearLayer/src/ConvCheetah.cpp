@@ -77,6 +77,7 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     MW = min(out_channels, (polyModulusDegree / (CW * HW * WW)));
     dM = DivUpper(out_channels,MW);
     dC = DivUpper(in_channels,CW);
+    cout << "dC,dM:" << dC << "," << dM << endl;
     dH = DivUpper(this->in_feature_size - kernel_size + 1 , HW - kernel_size + 1);
     dW = DivUpper(this->in_feature_size - kernel_size + 1 , WW - kernel_size + 1);
     OW = HW * WW * (MW * CW - 1) + WW * (kernel_size - 1) + kernel_size - 1;
@@ -86,6 +87,7 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     WWprime = (WW - kernel_size + stride) / stride;
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
+    std::cout << "plain" << plain;
     weight_pt = this->PackWeight();
     this->fused_bn = false;
     cout << "Conv2DCheetah constructor done" << endl;

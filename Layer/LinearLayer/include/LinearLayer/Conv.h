@@ -54,13 +54,13 @@ class Conv2DNest : public Conv2D {
 
         Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
         Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE);
-        Tensor<uint64_t> operator()(Tensor<uint64_t> &x) override;
+        Tensor<uint64_t> operator()(Tensor<uint64_t> &x) ;
 
     private:
-        Tensor<HE::unified::UnifiedPlaintext> PackWeight() override;
-        Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) override;
-        Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) override;
-        Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out) override;
+        Tensor<HE::unified::UnifiedPlaintext> PackWeight() ;
+        Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) ;
+        Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) ;
+        Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out);
         void compute_he_params(uint64_t in_feature_size);
 };
 
