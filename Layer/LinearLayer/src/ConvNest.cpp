@@ -90,6 +90,14 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         tmp_vec[l * padded_feature_size * padded_feature_size + m] = tmp_ntt[m];
                     }
                 }
+                
+                bool zero_flag = 1;
+                for (uint64_t l = 0; l < HE->polyModulusDegree; l++) {
+                    zero_flag = zero_flag && (tmp_vec[l] == 0);
+                }
+                if (zero_flag) {
+                    tmp_vec[HE->polyModulusDegree - 1] = 1; // set unused slots to non-zero values to avoid transparent ciphertext error
+                }
                 HE->encoder->encode(tmp_vec, weight_pt({i, j, k}));
             }
         }
@@ -231,6 +239,18 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
 }
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
+    cout << "in Conv2D, x.shape:" << endl;
+    x.print_shape();
+    // cout << "in Conv2DNest operator" << endl;
+    // cout << "x.shape" << endl;
+    // x.print_shape();
+    // cout << "weight.shape" << endl;
+    // this->weight.print_shape();
+    if (this->in_feature_size != x.shape()[1]) {
+        cout << "in_feature_size:" << this->in_feature_size << endl;
+        cout << "wrong input feature size" << endl;
+        exit(1);
+    }
     // std::cout << "Conv2DNest operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
     // std::cout << "ac_msg generated" << std::endl;

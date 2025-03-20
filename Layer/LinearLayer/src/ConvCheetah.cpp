@@ -36,11 +36,30 @@ void Conv2DCheetah::FindOptimalPartition(int H, int W, int h, int C, int N, int*
 }
 
 
+void Conv2DCheetah::compute_he_params(uint64_t in_feature_size) {
+    //in_feature_size = in_feature_size + 2 * padding;
+    int optimalHw = this->in_feature_size, optimalWw = this->in_feature_size;
+    FindOptimalPartition(this->in_feature_size, this->in_feature_size, kernel_size, in_channels, polyModulusDegree, &optimalHw, &optimalWw);
+    HW = optimalHw;
+    WW = optimalWw;
+    CW = min(in_channels, (polyModulusDegree / (HW * WW)));
+    MW = min(out_channels, (polyModulusDegree / (CW * HW * WW)));
+    dM = DivUpper(out_channels,MW);
+    dC = DivUpper(in_channels,CW);
+    dH = DivUpper(this->in_feature_size - kernel_size + 1 , HW - kernel_size + 1);
+    dW = DivUpper(this->in_feature_size - kernel_size + 1 , WW - kernel_size + 1);
+    OW = HW * WW * (MW * CW - 1) + WW * (kernel_size - 1) + kernel_size - 1;
+    Hprime = (this->in_feature_size - kernel_size + stride) / stride;
+    Wprime = (this->in_feature_size - kernel_size + stride) / stride;
+    HWprime = (HW - kernel_size + stride) / stride;
+    WWprime = (WW - kernel_size + stride) / stride;
+    this->fused_bn = false;
+}
 
-Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE)
+
+Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE)
     : Conv2D(in_feature_size + 2 * padding, stride, padding, weight, bias, HE)
 {
-    this->HE = HE;
     std::vector<size_t> shape = weight.shape();
     in_channels = shape[1];
     out_channels = shape[0];
@@ -49,7 +68,9 @@ Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_
     this->padding = padding;
     //in_feature_size = in_feature_size + 2 * padding;
     int optimalHw = this->in_feature_size, optimalWw = this->in_feature_size;
+    cout << "in_feature_size:" << this->in_feature_size << endl;
     FindOptimalPartition(this->in_feature_size, this->in_feature_size, kernel_size, in_channels, polyModulusDegree, &optimalHw, &optimalWw);
+    cout << "optimalHw:" << optimalHw << endl;
     HW = optimalHw;
     WW = optimalWw;
     CW = min(in_channels, (polyModulusDegree / (HW * WW)));
@@ -67,8 +88,21 @@ Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_
     plain = HE->plain_mod;
     weight_pt = this->PackWeight();
     this->fused_bn = false;
-
+    cout << "Conv2DCheetah constructor done" << endl;
 };
+
+Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE)
+    : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE)
+{
+    polyModulusDegree = HE->polyModulusDegree;
+    plain = HE->plain_mod;
+    compute_he_params(in_feature_size);
+    this->weight.print_shape();
+    if(HE->server) {
+        weight_pt = PackWeight();
+    }
+    weight_pt.print_shape();
+}
 
 void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
     Tensor<uint64_t> kernelFuse({out_channels, in_channels, kernel_size, kernel_size}, 0);
@@ -97,8 +131,7 @@ void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
 }
 
 
-Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE,
-                                Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta)
+Conv2DCheetah::Conv2DCheetah (uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE, Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta)
     : Conv2DCheetah(in_feature_size, stride, padding, weight, bias, HE)
 {
     this->fused_bn = true;
@@ -168,7 +201,7 @@ Tensor<uint64_t> Conv2DCheetah::HETOTensor (Tensor<UnifiedCiphertext> inputCiphe
 }
 
 // 计算输入张量的 Pack 版本
-Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> x){
+Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> &x){
     Tensor<uint64_t> padded_x ({in_channels, in_feature_size, in_feature_size} ,0);
     for (size_t i = 0; i < in_channels; i++){
         for (size_t j = 0; j < (in_feature_size - 2 * padding); j++){
@@ -278,10 +311,8 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
     if (!HE->server){
         return Ktg;
     }
-
     for (unsigned long theta = 0; theta < dM; theta++){
         for (unsigned long gama = 0; gama < dC; gama++){
-
             vector<uint64_t> Tsubv (polyModulusDegree,0); 
             for (unsigned long it = 0; it < MW; it++){
                 for (unsigned long jg = 0; jg < CW; jg++){
@@ -326,7 +357,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct)
+Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
 //Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     std::vector<size_t> shapeTab = {dM, dH, dW};
@@ -350,7 +381,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
     return ConvRe;
 }
 
-Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
+Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> &out){
     Tensor<uint64_t> finalResult ({out_channels, Hprime, Wprime});
     int checkl = 0;
 
@@ -372,7 +403,7 @@ Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> out){
 
 }
 
-Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> x){
+Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> &x){
     auto pack = this->PackActivation(x);
     auto Cipher = Operator::SSToHE_coeff(pack, HE);
     auto ConvResult = this->HECompute(weight_pt, Cipher);

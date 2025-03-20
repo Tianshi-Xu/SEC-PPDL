@@ -77,22 +77,25 @@ class Conv2DCheetah : public Conv2D {
         Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE
                             , Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
 
+        Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE);
+
         
-        Tensor<uint64_t> operator()(Tensor<uint64_t> x);
+        Tensor<uint64_t> operator()(Tensor<uint64_t> &x) override;
 
     private:
         int DivUpper(int a, int b);
         int CalculateCost(int H, int W, int h, int Hw, int Ww, int C, int N);
         void FindOptimalPartition(int H, int W, int h, int C, int N, int* optimal_Hw, int* optimal_Ww);
         Tensor<UnifiedCiphertext> EncryptTensor(Tensor<UnifiedPlaintext> plainTensor);
-        Tensor<uint64_t> PackActivation(Tensor<uint64_t> x);
-        Tensor<UnifiedPlaintext> PackWeight();
+        Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) override;
+        Tensor<UnifiedPlaintext> PackWeight() override;
         Tensor<UnifiedCiphertext> TensorTOHE(Tensor<uint64_t> PackActivationTensor);
-        Tensor<UnifiedCiphertext> HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> ac_ct);
+        Tensor<UnifiedCiphertext> HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct) override;
         Tensor<UnifiedCiphertext> sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor);
-        Tensor<uint64_t> DepackResult(Tensor<uint64_t> out);
+        Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out) override;
         Tensor<uint64_t> HETOTensor (Tensor<UnifiedCiphertext> inputCipher);
         void fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
+        void compute_he_params(uint64_t in_feature_size);
     };
 
 

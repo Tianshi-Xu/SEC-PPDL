@@ -14,15 +14,15 @@ int main(int argc, char **argv){
     amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
     amap.arg("p", port, "Port Number");
     amap.arg("ip", address, "IP Address of server (ALICE)");
-
     amap.parse(argc, argv);
+    
     Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
     std::cout << "netio generated" << std::endl;
-    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::DEVICE);
+    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::HOST);
     HE.GenerateNewKey();
     
-    uint64_t Ci = 64; uint64_t Co = 64; uint64_t H =8; uint64_t W = 8;
-    uint64_t p = 1; uint64_t s = 1; uint64_t k = 3;
+    uint64_t Ci = 64; uint64_t Co = 10; uint64_t H =1; uint64_t W = 1;
+    uint64_t p = 0; uint64_t s = 1; uint64_t k = 1;
     Tensor<uint64_t> input({Ci, H, W}); 
     Tensor<uint64_t> weight({Co, Ci, k, k});
     Tensor<uint64_t> bias({Co});
@@ -44,6 +44,8 @@ int main(int argc, char **argv){
     }
     cout << "input generated" << endl;
     Conv2D* conv1 = new Conv2DNest(H, Ci, Co, k, s, &HE);
+    // Conv2D* conv1 = new Conv2DCheetah(H, Ci, Co, k, s, &HE);
+    // Conv2D* conv1 = new Conv2DCheetah(H,s,p,weight,bias,&HE);
     // Conv2DNest conv(H, s, p, weight, bias, &HE);
     conv1->weight.print_shape();
     Tensor<uint64_t> output = conv1->operator()(input);

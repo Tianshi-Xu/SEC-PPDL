@@ -7,12 +7,10 @@ using namespace Model;
 using namespace Datatype;
 #define MAX_THREADS 8
 
+int bitlength = 32;
 int party, port = 32000;
 int num_threads = 8;
 string address = "127.0.0.1";
-
-int bitlength = 16;
-int32_t kScale = 12;
 
 uint64_t comm_threads[MAX_THREADS];
 void test_tensor(Tensor<uint64_t> &x) {
@@ -21,8 +19,6 @@ void test_tensor(Tensor<uint64_t> &x) {
   cout << "test_tensor done" << endl;
 }
 int main(int argc, char **argv) {
-  /************* Argument Parsing  ************/
-  /********************************************/
   ArgMapping amap;
   amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
   amap.arg("p", port, "Port Number");
@@ -37,32 +33,14 @@ int main(int argc, char **argv) {
   input.randomize(16);
   auto start = high_resolution_clock::now();
   Tensor<uint64_t> output = model(input);
-  cout << "time:" << ((high_resolution_clock::now() - start)).count()/1e+9 << "s" << endl;
   cout << "resnet done" << endl;
   output.print_shape();
 
+  cout << "time:" << ((high_resolution_clock::now() - start)).count()/1e+9 << " s" << endl;
   uint64_t totalComm = cryptoPrimitive->get_total_comm();
   cout << "totalComm: " << totalComm << " bytes" << endl;
   uint64_t totalRounds = cryptoPrimitive->get_total_rounds();
   cout << "totalRounds: " << totalRounds << endl;
+
   // output.print();
-  /************ Generate Test Data ************/
-  /********************************************/
-  
-
-  /**** Process & Write Benchmarking Data *****/
-  /********************************************/
-  // cout << "Number of ring-relu/s:\t" << (double(dim) / t) * 1e6 << std::endl;
-  // cout << "one ring-relu cost:\t" << (t / double(dim)) << std::endl;
-  // cout << "ring-relu Time\t" << t / (1000.0) << " ms" << endl;
-  // cout << "ring-relu Bytes Sent\t" << (totalComm) << " byte" << endl;
-
-  // /******************* Cleanup ****************/
-  // /********************************************/
-  // delete[] res;
-  // delete[] input;
-  // for (int i = 0; i < num_threads; i++) {
-  //   delete ioArr[i];
-  //   delete otpackArr[i];
-  // }
 }
