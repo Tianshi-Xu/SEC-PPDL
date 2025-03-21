@@ -67,7 +67,7 @@ class Conv2DNest : public Conv2D {
 
 class Conv2DCheetah : public Conv2D {
     public:
-        unsigned long N, HW, WW, CW, MW, dM, dC, dH, dW, OW, Hprime, Wprime, HWprime, WWprime;
+        unsigned long N, HW, WW, CW, MW, dM, dC, dH, dW, OW, HOut, WOut, HWprime, WWprime;
         size_t polyModulusDegree = 8192;
         uint64_t plain;
 

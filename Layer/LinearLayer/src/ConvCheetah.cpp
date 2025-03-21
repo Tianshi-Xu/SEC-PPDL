@@ -37,7 +37,7 @@ void Conv2DCheetah::FindOptimalPartition(int H, int W, int h, int C, int N, int*
 
 
 void Conv2DCheetah::compute_he_params(uint64_t in_feature_size) {
-    //in_feature_size = in_feature_size + 2 * padding;
+    this->in_feature_size = this->in_feature_size + 2 * padding;
     int optimalHw = this->in_feature_size, optimalWw = this->in_feature_size;
     FindOptimalPartition(this->in_feature_size, this->in_feature_size, kernel_size, in_channels, polyModulusDegree, &optimalHw, &optimalWw);
     HW = optimalHw;
@@ -49,8 +49,8 @@ void Conv2DCheetah::compute_he_params(uint64_t in_feature_size) {
     dH = DivUpper(this->in_feature_size - kernel_size + 1 , HW - kernel_size + 1);
     dW = DivUpper(this->in_feature_size - kernel_size + 1 , WW - kernel_size + 1);
     OW = HW * WW * (MW * CW - 1) + WW * (kernel_size - 1) + kernel_size - 1;
-    Hprime = (this->in_feature_size - kernel_size + stride) / stride;
-    Wprime = (this->in_feature_size - kernel_size + stride) / stride;
+    HOut = (this->in_feature_size - kernel_size + stride) / stride;
+    WOut = (this->in_feature_size - kernel_size + stride) / stride;
     HWprime = (HW - kernel_size + stride) / stride;
     WWprime = (WW - kernel_size + stride) / stride;
     this->fused_bn = false;
@@ -81,8 +81,8 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     dH = DivUpper(this->in_feature_size - kernel_size + 1 , HW - kernel_size + 1);
     dW = DivUpper(this->in_feature_size - kernel_size + 1 , WW - kernel_size + 1);
     OW = HW * WW * (MW * CW - 1) + WW * (kernel_size - 1) + kernel_size - 1;
-    Hprime = (this->in_feature_size - kernel_size + stride) / stride;
-    Wprime = (this->in_feature_size - kernel_size + stride) / stride;
+    HOut = (this->in_feature_size - kernel_size + stride) / stride;
+    WOut = (this->in_feature_size - kernel_size + stride) / stride;
     HWprime = (HW - kernel_size + stride) / stride;
     WWprime = (WW - kernel_size + stride) / stride;
     polyModulusDegree = HE->polyModulusDegree;
@@ -90,6 +90,11 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     std::cout << "plain" << plain;
     weight_pt = this->PackWeight();
     this->fused_bn = false;
+    cout << "feature_size:" << this->in_feature_size << endl;
+    cout << "Hprime:" << HOut << endl;
+    cout << "Wprime:" << WOut << endl;
+    cout << "HWPrime:" << HWprime << endl;
+    cout << "WWprime:" << WWprime << endl;
     cout << "Conv2DCheetah constructor done" << endl;
 };
 
@@ -103,6 +108,7 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uin
     if(HE->server) {
         weight_pt = PackWeight();
     }
+    cout << "padding:" << padding << endl;
     weight_pt.print_shape();
 }
 
@@ -118,13 +124,13 @@ void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
         }
     }
     this->weight = kernelFuse;
-    Tensor<uint64_t> biasFuse({out_channels, Hprime, Wprime}, 0);
-    std::cout << "Hprime:" << Hprime << std::endl;
-    std::cout << "Wprime:" << Wprime << std::endl; 
+    Tensor<uint64_t> biasFuse({out_channels, HOut, WOut}, 0);
+    std::cout << "Hprime:" << HOut << std::endl;
+    std::cout << "Wprime:" << WOut << std::endl; 
 
     for (size_t i = 0; i < out_channels; i++){
-        for (size_t j = 0; j < Hprime; j++){
-            for (size_t k = 0; k < Wprime; k++){
+        for (size_t j = 0; j < HOut; j++){
+            for (size_t k = 0; k < WOut; k++){
                 biasFuse({i, j, k}) = this->bias({i, j, k}) * (*gamma)({i}) + (*beta)({i});
             }
         }
@@ -304,7 +310,6 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::TensorTOHE(Tensor<uint64_t> PackActivat
     return finalpack;
 }
 
-
 // 计算卷积核的 Pack 版本
 Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
     std::vector<size_t> shapeTab = {dM, dC};
@@ -345,6 +350,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
 
     return Ktg;
 }
+
 Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherTensor, Tensor<UnifiedPlaintext> plainTensor){
     Tensor<UnifiedCiphertext> Talphabeta({dC, dH, dW}, HOST);
     for (size_t gama = 0; gama < dC; gama++){
@@ -384,12 +390,12 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
 }
 
 Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> &out){
-    Tensor<uint64_t> finalResult ({out_channels, Hprime, Wprime});
+    Tensor<uint64_t> finalResult ({out_channels, HOut, WOut});
     int checkl = 0;
 
     for (size_t cprime = 0; cprime < out_channels; cprime++){
-        for (size_t iprime = 0; iprime < Hprime; iprime++){
-            for (size_t jprime = 0; jprime < Wprime; jprime++){
+        for (size_t iprime = 0; iprime < HOut; iprime++){
+            for (size_t jprime = 0; jprime < WOut; jprime++){
                 size_t c = cprime % MW;
                 size_t i = (iprime * stride) % (HW - kernel_size + 1);
                 size_t j = (jprime * stride) % (WW - kernel_size + 1);
@@ -406,6 +412,8 @@ Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> &out){
 }
 
 Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> &x){
+    cout << "in Conv2D, x.shape:" << endl;
+    x.print_shape();
     auto pack = this->PackActivation(x);
     auto Cipher = Operator::SSToHE_coeff(pack, HE);
     auto ConvResult = this->HECompute(weight_pt, Cipher);

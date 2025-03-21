@@ -16,6 +16,9 @@ Conv2D* CreateConv(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_
     case Datatype::CONV_TYPE::Nest:
         conv = new Conv2DNest(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
         break;
+    case Datatype::CONV_TYPE::Cheetah:
+        conv = new Conv2DCheetah(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
+        break;
     }
     return conv;
 }

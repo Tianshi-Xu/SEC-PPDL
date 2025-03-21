@@ -7,6 +7,7 @@ target_include_directories(NonlinearLayer PUBLIC include)
 
 target_link_libraries(NonlinearLayer PUBLIC
     Datatype
+    HE
     OTProtocol
 )
 message(STATUS "Nonlinear_FOUND: ${Nonlinear_FOUND}")

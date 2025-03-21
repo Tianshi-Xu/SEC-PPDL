@@ -6,6 +6,7 @@ cmake -S . -B build -DSEAL_USE_INTEL_HEXL=ON
 cmake --build build
 ```
 #### HEXL
+- HEXL is used for NTT
 ```
 git clone https://github.com/intel/hexl.git
 cd hexl
