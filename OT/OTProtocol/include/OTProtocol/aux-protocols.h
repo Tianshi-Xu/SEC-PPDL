@@ -29,6 +29,9 @@ public:
       // bitwidth of x
       int32_t bw_x);
 
+  void wrap_computation_prime(uint64_t *x, uint8_t *y, int32_t size,
+                                    int32_t bw_x, uint64_t Q);
+
   // y = sel * x
   template <typename T>
   void multiplexer(
@@ -195,6 +198,12 @@ public:
       uint8_t *z,
       // size of vector
       int32_t size);
+
+  void z_extend(int32_t dim, uint64_t *inA, uint64_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA);
+
+  void s_extend(int32_t dim, uint64_t *inA, uint64_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA);
 
 //   void digit_decomposition(int32_t dim, uint64_t *x, uint64_t *x_digits,
 //                            int32_t bw_x, int32_t digit_size);

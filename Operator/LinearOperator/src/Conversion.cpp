@@ -4,6 +4,7 @@ using namespace HE::unified;
 
 namespace Operator {
 
+// input mod prime, output mod q, need a ring2field conversion before it
 Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
@@ -40,7 +41,7 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     return ac_ct;
 };
 
-
+// input mod q, output mod prime, need a field2ring conversion after it to support ring MPC protocols
 Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
@@ -67,7 +68,7 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             UnifiedPlaintext tmp_neg(HOST);
             HE->encoder->encode(pos_mask, tmp_pos);
             HE->encoder->encode(neg_mask, tmp_neg);
-            // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
+            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         out_ct.apply([HE](UnifiedCiphertext &ct){

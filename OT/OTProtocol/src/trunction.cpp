@@ -2,27 +2,26 @@
 
 namespace OTProtocol {
 
-TruncationProtocol::TruncationProtocol(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
+TruncationProtocol::TruncationProtocol(int party, OTPrimitive::OTPack<Utils::NetIO> *otpack,
                        AuxProtocols *auxp,
                        MillionaireWithEquality<Utils::NetIO> *mill_eq_in) {
   this->party = party;
-  this->io = io;
   this->otpack = otpack;
   if (auxp == nullptr) {
     del_aux = true;
-    this->aux = new AuxProtocols(party, io, otpack);
+    this->aux = new AuxProtocols(party, otpack->io, otpack);
   } else {
     this->aux = auxp;
   }
   if (mill_eq_in == nullptr) {
     del_milleq = true;
-    this->mill_eq = new MillionaireWithEquality<Utils::NetIO>(party, io, otpack,
+    this->mill_eq = new MillionaireWithEquality<Utils::NetIO>(party, otpack->io, otpack,
                                                             this->aux->mill);
   } else {
     this->mill_eq = mill_eq_in;
   }
   this->mill = this->aux->mill;
-  this->eq = new Equality<Utils::NetIO>(party, io, otpack, this->mill);
+  this->eq = new Equality<Utils::NetIO>(party, otpack->io, otpack, this->mill);
   this->triple_gen = this->mill->triple_gen;
 }
 

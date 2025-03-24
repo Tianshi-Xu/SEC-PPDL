@@ -2,6 +2,7 @@
 #include <NonlinearLayer/ReLU.h>
 #include <NonlinearLayer/Pool.h>
 #include "Primitive.h"
+#include <NonlinearOperator/FixPoint.h>
 using namespace LinearLayer;
 using namespace NonlinearLayer;
 using namespace NonlinearOperator;
@@ -31,7 +32,7 @@ class BasicBlock{
         int planes;
         int stride = 1;
         ReLU<T, IO> *relu;
-        Truncation<T> *truncation;
+        FixPoint<T> *fixpoint;
         Conv2D *conv1;
         Conv2D *conv2;
         Conv2D *shortcut;
@@ -41,7 +42,7 @@ class BasicBlock{
             this->planes = planes;
             this->stride = stride;
             this->relu = cryptoPrimitive->relu;
-            this->truncation = cryptoPrimitive->truncation;
+            this->fixpoint = cryptoPrimitive->fixpoint;
             conv1 = CreateConv<T, IO>(in_feature_size, in_planes, planes, 3, stride, cryptoPrimitive);
             conv2 = CreateConv<T, IO>(in_feature_size/stride, planes, planes, 3, 1, cryptoPrimitive);
             if (stride != 1 || in_planes != planes){
@@ -54,14 +55,14 @@ class BasicBlock{
             Tensor<T> x_res = x;
             x = (*conv1)(x);
             (*relu)(x);
-            (*truncation)(x,17,43,true,true);
+            fixpoint->truncate(x,17,43,true,true);
             x = (*conv2)(x);
             if (has_shortcut){
                 x_res = (*shortcut)(x_res);
             }
             x = x + x_res;
             (*relu)(x);
-            (*truncation)(x,17,43,true,true);
+            fixpoint->truncate(x,17,43,true,true);
             return x;
         }
 };
@@ -75,7 +76,7 @@ class Bottleneck{
         int stride = 1;
         bool has_shortcut = false;
         ReLU<T, IO> *relu;
-        Truncation<T> *truncation;
+        FixPoint<T> *fixpoint;
         // TODO: can be simplified to use pointer
         Conv2D *conv1;
         Conv2D *conv2;
@@ -87,7 +88,7 @@ class Bottleneck{
             this->planes = planes;
             this->stride = stride;
             this->relu = cryptoPrimitive->relu;
-            this->truncation = cryptoPrimitive->truncation;
+            this->fixpoint = cryptoPrimitive->fixpoint;
             this->conv1 = CreateConv<T, IO>(in_feature_size, in_planes, planes, 1, 1, cryptoPrimitive);
             this->conv2 = CreateConv<T, IO>(in_feature_size, planes, planes, 3, stride, cryptoPrimitive);
             this->conv3 = CreateConv<T, IO>(in_feature_size/stride, planes, planes * this->expansion, 1, 1, cryptoPrimitive);
@@ -102,12 +103,12 @@ class Bottleneck{
             Tensor<T> x_res = x;
             x = (*conv1)(x);
             (*relu)(x);
-            (*truncation)(x,17,43,true,true);
+            fixpoint->truncate(x,17,43,true,true);
             x = (*conv2)(x);
             (*relu)(x);
-            (*truncation)(x,17,43,true,true);
+            fixpoint->truncate(x,17,43,true,true);
             x = (*conv3)(x);
-            (*truncation)(x,17,43,true,false);
+            fixpoint->truncate(x,17,43,true,false);
             if (has_shortcut){
                 x_res = (*shortcut)(x_res);
             }
@@ -124,7 +125,7 @@ class ResNet_3stages {
         int* num_layers;
         Conv2D *conv1;
         ReLU<T, IO> *relu;
-        Truncation<T> *truncation;
+        FixPoint<T> *fixpoint;
         vector<BasicBlock<T, IO>*> layer1;
         vector<BasicBlock<T, IO>*> layer2;
         vector<BasicBlock<T, IO>*> layer3;
@@ -135,7 +136,7 @@ class ResNet_3stages {
             this->num_layers = num_layers;
             this->num_classes = num_classes;
             this->relu = cryptoPrimitive->relu;
-            this->truncation = cryptoPrimitive->truncation;
+            this->fixpoint = cryptoPrimitive->fixpoint;
             conv1 = CreateConv<T, IO>(in_feature_size, 3, 16, 3, 1, cryptoPrimitive);
             _make_layer(layer1, 16, num_layers[0], 1, cryptoPrimitive);
             _make_layer(layer2, 32, num_layers[1], 2, cryptoPrimitive);
@@ -160,7 +161,7 @@ class ResNet_3stages {
         Tensor<T> operator()(Tensor<T> &x){
             x = (*conv1)(x);
             (*relu)(x);
-            (*truncation)(x,17,43,true,true);
+            fixpoint->truncate(x,17,43,true,true);
             for (int i = 0; i < layer1.size(); i++){
                 x = (*layer1[i])(x);
             }
