@@ -51,7 +51,7 @@ void test_ring_field(){
   }
   input.print();
   // fixpoint->Field2Ring(input, 5, 4);
-  fixpoint->Ring2Field(input, 17, 3);
+  fixpoint->Ring2Field(input, 7, 4);
   input.print();
 }
 

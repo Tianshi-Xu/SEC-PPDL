@@ -127,12 +127,14 @@ class FixPoint {
             }
         }
 
+        // Conversion from ring to field
         void Ring2Field(Tensor<T> &x, int Q, int bitwidth = 0, bool signed_arithmetic=false){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
-            extend(x, bitwidth, bitwidth+1, signed_arithmetic);
-            x.print();
+            // cout << "bitwidth: " << bitwidth << endl;
+            int ext_bit = 20;
+            extend(x, bitwidth, bitwidth+ext_bit, signed_arithmetic);
             if (party == ALICE){
                 for (int i = 0; i < x.size(); i++){
                     x(i) = x(i) % Q;
@@ -140,12 +142,12 @@ class FixPoint {
             }
             else{
                 for (int i = 0; i < x.size(); i++){
-                    x(i) = (x(i) - 1ULL<<bitwidth)% Q;
+                    x(i) = (x(i) + (1ULL<<(bitwidth+ext_bit))*(Q-1))% Q; // can not use -1ULL<<bitwidth, because it is negative, no modulo operation. It may go wrong when it exceeds uint64_t
                 }
             }
         }
 
-        // ring must larger than field
+        // Conversion from field to ring, ring must larger than field
         void Field2Ring(Tensor<T> &x, int Q, int bitwidth = 0){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
