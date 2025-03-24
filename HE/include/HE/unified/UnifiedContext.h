@@ -14,7 +14,7 @@ namespace unified {
 
 class UnifiedContext {
 public:
-  UnifiedContext(uint64_t poly_modulus_degree, int bit_size,
+  UnifiedContext(uint64_t poly_modulus_degree, int bit_size, bool batch = true,
                  LOCATION backend = HOST)
       : is_gpu_enable_(backend == DEVICE) {
 #ifndef USE_HE_GPU
@@ -31,7 +31,8 @@ public:
     parms.set_coeff_modulus(
         seal::CoeffModulus::BFVDefault(poly_modulus_degree));
     parms.set_plain_modulus(
-        seal::PlainModulus::Batching(poly_modulus_degree, bit_size));
+        batch ? seal::PlainModulus::Batching(poly_modulus_degree, bit_size)
+              : 1 << bit_size);
     seal_context_ = std::make_unique<seal::SEALContext>(parms);
 
 #ifdef USE_HE_GPU
@@ -40,8 +41,9 @@ public:
       parms.set_poly_modulus_degree(poly_modulus_degree);
       parms.set_coeff_modulus(
           phantom::arith::CoeffModulus::BFVDefault(poly_modulus_degree));
-      parms.set_plain_modulus(phantom::arith::PlainModulus::Batching(
-          poly_modulus_degree, bit_size));
+      parms.set_plain_modulus(batch ? phantom::arith::PlainModulus::Batching(
+                                          poly_modulus_degree, bit_size)
+                                    : 1 << bit_size);
       phantom_context_ = std::make_unique<PhantomContext>(parms);
     }
 #endif

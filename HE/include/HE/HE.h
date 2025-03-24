@@ -58,7 +58,7 @@ class HEEvaluator {
         relinKeys  = new RelinKeys();
         galoisKeys = new unified::UnifiedGaloisKeys(HOST);
         EncryptionParameters parms(scheme_type::bfv);
-        context = new unified::UnifiedContext(polyModulusDegree, plainWidth, backend);
+        context = new unified::UnifiedContext(polyModulusDegree, plainWidth, true, backend);
         encoder = new unified::UnifiedBatchEncoder(*context);
         evaluator = new unified::UnifiedEvaluator(*context);
         parms.set_plain_modulus(PlainModulus::Batching(polyModulusDegree, plainWidth));
