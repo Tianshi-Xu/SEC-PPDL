@@ -26,7 +26,7 @@ class FixPoint {
             }
         }
 
-        // we do not implement larger than to avoid the complexity of millionaire protocol
+        // we do not implement larger than to reduce the complexity of millionaire protocol
         void less_than_zero(Tensor<T> &x, Tensor<uint8_t> &result, int32_t bw){
             auto shape = x.shape();
             int dim = x.size();
@@ -51,6 +51,21 @@ class FixPoint {
             Tensor<T> z;
             if (party == ALICE){
                 z = x - y;
+            }
+            else{
+                z = x;
+            }
+            less_than_zero(z, result, bw);
+        }
+
+        // return 1{constant < x}
+        void less_than_constant(T constant, Tensor<T> &x, Tensor<uint8_t> &result, int32_t bw){
+            auto shape = x.shape();
+            int dim = x.size();
+            Tensor<T> y = Tensor<T>(shape, constant);
+            Tensor<T> z;
+            if (party == ALICE){
+                z = y - x;
             }
             else{
                 z = x;
@@ -163,6 +178,22 @@ class FixPoint {
             }
         }
         
+        // return b*input
+        void mux(Tensor<uint8_t> &b, Tensor<T> &input, Tensor<T> &result, int32_t bwA, int32_t bwB){
+            int dim = input.size();
+            input.flatten();
+            T* input_flatten = input.data().data();
+            T* result_flatten = result.data().data();
+            std::thread mux_threads[num_threads];
+            int chunk_size = dim / num_threads;
+            for (int i = 0; i < num_threads; i++) {
+                int offset = i * chunk_size;
+                mux_threads[i] = std::thread(mux_thread, aux[i], b.data().data()+offset, input_flatten+offset, result_flatten+offset, chunk_size, bwA, bwB);
+            }
+            for (int i = 0; i < num_threads; i++) {
+                mux_threads[i].join();
+            }
+        }
     private:
         TruncationProtocol **truncationProtocol = nullptr;
         OTProtocol::AuxProtocols **aux = nullptr;
@@ -199,6 +230,10 @@ class FixPoint {
             }
             delete[] wrap_x;
             delete[] arith_wrap;
+        }
+
+        void static mux_thread(AuxProtocols *aux, uint8_t* b, T* input, T* result, int32_t lnum_ops, int32_t bwA, int32_t bwB){
+            aux->multiplexer<T>(b, input, result, lnum_ops, bwA, bwB);
         }
 };
 

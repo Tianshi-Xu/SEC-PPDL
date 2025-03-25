@@ -25,3 +25,6 @@ target_link_libraries(test_linear_operator PUBLIC LinearOperator Utils)
 
 # add_executable(test_pool ${CMAKE_CURRENT_LIST_DIR}/src/test_Pool.cpp)
 # target_link_libraries(test_pool PUBLIC NonlinearLayer)
+
+add_executable(test_gelu ${CMAKE_CURRENT_LIST_DIR}/src/TestGeLU.cpp)
+target_link_libraries(test_gelu PUBLIC NonlinearLayer)

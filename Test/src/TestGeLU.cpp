@@ -1,9 +1,10 @@
-#include <NonlinearLayer/ReLU.h>
 #include <NonlinearLayer/GeLU.h>
+#include <HE/HE.h>
 #include <fstream>
 #include <iostream>
 using namespace std;
 using namespace NonlinearLayer;
+using namespace HE;
 #define MAX_THREADS 4
 typedef uint64_t T;
 int party, port = 8000;
@@ -14,21 +15,31 @@ int bitlength = 16;
 int32_t kScale = 12;
 Utils::NetIO *ioArr[MAX_THREADS];
 OTPrimitive::OTPack<Utils::NetIO> *otpackArr[MAX_THREADS];
-ReLUProtocol<T, Utils::NetIO> **reluprotocol = new ReLUProtocol<T, Utils::NetIO>*[MAX_THREADS];
 
 FixPoint<T> *fixpoint;
+HEEvaluator *he;
 uint64_t comm_threads[MAX_THREADS];
 
-void test_relu(){
+void test_gelu(){
   /************ Generate Test Data ************/
   /********************************************/
-  Tensor<T> input({8});
-  input.randomize(4);
-  input.print();
+  Tensor<T> input({8192});
+  Tensor<double> input_real({8192});
+  input.randomize(12);
+  input.print(8);
+  for(size_t i = 0; i < input.size(); i++){
+    input_real(i) = double(input(i)) / (1ULL << 8);
+  }
+  input_real.print(8);
 
-  ReLU<T> relu(reluprotocol, 4, num_threads);
-  relu(input);
-  input.print();
+  GeLU<T> gelu(fixpoint, he, 12, 8);
+  gelu(input);
+  // input.print();
+  Tensor<double> output_real({8});
+  for(size_t i = 0; i < input.size(); i++){
+    output_real(i) = double(input(i)) / (1ULL << 8);
+  }
+  output_real.print(8);
 }
 
 int main(int argc, char **argv) {
@@ -57,8 +68,8 @@ int main(int argc, char **argv) {
     } else {
       otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
     }
-    reluprotocol[i] = new ReLURingProtocol<T, Utils::NetIO>(party, 4, MILL_PARAM, otpackArr[i], Datatype::IKNP);
   }
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,30,Datatype::HOST);
   fixpoint = new FixPoint<T>(party, otpackArr, num_threads);
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
   for (int i = 0; i < num_threads; i++) {
@@ -68,7 +79,7 @@ int main(int argc, char **argv) {
               << std::endl;
   }
 
-  test_relu();
+  test_gelu();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {
