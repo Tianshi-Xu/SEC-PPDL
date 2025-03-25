@@ -18,7 +18,6 @@ ReLUProtocol<int32_t, Utils::NetIO> **reluprotocol = new ReLUProtocol<int32_t, U
 uint64_t comm_threads[MAX_THREADS];
 
 void test_relu(){
-  
   /************ Generate Test Data ************/
   /********************************************/
   Tensor<int32_t> input({8});

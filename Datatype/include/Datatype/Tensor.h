@@ -195,20 +195,24 @@ public:
         std::cout << "]" << std::endl;
     }
     // 打印张量（仅支持打印数据和形状）
-    void print() const {
+    void print(size_t num_print = 1e7) const {
         std::cout << "Shape: [";
         for (size_t i = 0; i < shape_.size(); ++i) {
             std::cout << shape_[i];
             if (i != shape_.size() - 1) std::cout << ", ";
         }
         std::cout << "]\nData: [";
-        for (size_t i = 0; i < data_.size(); ++i) {
+        size_t size = std::min(this->size(), num_print);
+        for (size_t i = 0; i < size; ++i) {
             if (std::is_same<T, uint8_t>::value || std::is_same<T, int8_t>::value) {
                 std::cout << (int)data_[i];
             } else {
                 std::cout << data_[i];
             }
-            if (i != data_.size() - 1) std::cout << ", ";
+            if (i != size - 1) std::cout << ", ";
+        }
+        if (this->size() > num_print) {
+            std::cout << "...";
         }
         std::cout << "]\n";
     }
