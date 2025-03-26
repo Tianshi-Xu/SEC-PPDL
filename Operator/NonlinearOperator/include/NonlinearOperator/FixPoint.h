@@ -143,12 +143,12 @@ class FixPoint {
         }
 
         // Conversion from ring to field
-        void Ring2Field(Tensor<T> &x, int Q, int bitwidth = 0, bool signed_arithmetic=false){
+        void Ring2Field(Tensor<T> &x, uint64_t Q, int bitwidth = 0, bool signed_arithmetic=false){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
             // cout << "bitwidth: " << bitwidth << endl;
-            int ext_bit = 20;
+            int ext_bit = 15;
             extend(x, bitwidth, bitwidth+ext_bit, signed_arithmetic);
             if (party == ALICE){
                 for (int i = 0; i < x.size(); i++){
@@ -156,25 +156,28 @@ class FixPoint {
                 }
             }
             else{
+                __uint128_t neg_2k = 1ULL<<(bitwidth+ext_bit);
+                neg_2k = ((__uint128_t)neg_2k*(__uint128_t)(Q-1)) % Q;
                 for (int i = 0; i < x.size(); i++){
-                    x(i) = (x(i) + (1ULL<<(bitwidth+ext_bit))*(Q-1))% Q; // can not use -1ULL<<bitwidth, because it is negative, no modulo operation. It may go wrong when it exceeds uint64_t
+                    x(i) = (x(i) + neg_2k)% Q; // can not use -1ULL<<bitwidth, because it is negative, no modulo operation. It may go wrong when it exceeds uint64_t
                 }
             }
         }
 
-        // Conversion from field to ring, ring must larger than field
-        void Field2Ring(Tensor<T> &x, int Q, int bitwidth = 0){
+        // Conversion from Q to bitwidth, if ceil(log2(Q)) > bitwidth, first extend to ceil(log2(Q)), then truncate to bitwidth
+        void Field2Ring(Tensor<T> &x, uint64_t Q, int bitwidth = 0){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
-            std::thread ring2field_threads[num_threads];
+            // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
+            std::thread field2ring_threads[num_threads];
             int chunk_size = x.size() / num_threads;
             for (int i = 0; i < num_threads; i++) {
                 int offset = i * chunk_size;
-                ring2field_threads[i] = std::thread(ring2field_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
+                field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
             }
             for (int i = 0; i < num_threads; i++) {
-                ring2field_threads[i].join();
+                field2ring_threads[i].join();
             }
         }
         
@@ -218,11 +221,15 @@ class FixPoint {
             }
         }
 
-        void static ring2field_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, int Q){
-            assert(bw>=(int32_t)ceil(std::log2(Q)));
+        void static field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q){
             uint64_t mask_bw = (bw == 64 ? -1 : ((1ULL << bw) - 1));
             uint8_t *wrap_x = new uint8_t[lnum_ops];
-            aux->wrap_computation_prime(input, wrap_x, lnum_ops, bw, Q);
+            if (bw < ceil(std::log2(Q))){
+                aux->wrap_computation_prime(input, wrap_x, lnum_ops, ceil(std::log2(Q)), Q);
+            }
+            else{
+                aux->wrap_computation_prime(input, wrap_x, lnum_ops, bw, Q);
+            }
             uint64_t *arith_wrap = new uint64_t[lnum_ops];
             aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
             for (int i = 0; i < lnum_ops; i++){

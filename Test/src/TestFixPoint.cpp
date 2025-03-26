@@ -47,11 +47,12 @@ void test_ring_field(){
   Tensor<T> input({2,4});
   Tensor<T> result({2,4});
   if (party == ALICE) {
-    input.randomize(1ULL<<3);
+    input.randomize(1ULL<<4);
+    input(0) = 716;
   }
   input.print();
   // fixpoint->Field2Ring(input, 5, 4);
-  fixpoint->Ring2Field(input, 7, 4);
+  fixpoint->Ring2Field(input, 1099511480321, 10);
   input.print();
 }
 

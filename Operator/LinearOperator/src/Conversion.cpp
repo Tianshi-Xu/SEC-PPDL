@@ -9,11 +9,11 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);
-    std::vector<uint64_t> tmp_vec(poly_degree);
-    
+    std::vector<uint64_t> tmp_vec(poly_degree,0ULL);
     // encoding
     Tensor<UnifiedPlaintext> ac_pt(poly_shape, HE->server ? HE->Backend() : HOST);
     Tensor<UnifiedCiphertext> ac_ct(poly_shape, HOST /* Communication can be only done on HOST */);
+    HE->encoder->encode(tmp_vec, ac_pt(0));
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             tmp_vec[j] = x(i * poly_degree + j);
@@ -22,11 +22,11 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     }
     if (HE->server){
         HE->ReceiveEncVec(ac_ct);
-        ac_ct.apply([HE](UnifiedCiphertext &ct){
-            if (HE->Backend() == DEVICE) {
+        if (HE->Backend() == DEVICE){
+            ac_ct.apply([HE](UnifiedCiphertext &ct){
                 ct.to_device(*HE->context);
-            }
-        });
+            });
+        }
         assert(ac_pt.size() == ac_ct.size() && "Number of polys does not match.");
         for (size_t i = 0; i < ac_ct.size(); i++) {
             HE->evaluator->add_plain_inplace(ac_ct(i), ac_pt(i));
