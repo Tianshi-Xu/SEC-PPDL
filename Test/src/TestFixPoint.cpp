@@ -1,33 +1,58 @@
-#include <NonlinearLayer/ReLU.h>
-#include <NonlinearLayer/GeLU.h>
+#include <NonlinearOperator/FixPoint.h>
 #include <fstream>
 #include <iostream>
 using namespace std;
-using namespace NonlinearLayer;
+using namespace NonlinearOperator;
 #define MAX_THREADS 4
 typedef uint64_t T;
+
 int party, port = 8000;
-int num_threads = 4;
+int num_threads = 1;
 string address = "127.0.0.1";
 
 int bitlength = 16;
 int32_t kScale = 12;
 Utils::NetIO *ioArr[MAX_THREADS];
 OTPrimitive::OTPack<Utils::NetIO> *otpackArr[MAX_THREADS];
-ReLUProtocol<T, Utils::NetIO> **reluprotocol = new ReLUProtocol<T, Utils::NetIO>*[MAX_THREADS];
+NonlinearOperator::FixPoint<T> *fixpoint;
 
-FixPoint<T> *fixpoint;
 uint64_t comm_threads[MAX_THREADS];
 
-void test_relu(){
+void test_comapre(){
   /************ Generate Test Data ************/
   /********************************************/
-  Tensor<T> input({8});
-  input.randomize(4);
+  Tensor<T> input({2,4});  
+  Tensor<T> input2({2,4});
+  Tensor<uint8_t> result({2,4});
+  if (party == ALICE) {
+    input.randomize(1ULL<<4);
+    input2.randomize(1ULL<<4);
+    // input2(0) = 7;
+    // input(0)=-1;
+  }
+  else{
+    // input(0)=-1;
+  }
   input.print();
+  input2.print();
+  fixpoint->less_than_zero(input, result, 4);
+  result.print();
+  fixpoint->less_than_constant(input, 1, result, 4);
+  result.print();
+  fixpoint->less_than(input, input2, result, 4);
+  result.print();
+}
 
-  ReLU<T> relu(reluprotocol, 4, num_threads);
-  relu(input);
+void test_ring_field(){
+  Tensor<T> input({2,4});
+  Tensor<T> result({2,4});
+  if (party == ALICE) {
+    input.randomize(1ULL<<4);
+    input(0) = 716;
+  }
+  input.print();
+  // fixpoint->Field2Ring(input, 5, 4);
+  fixpoint->Ring2Field(input, 1099511480321, 10);
   input.print();
 }
 
@@ -48,18 +73,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_threads; i++) {
     ioArr[i] =
         new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
-    if (i & 1) {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party); 
-      // 子类对象不能直接赋值给父类对象，因为父类对象不会有子类特有的数据成员，并且可能会丢失子类的数据
-      // 但是父类指针可以指向一个子类对象
-      // Child 类是从 Parent 类派生的，并且它继承了 Parent 的所有公有成员函数。当创建一个 Child 类对象时，这个对象会包含一个 Parent 类的子对象
-      // 当父类指针指向子类对象时，通过虚函数机制（如果父类函数是虚函数）可以实现多态，使得调用的成员函数是子类中的重载版本，而不是父类的版本
-    } else {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
-    }
-    reluprotocol[i] = new ReLURingProtocol<T, Utils::NetIO>(party, 4, MILL_PARAM, otpackArr[i], Datatype::IKNP);
+    otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
   }
-  fixpoint = new FixPoint<T>(party, otpackArr, num_threads);
+  fixpoint = new NonlinearOperator::FixPoint<T>(party, otpackArr, num_threads);
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
   for (int i = 0; i < num_threads; i++) {
     auto temp = ioArr[i]->counter;
@@ -67,8 +83,9 @@ int main(int argc, char **argv) {
     std::cout << "Thread i = " << i << ", total data sent till now = " << temp
               << std::endl;
   }
-
-  test_relu();
+  
+  // test_comapre();
+  test_ring_field();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {

@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
   amap.parse(argc, argv);
   assert(num_threads <= MAX_THREADS);
 
+  // you can switch IKNP/VOLE; Cheetah/Nested; HOST/DEVICE
   CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::IKNP, 8192, 60, Cheetah, Datatype::HOST, address, port);
 
   ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);

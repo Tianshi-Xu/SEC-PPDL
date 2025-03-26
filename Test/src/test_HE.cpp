@@ -1,35 +1,22 @@
-//#include "NetIO.h"
 #include <HE/HE.h>
-#include <cstring>
-#include "seal/seal.h"
-#include <seal/secretkey.h>
-#include <seal/util/polyarithsmallmod.h>
-#include <seal/util/rlwe.h>
-#include <seal/secretkey.h>
-#include <seal/serializable.h>
-using namespace seal;
-using namespace seal::util;
+#include <Utils/ArgMapping/ArgMapping.h>
 using namespace std;
 using namespace HE;
 
+int party, port = 32000;
+int num_threads = 2;
+string address = "127.0.0.1";
 
 int main(int argc, char* argv[]) {
-    Ciphertext ct = Ciphertext();
-    cout << ct.size() << endl;
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " <server/client> <IP> <port>\n";
-        return 1;
-    }
-
-    bool is_server = std::string(argv[1]) == "server";
-    const char* ip = argv[2];
-    int port = std::stoi(argv[3]);
-    NetIO netio(ip, port, is_server);
-    std::cout << "start test" << std::endl;
-    HEEvaluator HE(netio, is_server);
+    ArgMapping amap;
+    amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
+    amap.arg("p", port, "Port Number");
+    amap.arg("ip", address, "IP Address of server (ALICE)");
+    amap.parse(argc, argv);
     
-    std::cout << "build";
+    Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
+    std::cout << "netio generated" << std::endl;
+    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::HOST);
     HE.GenerateNewKey();
-    std::cout << "gen";
     return 0;
 }

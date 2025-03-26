@@ -11,7 +11,6 @@ namespace OTProtocol {
 
 class TruncationProtocol {
 public:
-  Utils::NetIO *io = nullptr;
   OTPrimitive::OTPack<Utils::NetIO> *otpack;
   OTProtocol::TripleGenerator<Utils::NetIO> *triple_gen = nullptr;
   OTProtocol::MillionaireProtocol<Utils::NetIO> *mill = nullptr;
@@ -23,7 +22,7 @@ public:
   int party;
 
   // Constructor
-  TruncationProtocol(int party, Utils::NetIO *io, OTPrimitive::OTPack<Utils::NetIO> *otpack,
+  TruncationProtocol(int party, OTPrimitive::OTPack<Utils::NetIO> *otpack,
              OTProtocol::AuxProtocols *auxp = nullptr,
              OTProtocol::MillionaireWithEquality<Utils::NetIO> *mill_eq_in = nullptr);
 

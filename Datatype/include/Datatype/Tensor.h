@@ -17,6 +17,9 @@ enum PARTY {SERVER = 1, CLIENT = 2 };
 template <typename T>
 class Tensor {
 public:
+    // for fixed point number
+    int32_t bitwidth = 0;
+    int32_t scale = 0;
     // 构造函数
     Tensor() = default;
     
@@ -29,6 +32,20 @@ public:
 
     explicit Tensor(const std::vector<size_t>& shape, LOCATION loc)
         : shape_(shape) {
+        computeStrides();
+        data_.resize(totalSize(), T(loc));
+        computeStrides();
+    }
+
+    explicit Tensor(const std::vector<size_t>& shape, int32_t bitwidth, int32_t scale)
+        : shape_(shape), bitwidth(bitwidth), scale(scale) {
+        computeStrides();
+        data_.resize(totalSize(), T(0));
+        computeStrides();
+    }
+
+    explicit Tensor(const std::vector<size_t>& shape, LOCATION loc, int32_t bitwidth, int32_t scale)
+        : shape_(shape), bitwidth(bitwidth), scale(scale) {
         computeStrides();
         data_.resize(totalSize(), T(loc));
         computeStrides();
@@ -50,20 +67,20 @@ public:
         assert(data_.size() == totalSize() && "Data size does not match shape");
     }
 
-    // Randomize a tensor mod 2^bitlength, must be integer type. Can not be applied in secure application!
-    void randomize(int bitlength) {
-        // change seed
+    // Randomize a tensor mod Q, must be integer type. Can not be applied in secure application!
+    void randomize(uint64_t Q) {
+        // change seed randomly
         srand(time(0));
         if constexpr (std::is_signed_v<T>) {
             // 对于整型：使用按位与实现模运算
             for (size_t i = 0; i < data_.size(); ++i) {
-                data_[i] = static_cast<T>(rand()) & ((1ULL << bitlength) - 1);
-                data_[i] -= static_cast<T>(1ULL << (bitlength - 1));
+                data_[i] = static_cast<T>(rand()) % Q;
+                data_[i] -= static_cast<T>(Q/2);
             }
         }
         else if constexpr (std::is_unsigned_v<T>) {
             for (size_t i = 0; i < data_.size(); ++i) {
-                data_[i] = static_cast<T>(rand()) & ((1ULL << bitlength) - 1);
+                data_[i] = static_cast<T>(rand()) % Q;
             }
         }
         else{
@@ -160,6 +177,15 @@ public:
         return result;
     }
 
+    // multiply a scalar
+    Tensor<T> operator*(const T& scalar) const {
+        Tensor<T> result(shape_);
+        for (size_t i = 0; i < data_.size(); ++i) {
+            result.data_[i] = data_[i] * scalar;
+        }
+        return result;
+    }
+
     void print_shape() const {
         std::cout << "Shape: [";
         for (size_t i = 0; i < shape_.size(); ++i) {
@@ -169,16 +195,24 @@ public:
         std::cout << "]" << std::endl;
     }
     // 打印张量（仅支持打印数据和形状）
-    void print() const {
+    void print(size_t num_print = 1e7) const {
         std::cout << "Shape: [";
         for (size_t i = 0; i < shape_.size(); ++i) {
             std::cout << shape_[i];
             if (i != shape_.size() - 1) std::cout << ", ";
         }
         std::cout << "]\nData: [";
-        for (size_t i = 0; i < data_.size(); ++i) {
-            std::cout << data_[i];
-            if (i != data_.size() - 1) std::cout << ", ";
+        size_t size = std::min(this->size(), num_print);
+        for (size_t i = 0; i < size; ++i) {
+            if (std::is_same<T, uint8_t>::value || std::is_same<T, int8_t>::value) {
+                std::cout << (int)data_[i];
+            } else {
+                std::cout << data_[i];
+            }
+            if (i != size - 1) std::cout << ", ";
+        }
+        if (this->size() > num_print) {
+            std::cout << "...";
         }
         std::cout << "]\n";
     }
@@ -196,12 +230,18 @@ public:
         shape_ = other.shape_;
         strides_ = other.strides_;
         data_ = other.data_;
+        bitwidth = other.bitwidth;
+        scale = other.scale;
         return *this; 
     }
 
     Tensor(Tensor &&) = default;
 
     Tensor &operator=(Tensor &&other) = default;
+
+    uint64_t get_mask() const {
+        return (1ULL << bitwidth) - 1;
+    }
 
 private:
     std::vector<size_t> shape_;

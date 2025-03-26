@@ -24,7 +24,6 @@ template <typename T, typename IO> class ReLUProtocol {
 template <typename T, typename IO> 
 class ReLURingProtocol : public ReLUProtocol<T, IO> {
 public:
-  IO *io = nullptr;
   OTPrimitive::OTPack<IO> *otpack;
   OTProtocol::TripleGenerator<IO> *triple_gen = nullptr;
   OTProtocol::MillionaireProtocol<IO> *millionaire = nullptr;
@@ -34,17 +33,16 @@ public:
   int l, b;
   int num_cmps;
 
-  // Constructor
-  ReLURingProtocol(int party, IO *io, int l, int b,
+  // Constructor, l is the bitlength of the input, b is the bitlength of each divided input, e.g., 4-bit base
+  ReLURingProtocol(int party,int l, int b,
                    OTPack<IO> *otpack, OT_TYPE ot_type = Datatype::IKNP) {
     this->party = party;
-    this->io = io;
     this->l = l;
     this->b = b;
     this->otpack = otpack;
-    this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b,ot_type);
+    this->millionaire = new MillionaireProtocol<IO>(party, otpack->io, otpack,l,b,ot_type);
     this->triple_gen = this->millionaire->triple_gen;
-    this->aux = new AuxProtocols(party, io, otpack);
+    this->aux = new AuxProtocols(party, otpack->io, otpack);
   }
 
   // Destructor
@@ -84,9 +82,7 @@ class ReLU : public Module{
       }
 
       void operator()(Tensor<T> &x){
-        auto shape = x.shape();
         int dim = x.size();
-        x.flatten();
         T* x_flatten = x.data().data();
         std::thread relu_threads[num_threads];
         int chunk_size = dim / num_threads;
@@ -104,7 +100,6 @@ class ReLU : public Module{
         for (int i = 0; i < num_threads; ++i) {
             relu_threads[i].join();
         }
-        x.reshape(shape);
       }
       
     private:

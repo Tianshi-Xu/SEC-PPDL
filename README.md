@@ -1,22 +1,9 @@
 
-1. Pull Submodules
+1. Install Dependencies
 
-     Run the following command in the project root directory:
+     cd Extern/ and follow the instructions in the README.md file.
 
-    ``` bash
-    git submodule init && git submodule update
-    ```
-
-2. Apply Patch to the Phantom
-   
-   This project depends on *Phantom*, and a patch needs to be applied to it. Follow these steps:
-
-   ``` bash
-   cd Extern/phantom-fhe # Navigate to the root directory of the Phantom
-   git apply ../0001-more-flexible.patch
-   ```
-
-3. Build the Project
+2. Build the Project
 
     ``` bash
     cmake -S . -B build
@@ -34,3 +21,9 @@
     cmake --build build -j
     ```
     The `-j` option is used for parallel compilation. You can adjust the number of parallel tasks based on your CPU cores.
+
+    3. Run the tests
+
+    ``` bash
+    ./build/Test/test_resnet r=1 p=1234 && ./build/Test/test_resnet r=2 p=1234
+    ```

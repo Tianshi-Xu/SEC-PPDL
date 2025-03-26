@@ -6,8 +6,8 @@ add_library(NonlinearLayer STATIC ${srcs})
 target_include_directories(NonlinearLayer PUBLIC include)
 
 target_link_libraries(NonlinearLayer PUBLIC
-    Datatype
     HE
-    OTProtocol
+    NonlinearOperator
+    LinearOperator
 )
 message(STATUS "Nonlinear_FOUND: ${Nonlinear_FOUND}")

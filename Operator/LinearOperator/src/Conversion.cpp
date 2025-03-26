@@ -4,15 +4,16 @@ using namespace HE::unified;
 
 namespace Operator {
 
+// input mod prime, output mod q, need a ring2field conversion before it
 Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = x.shape();
     uint64_t poly_degree = scalar_shape[scalar_shape.size() - 1];
     std::vector<size_t> poly_shape(scalar_shape.begin(), scalar_shape.end() - 1);
-    std::vector<uint64_t> tmp_vec(poly_degree);
-    
+    std::vector<uint64_t> tmp_vec(poly_degree,0ULL);
     // encoding
     Tensor<UnifiedPlaintext> ac_pt(poly_shape, HE->server ? HE->Backend() : HOST);
     Tensor<UnifiedCiphertext> ac_ct(poly_shape, HOST /* Communication can be only done on HOST */);
+    HE->encoder->encode(tmp_vec, ac_pt(0));
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             tmp_vec[j] = x(i * poly_degree + j);
@@ -21,11 +22,11 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     }
     if (HE->server){
         HE->ReceiveEncVec(ac_ct);
-        ac_ct.apply([HE](UnifiedCiphertext &ct){
-            if (HE->Backend() == DEVICE) {
+        if (HE->Backend() == DEVICE){
+            ac_ct.apply([HE](UnifiedCiphertext &ct){
                 ct.to_device(*HE->context);
-            }
-        });
+            });
+        }
         assert(ac_pt.size() == ac_ct.size() && "Number of polys does not match.");
         for (size_t i = 0; i < ac_ct.size(); i++) {
             HE->evaluator->add_plain_inplace(ac_ct(i), ac_pt(i));
@@ -40,7 +41,7 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     return ac_ct;
 };
 
-
+// input mod q, output mod prime, need a field2ring conversion after it to support ring MPC protocols
 Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
@@ -67,7 +68,7 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             UnifiedPlaintext tmp_neg(HOST);
             HE->encoder->encode(pos_mask, tmp_pos);
             HE->encoder->encode(neg_mask, tmp_neg);
-            // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
+            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         out_ct.apply([HE](UnifiedCiphertext &ct){

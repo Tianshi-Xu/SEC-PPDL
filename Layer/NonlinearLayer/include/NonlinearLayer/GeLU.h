@@ -1,11 +1,11 @@
 #include <Datatype/Tensor.h>
 #include "../../../Layer/Module.h"
-#include <OTProtocol/aux-protocols.h>
-#include <OTProtocol/millionaire.h>
+#include <NonlinearOperator/FixPoint.h>
+#include <LinearOperator/Polynomial.h>
 #pragma once
 using namespace Datatype;
-using namespace Utils;
-
+using namespace LinearOperator;
+using namespace NonlinearOperator;
 extern int32_t bitlength;
 extern int32_t kScale;
 
@@ -14,104 +14,114 @@ extern int32_t kScale;
 
 namespace NonlinearLayer{
 
-template <typename T, typename IO> class ReLUProtocol {
-  public:
-  virtual void relu(T *result, T *share, int num_relu,
-            uint8_t *msb = nullptr, bool skip_ot = false) = 0;
-};
 
-
-template <typename T, typename IO> 
-class ReLURingProtocol : public ReLUProtocol<T, IO> {
-public:
-  IO *io = nullptr;
-  OTPrimitive::OTPack<IO> *otpack;
-  OTProtocol::TripleGenerator<IO> *triple_gen = nullptr;
-  OTProtocol::MillionaireProtocol<IO> *millionaire = nullptr;
-  OTProtocol::AuxProtocols *aux = nullptr;
-  int party;
-  int algeb_str;
-  int l, b;
-  int num_cmps;
-
-  // Constructor
-  ReLURingProtocol(int party, IO *io, int l, int b,
-                   OTPack<IO> *otpack, OT_TYPE ot_type = Datatype::IKNP) {
-    this->party = party;
-    this->io = io;
-    this->l = l;
-    this->b = b;
-    this->otpack = otpack;
-    this->millionaire = new MillionaireProtocol<IO>(party, io, otpack,l,b,ot_type);
-    this->triple_gen = this->millionaire->triple_gen;
-    this->aux = new AuxProtocols(party, io, otpack);
-  }
-
-  // Destructor
-  virtual ~ReLURingProtocol() { delete millionaire; }
-
-  void relu(T *result, T *share, int num_relu,
-                uint8_t *msb, bool skip_ot) {
-        uint8_t *msb_tmp = new uint8_t[num_relu];
-        if(msb!=nullptr){
-            memcpy(msb_tmp,msb,num_relu*sizeof(uint8_t));
-        }
-        else{
-            this->aux->MSB<T>(share, msb_tmp, num_relu, this->l);
-        }
-        // std::cout << "MSB done" << std::endl;
-        for (int i = 0; i < num_relu; i++) {
-            if (this->party == ALICE) {
-                msb_tmp[i] = msb_tmp[i] ^ 1;
-            }
-        }
-        this->aux->multiplexer<T>(msb_tmp, share, result, num_relu, this->l,
-                        this->l);
-        delete[] msb_tmp;
-        return;
-    }
-};
 
 template <typename T, typename IO=Utils::NetIO>
-class ReLU : public Module{
+class GeLU : public Module{
     public:
       int bitwidth;
-      int num_threads;
-      ReLU(ReLUProtocol<T, IO> **reluprotocol,int bitwidth=32, int num_threads=4){
+      int scale;
+      int party;
+      double coe[5] = {0.020848611754127593, -0.18352506127082727, 0.5410550166368381, -0.03798164612714154, 0.001620808531841547};
+      int64_t coe_fix[5];
+      GeLU(FixPoint<T> *fixPoint,HE::HEEvaluator* HE, int bitwidth, int scale){
+        this->fixPoint = fixPoint;
         this->bitwidth = bitwidth;
-        this->num_threads = num_threads;
-        this->reluProtocol = reluprotocol;
+        this->scale = scale;
+        this->HE = HE;
+        this->party = fixPoint->party;
+        for(int i = 0; i < 5; i++){
+          coe_fix[i] = (int64_t)round(coe[i] * (1ULL << scale));
+        }
       }
+      void check_share(Tensor<uint64_t> &x, uint64_t mod, string name){
+        if (party == ALICE){
+          HE->IO->send_tensor(x);
+        }
+        else{
+          Tensor<uint64_t> x0(x.shape());
+          HE->IO->recv_tensor(x0);
+          x0 = x0 + x;
+          for(size_t i = 0; i < x.size(); i++){
+            x0(i) = x0(i) % mod;
+          }
+          cout << "check " << name << ":" << endl;
+          x0.print(8);
+        }
 
+      }
+      // only support ring
+      // TODO: support field
       void operator()(Tensor<T> &x){
-        auto shape = x.shape();
-        int dim = x.size();
-        x.flatten();
-        T* x_flatten = x.data().data();
-        std::thread relu_threads[num_threads];
-        int chunk_size = dim / num_threads;
-        for (int i = 0; i < num_threads; ++i) {
-            int offset = i * chunk_size;
-            int lnum_ops;
-            if (i == (num_threads - 1)) {
-                lnum_ops = dim - offset;
-            } else {
-                lnum_ops = chunk_size;
-            }
-            relu_threads[i] =
-                std::thread(relu_thread, reluProtocol[i], x_flatten+offset, x_flatten+offset, lnum_ops);
+        cout << "bitwidth, scale, plain_mod:" << bitwidth << " " << scale << " " << HE->plain_mod << endl;
+        Tensor<T> x_ring = x;
+        fixPoint->Ring2Field(x, HE->plain_mod, bitwidth);
+        check_share(x, HE->plain_mod, "x_field");
+        auto x_2 = ElementWiseMul(x, x, HE);
+
+        check_share(x_2, HE->plain_mod, "x_2_field");
+
+        fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale);
+
+        check_share(x_2, 1ULL << (bitwidth+scale), "x_2_ring");
+
+
+        fixPoint->truncate_reduce(x_2,scale,bitwidth+scale);
+        check_share(x_2, 1ULL << (bitwidth), "x_2 after truncate");
+        // cout << "OK4" << endl;
+        Tensor<T> x_2_ring = x_2;
+        fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth);
+        check_share(x_2, HE->plain_mod, "x_2_field");
+
+        check_share(x, HE->plain_mod, "x_field");
+        auto x_3 = ElementWiseMul(x_2, x, HE);
+        check_share(x_3, HE->plain_mod, "x_3");
+        fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale);
+        check_share(x_3, 1ULL << (bitwidth+scale), "x_3_ring");
+        fixPoint->truncate_reduce(x_3,scale,bitwidth+scale);
+        check_share(x_3, 1ULL << (bitwidth), "x_3 after truncate");
+        auto x_4 = ElementWiseMul(x_2, x_2, HE);
+        check_share(x_4, HE->plain_mod, "x_4");
+        fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale);
+        check_share(x_4, 1ULL << (bitwidth+scale), "x_4_ring");
+        fixPoint->truncate_reduce(x_4,scale,bitwidth+scale);
+        check_share(x_4, 1ULL << (bitwidth), "x_4 after truncate");
+        Tensor<T> F0(x.shape());
+        Tensor<T> F1(x.shape());
+        for(size_t i = 0; i < x.size(); i++){
+          F0(i) = x_4(i)*coe_fix[0]-x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))-coe_fix[3])+coe_fix[4];
+          F1(i) = x_4(i)*coe_fix[0]+x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))+coe_fix[3])+coe_fix[4];
         }
-        for (int i = 0; i < num_threads; ++i) {
-            relu_threads[i].join();
+        check_share(F1, 1ULL << (bitwidth), "F1");
+        fixPoint->truncate(F0,scale,bitwidth);
+        fixPoint->truncate(F1,scale,bitwidth);
+        // cout << "OK12" << endl;
+        Tensor<uint8_t> b0(x.shape()), b1(x.shape()), b2(x.shape());
+        fixPoint->less_than_constant(x_ring, -2.7* (1ULL << scale), b0, bitwidth);
+        fixPoint->less_than_constant(x_ring, 0.0* (1ULL << scale), b1, bitwidth);
+        fixPoint->less_than_constant(2.7* (1ULL << scale), x_ring, b2, bitwidth);
+        // cout << "OK13" << endl;
+        Tensor<uint8_t> z0(x.shape()), z1(x.shape());
+        Tensor<uint8_t> z2 = b2;
+        for(size_t i = 0; i < x.size(); i++){
+          z0(i) = b0(i) ^ b1(i);
+          z1(i) = b1(i) ^ b2(i)^(party-1);
         }
-        x.reshape(shape);
+        fixPoint->mux(z0, F0, F0, bitwidth, bitwidth);
+        fixPoint->mux(z1, F1, F1, bitwidth, bitwidth);
+        fixPoint->mux(z2, x_ring, x_ring, bitwidth, bitwidth);
+        check_share(F0, 1ULL << (bitwidth), "F0 after truncate");
+        check_share(F1, 1ULL << (bitwidth), "F1 after truncate");
+        check_share(x_ring, 1ULL << (bitwidth), "x_ring");
+        for(size_t i = 0; i < x.size(); i++){
+          x(i) = F0(i) + F1(i) + x_ring(i);
+        }
+        check_share(x, 1ULL << (bitwidth), "final result");
       }
       
     private:
-      ReLUProtocol<T, IO>** reluProtocol=nullptr;
-      void static relu_thread(ReLUProtocol<T, IO>* reluProtocol, T* result, T* input, int lnum_ops){
-        reluProtocol->relu(result, input, lnum_ops);
-      }
+      NonlinearOperator::FixPoint<T> *fixPoint;
+      HE::HEEvaluator* HE;
 };
 
 }

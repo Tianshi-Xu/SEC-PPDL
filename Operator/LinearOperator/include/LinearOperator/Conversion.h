@@ -17,4 +17,6 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
 
 Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE::HEEvaluator* HE);
 
+
+
 } // namespace Operator

@@ -53,8 +53,9 @@ public:
 
   ~MillionaireProtocol() { delete triple_gen; }
 
+  // default output 1{x_1<x_2}, note that x_1, x_2 are the secret shares of the input
   void compare(uint8_t *res, uint64_t *data, int num_cmps, int bitlength,
-               bool greater_than = true, bool equality = false,
+               bool greater_than = true,
                int radix_base = MILL_PARAM) {
     configure(bitlength, radix_base);
     // printf("bitlength: %d, beta:%d\n", bitlength,beta);
@@ -77,9 +78,9 @@ public:
           }
         }
         if (bitlength > 1) {
-          std::cout << "bitlength:" << bitlength << std::endl;
+          // std::cout << "bitlength:" << bitlength << std::endl;
           otpack->kkot[bitlength - 1]->send(leaf_messages, num_cmps, 1);
-          std::cout << "send done " << std::endl;
+          // std::cout << "send done " << std::endl;
         } else {
           otpack->iknp_straight->send(leaf_messages, num_cmps, 1);
         }
@@ -94,7 +95,7 @@ public:
         }
         if (bitlength > 1) {
           otpack->kkot[bitlength - 1]->recv(res, choice, num_cmps, 1);
-          std::cout << "recv done " << std::endl;
+          // std::cout << "recv done " << std::endl;
         } else {
           otpack->iknp_straight->recv(res, choice, num_cmps, 1);
         }
@@ -561,4 +562,4 @@ public:
   }
 };
 
-} // namespace OTProtocol
+} // namespace OTProtocol 

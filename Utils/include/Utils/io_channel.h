@@ -1,12 +1,14 @@
 #pragma once
 #include "block.h"
 #include <emp-tool/utils/group.h>
+#include <Datatype/Tensor.h>
 #include <memory> // std::align
 
 /** @addtogroup IO
   @{
  */
 using namespace emp;
+using namespace Datatype;
 namespace Utils {
 template <typename T> class IOChannel {
 public:
@@ -16,6 +18,18 @@ public:
     derived().send_data_internal(data, nbyte);
   }
   void recv_data(void *data, int nbyte) { derived().recv_data_internal(data, nbyte); }
+
+  // implement a function to send a tensor
+  template <typename U>
+  void send_tensor(const Tensor<U> &tensor) {
+    send_data(tensor.data().data(), tensor.size() * sizeof(U));
+  }
+
+  // implement a function to recv a tensor
+  template <typename U>
+  void recv_tensor(Tensor<U> &tensor) {
+    recv_data(tensor.data().data(), tensor.size() * sizeof(U));
+  }
 
   void send_block(const block128 *data, int nblock) {
     send_data(data, nblock * sizeof(block128));
