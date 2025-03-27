@@ -5,6 +5,9 @@ project(test)
 add_executable(test_Conv ${CMAKE_CURRENT_LIST_DIR}/src/TestConv.cpp)
 target_link_libraries(test_Conv PUBLIC Model)
 
+add_executable(test_matmul ${CMAKE_CURRENT_LIST_DIR}/src/TestMatmul.cpp)
+target_link_libraries(test_matmul PUBLIC LinearLayer Model)
+
 # add_executable(test_tensor ${CMAKE_CURRENT_LIST_DIR}/src/test_tensor.cpp)
 # target_link_libraries(test_tensor PUBLIC Datatype)
 
