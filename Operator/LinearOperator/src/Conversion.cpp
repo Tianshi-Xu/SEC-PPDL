@@ -68,7 +68,7 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             UnifiedPlaintext tmp_neg(HOST);
             HE->encoder->encode(pos_mask, tmp_pos);
             HE->encoder->encode(neg_mask, tmp_neg);
-            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
+            // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         out_ct.apply([HE](UnifiedCiphertext &ct){
