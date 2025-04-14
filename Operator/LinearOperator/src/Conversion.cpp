@@ -178,7 +178,9 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE
                 out_ct(i).to_host(*HE->context);
             }
         }
-        // cout << "out_ct(0)[0]:" << out_ct(0).hcipher().data()[0] << endl;
+        // for(int i=0;i<HE->polyModulusDegree;i++){
+        //     cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
+        // }
         int64_t mask;
         std::random_device rd;
         std::mt19937 gen(rd());

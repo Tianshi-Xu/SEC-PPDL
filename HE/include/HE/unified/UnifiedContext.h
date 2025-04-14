@@ -8,6 +8,7 @@
 #endif
 
 using namespace Datatype;
+using namespace std;
 
 namespace HE {
 namespace unified {
