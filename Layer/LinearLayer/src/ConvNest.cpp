@@ -27,25 +27,29 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
 }
 
 void Conv2DNest::compute_he_params(uint64_t in_feature_size) {
-    cout << "compute_he_params called" << endl;
-    cout << "in_feature_size: " << in_feature_size << ", padding: " << this->padding << ", kernel_size: " << this->kernel_size << ", stride: " << this->stride << endl;
+    // cout << "compute_he_params called" << endl;
+    // cout << "in_feature_size: " << in_feature_size << ", padding: " << this->padding << ", kernel_size: " << this->kernel_size << ", stride: " << this->stride << endl;
     int tmp_size = in_feature_size + 2 * this->padding - 1;
     for (int i = 0; i < 5; i++) {
         tmp_size |= tmp_size >> (1 << i);
     }
     this->padded_feature_size = tmp_size + 1;
     this->tile_size = HE->polyModulusDegree / (2 * this->padded_feature_size * this->padded_feature_size);
+    if (this->tile_size <=0) {
+        cout << "tile_size is too small for: in_feature_size: " << in_feature_size << ", padding: " << this->padding << ", kernel_size: " << this->kernel_size << ", stride: " << this->stride << endl;
+        exit(1);
+    }
     this->out_channels /= 2;
     this->tiled_in_channels = in_channels / this->tile_size + (in_channels % this->tile_size != 0);
     this->tiled_out_channels = out_channels / this->tile_size + (out_channels % this->tile_size != 0);
     this->input_rot = std::sqrt(this->tile_size);  // to be checked
     this->out_feature_size = (in_feature_size + 2 * this->padding - kernel_size) / stride + 1;
-    cout << "padded_feature_size: " << this->padded_feature_size << endl;
-    cout << "tile_size: " << this->tile_size << endl;
-    cout << "tiled_in_channels: " << this->tiled_in_channels << endl;
-    cout << "tiled_out_channels: " << this->tiled_out_channels << endl;
-    cout << "input_rot: " << this->input_rot << endl;
-    cout << "out_feature_size: " << this->out_feature_size << endl;
+    // cout << "padded_feature_size: " << this->padded_feature_size << endl;
+    // cout << "tile_size: " << this->tile_size << endl;
+    // cout << "tiled_in_channels: " << this->tiled_in_channels << endl;
+    // cout << "tiled_out_channels: " << this->tiled_out_channels << endl;
+    // cout << "input_rot: " << this->input_rot << endl;
+    // cout << "out_feature_size: " << this->out_feature_size << endl;
 }
 
 Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE)

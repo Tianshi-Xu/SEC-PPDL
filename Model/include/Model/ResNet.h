@@ -12,6 +12,10 @@ namespace Model{
 template <typename T, typename IO=Utils::NetIO>
 Conv2D* CreateConv(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, CryptoPrimitive<T, IO> *cryptoPrimitive){
     Conv2D* conv;
+    if (in_feature_size >=224){
+        conv = new Conv2DCheetah(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
+        return conv;
+    }
     switch (cryptoPrimitive->conv_type)
     {
     case Datatype::CONV_TYPE::Nest:
