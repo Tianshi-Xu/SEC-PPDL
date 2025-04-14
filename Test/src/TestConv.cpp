@@ -18,7 +18,7 @@ int main(int argc, char **argv){
     
     Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
     std::cout << "netio generated" << std::endl;
-    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::HOST);
+    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::DEVICE);
     HE.GenerateNewKey();
     
     // return 0;
@@ -45,13 +45,13 @@ int main(int argc, char **argv){
     }
     cout << "input generated" << endl;
     // Conv2D* conv1 = new Conv2DNest(H, Ci, Co, k, s, &HE);
-    Conv2D* conv1 = new Conv2DNest(H,s,p,weight,bias,&HE);
+    // Conv2D* conv1 = new Conv2DNest(H,s,p,weight,bias,&HE);
     // Conv2D* conv1 = new Conv2DCheetah(H, Ci, Co, k, s, &HE);
-    // Conv2D* conv1 = new Conv2DCheetah(H,s,p,weight,bias,&HE);
+    Conv2D* conv1 = new Conv2DCheetah(H,s,p,weight,bias,&HE);
     // conv1->weight.print_shape();
     Tensor<uint64_t> output = conv1->operator()(input);
     output.print_shape();
-    output.print();
+    // output.print();
     cout << HE.plain_mod << endl;
     cout << pow(2,40) << endl;
 

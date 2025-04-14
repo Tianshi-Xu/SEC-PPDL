@@ -178,7 +178,84 @@ class ResNet_3stages {
 };
 
 template <typename T, typename IO=Utils::NetIO>
+class ResNet_4stages {
+    public:
+        int in_feature_size;
+        int num_classes;
+        int in_planes = 64;
+        int* num_layers;
+        Conv2D *conv1;
+        ReLU<T, IO> *relu;
+        FixPoint<T> *fixpoint;
+        vector<BasicBlock<T, IO>*> layer1;
+        vector<BasicBlock<T, IO>*> layer2;
+        vector<BasicBlock<T, IO>*> layer3;
+        vector<BasicBlock<T, IO>*> layer4;
+        Conv2D *linear;
+        AvgPool2D<T> *avg_pool;
+        ResNet_4stages(uint64_t in_feature_size, int* num_layers,int num_classes, CryptoPrimitive<T, IO> *cryptoPrimitive){
+            this->in_feature_size = in_feature_size;
+            this->num_layers = num_layers;
+            this->num_classes = num_classes;
+            this->relu = cryptoPrimitive->relu;
+            this->fixpoint = cryptoPrimitive->fixpoint;
+            conv1 = CreateConv<T, IO>(in_feature_size, 3, this->in_planes, 7, 4, cryptoPrimitive); // we do not support maxpool for now, so we use stride = 4
+            this->in_feature_size = this->in_feature_size / 4;
+            _make_layer(layer1, 64, num_layers[0], 1, cryptoPrimitive);
+            _make_layer(layer2, 128, num_layers[1], 2, cryptoPrimitive);
+            _make_layer(layer3, 256, num_layers[2], 2, cryptoPrimitive);
+            _make_layer(layer4, 512, num_layers[3], 2, cryptoPrimitive);
+            avg_pool = new AvgPool2D<T>(7);
+            linear = CreateConv<T, IO>(1, 512, num_classes, 1, 1, cryptoPrimitive);
+        }
+
+        void _make_layer(vector<BasicBlock<T, IO>*> &layer, int planes, int num_blocks, int stride, CryptoPrimitive<T, IO> *cryptoPrimitive){
+            int strides[num_blocks];
+            strides[0] = stride;
+            for (int i = 1; i < num_blocks; i++){
+                strides[i] = 1;
+            }
+            for (int i = 0; i < num_blocks; i++){
+                layer.push_back(new BasicBlock<T, IO>(this->in_feature_size, this->in_planes, planes, strides[i], cryptoPrimitive));
+                this->in_planes = planes * 1;
+                this->in_feature_size = this->in_feature_size / strides[i];
+            }
+        }
+        // TODO: implement nn.Sequential
+        Tensor<T> operator()(Tensor<T> &x){
+            x = (*conv1)(x);
+            (*relu)(x);
+            fixpoint->truncate(x,17,43,true,true);
+            for (int i = 0; i < layer1.size(); i++){
+                x = (*layer1[i])(x);
+            }
+            for (int i = 0; i < layer2.size(); i++){
+                x = (*layer2[i])(x);
+            }
+            for (int i = 0; i < layer3.size(); i++){
+                x = (*layer3[i])(x);
+            }
+            x = (*avg_pool)(x);
+            x = (*linear)(x);
+            return x;
+        }
+};
+
+template <typename T, typename IO=Utils::NetIO>
 ResNet_3stages<uint64_t> resnet_32_c10(CryptoPrimitive<T, IO> *cryptoPrimitive){
     return ResNet_3stages<uint64_t>(32, new int[3]{5,5,5}, 10, cryptoPrimitive);
 }
+
+template <typename T, typename IO=Utils::NetIO>
+ResNet_4stages<uint64_t> resnet_18(CryptoPrimitive<T, IO> *cryptoPrimitive){
+    return ResNet_4stages<uint64_t>(224, new int[4]{2,2,2,2}, 1000, cryptoPrimitive);
+}
+
+template <typename T, typename IO=Utils::NetIO>
+ResNet_4stages<uint64_t> resnet_50(CryptoPrimitive<T, IO> *cryptoPrimitive){
+    return ResNet_4stages<uint64_t>(224, new int[4]{3,4,6,3}, 1000, cryptoPrimitive);
+}
+
+
+
 }

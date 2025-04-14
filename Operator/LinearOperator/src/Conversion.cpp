@@ -131,24 +131,25 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
         seal::util::modulo_poly_coeffs(Tsubv, len, plain, T(i).hplain().data());
         std::fill_n(T(i).hplain().data() + len, polyModulusDegree - len, 0);
     }
-    Tensor<UnifiedCiphertext> finalpack(shapeTab, HE->GenerateZeroCiphertext());
+    Tensor<UnifiedCiphertext> finalpack(shapeTab, HOST);
     if (!HE->server){
-        //客服端
-        Tensor<UnifiedCiphertext> enc(shapeTab, HE->GenerateZeroCiphertext());
+        //客户端
         for (size_t i = 0; i < numPoly; i++){
-            HE->encryptor->encrypt(T(i), enc(i));
+            HE->encryptor->encrypt(T(i), finalpack(i));
         }
         // enc.flatten();
-        HE->SendEncVec(enc);
+        HE->SendEncVec(finalpack);
     }else{
         //服务器端
-        Tensor<UnifiedCiphertext> encflatten({numPoly}, HE->GenerateZeroCiphertext());
-        HE->ReceiveEncVec(encflatten);
-        Tensor<UnifiedCiphertext> enc(shapeTab, HE->GenerateZeroCiphertext());
-        for (size_t i = 0; i < numPoly; i++){
-            HE->evaluator->add_plain(encflatten(i), T(i), enc(i));
+        HE->ReceiveEncVec(finalpack);
+        if (HE->Backend() == DEVICE){
+            finalpack.apply([HE](UnifiedCiphertext &ct){
+                ct.to_device(*HE->context);
+            });
         }
-        finalpack = enc;
+        for (size_t i = 0; i < numPoly; i++){
+            HE->evaluator->add_plain_inplace(finalpack(i), T(i));
+        }
     }
     return finalpack;
 }
@@ -186,6 +187,11 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
             HE->evaluator->add_plain(out_ct(i), plainMaskInv, cipherMask(i));
         }
         cipherMask.flatten();
+        if (HE->Backend() == DEVICE){
+            cipherMask.apply([HE](UnifiedCiphertext &ct){
+                ct.to_host(*HE->context);
+            });
+        }
         HE->SendEncVec(cipherMask);
         return tensorMask;
 
