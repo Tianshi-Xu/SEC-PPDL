@@ -172,10 +172,6 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE
     UnifiedPlaintext plainMaskInv(HOST);
     // HETOSS_coeff only support CPU
     if (HE->server) {
-        // cout << "begin send" << endl;
-        // HE->SendEncVec(out_ct);
-        cout << "level of out_ct:" << out_ct(0).coeff_modulus_size() << endl;
-        cout << "device of out_ct:" << out_ct(0).location() << endl;
         if (HE->Backend() == DEVICE){
             cout << "device" << endl;
             for (size_t i = 0; i < out_ct.size(); i++){

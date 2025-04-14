@@ -141,8 +141,7 @@ void UnifiedCiphertext::to_host(const PhantomContext &dcontext,
   hcipher.scale() = dcipher.scale();
   hcipher.correction_factor() = dcipher.correction_factor();
   hcipher.is_ntt_form() = dcipher.is_ntt_form();
-  cudaMemcpy(dcipher.data(), hcipher.data(),
-             size * coeff_modulus_size * poly_modulus_degree * sizeof(uint64_t),
+  cudaMemcpy(hcipher.data(), dcipher.data(), size * sizeof(uint64_t),
              cudaMemcpyDeviceToHost);
 }
 #endif
