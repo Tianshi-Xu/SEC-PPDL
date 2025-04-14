@@ -146,6 +146,9 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
             finalpack.apply([HE](UnifiedCiphertext &ct){
                 ct.to_device(*HE->context);
             });
+            T.apply([HE](UnifiedPlaintext &pt){
+                pt.to_device(*HE->context);
+            });
         }
         for (size_t i = 0; i < numPoly; i++){
             HE->evaluator->add_plain_inplace(finalpack(i), T(i));
