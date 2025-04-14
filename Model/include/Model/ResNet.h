@@ -239,6 +239,9 @@ class ResNet_4stages {
             for (int i = 0; i < layer3.size(); i++){
                 x = (*layer3[i])(x);
             }
+            for (int i = 0; i < layer4.size(); i++){
+                x = (*layer4[i])(x);
+            }
             x = (*avg_pool)(x);
             x = (*linear)(x);
             return x;
