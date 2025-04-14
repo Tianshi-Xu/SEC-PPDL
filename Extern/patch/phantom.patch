@@ -1,37 +1,3 @@
-From d1cfa9b498c997569b8765a58dd7de6bccad2e23 Mon Sep 17 00:00:00 2001
-From: Tianshi-Xu <994876761@qq.com>
-Date: Fri, 14 Mar 2025 16:06:28 +0800
-Subject: [PATCH] .
-
----
- .gitignore             |  1 +
- CMakeLists.txt         |  9 ++++-
- include/ciphertext.h   | 25 ++++++++++++++
- include/galois.cuh     |  6 +++-
- include/ntt.cuh        |  2 +-
- include/plaintext.h    | 19 +++++++++++
- include/polymath.cuh   |  1 -
- include/rns.cuh        |  2 +-
- include/rns_base.cuh   |  2 ++
- include/rns_bconv.cuh  | 87 +-----------------------------------------------
- include/rns_bconv_t.h  | 89 ++++++++++++++++++++++++++++++++++++++++++++++++++
- include/secretkey.h    | 30 +++++++++++++++++
- include/uintmath.cuh   | 34 ++-----------------
- include/uintmath_t.h   | 36 ++++++++++++++++++++
- src/CMakeLists.txt     |  4 +++
- src/ckks.cu            |  1 +
- src/eval_key_switch.cu |  2 +-
- src/evaluate.cu        |  4 +--
- src/fft.cu             |  1 +
- src/galois.cu          |  1 +
- src/polymath.cu        |  1 +
- src/rns.cu             |  2 ++
- src/rns_base.cu        |  2 +-
- src/rns_bconv.cu       |  3 +-
- 24 files changed, 236 insertions(+), 128 deletions(-)
- create mode 100644 include/rns_bconv_t.h
- create mode 100644 include/uintmath_t.h
-
 diff --git a/.gitignore b/.gitignore
 index 9f003f7..810b48a 100644
 --- a/.gitignore
@@ -70,10 +36,19 @@ index 94adbeb..c87660e 100644
  install(EXPORT PhantomConfig NAMESPACE phantom:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phantom)
  install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/phantom)
 diff --git a/include/ciphertext.h b/include/ciphertext.h
-index c6716b3..9bb4977 100644
+index c6716b3..6e4b115 100644
 --- a/include/ciphertext.h
 +++ b/include/ciphertext.h
-@@ -154,6 +154,10 @@ public:
+@@ -122,6 +122,8 @@ public:
+         is_ntt_form_ = is_ntt_form;
+     }
+ 
++    void print_data(int num = 10);
++
+     [[nodiscard]] auto &size() const noexcept {
+         return size_;
+     }
+@@ -154,6 +156,10 @@ public:
          return scale_;
      }
  
@@ -84,7 +59,7 @@ index c6716b3..9bb4977 100644
      [[nodiscard]] auto &correction_factor() const noexcept {
          return correction_factor_;
      }
-@@ -213,6 +217,27 @@ public:
+@@ -213,6 +219,27 @@ public:
          cudaStreamSynchronize(cudaStreamPerThread);
      }
  
@@ -315,102 +290,6 @@ index 9ee9230..3aac421 100644
  
  __global__ void bconv_mult_kernel(uint64_t *dst, const uint64_t *src, const uint64_t *scale,
                                    const uint64_t *scale_shoup, const DModulus *base, uint64_t base_size, uint64_t n);
-diff --git a/include/rns_bconv_t.h b/include/rns_bconv_t.h
-new file mode 100644
-index 0000000..e3f6ea5
---- /dev/null
-+++ b/include/rns_bconv_t.h
-@@ -0,0 +1,89 @@
-+#pragma once
-+
-+#include "common.h"
-+
-+class DBaseConverter {
-+
-+private:
-+
-+    phantom::arith::DRNSBase ibase_;
-+    phantom::arith::DRNSBase obase_;
-+
-+    phantom::util::cuda_auto_ptr<uint64_t> qiHat_mod_pj_;
-+    phantom::util::cuda_auto_ptr<uint64_t> alpha_Q_mod_pj_;
-+    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_;
-+    phantom::util::cuda_auto_ptr<uint64_t> negPQHatInvModq_shoup_;
-+    phantom::util::cuda_auto_ptr<uint64_t> QInvModp_;
-+    phantom::util::cuda_auto_ptr<uint64_t> PModq_;
-+    phantom::util::cuda_auto_ptr<uint64_t> PModq_shoup_;
-+
-+public:
-+
-+    DBaseConverter() = default;
-+
-+    explicit DBaseConverter(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
-+        init(cpu_base_converter, stream);
-+    }
-+
-+    void init(phantom::arith::BaseConverter &cpu_base_converter, const cudaStream_t &stream) {
-+        ibase_.init(cpu_base_converter.ibase(), stream);
-+        obase_.init(cpu_base_converter.obase(), stream);
-+
-+        qiHat_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
-+        for (size_t idx = 0; idx < obase_.size(); idx++)
-+            cudaMemcpyAsync(qiHat_mod_pj_.get() + idx * ibase_.size(), cpu_base_converter.QHatModp(idx),
-+                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
-+
-+        alpha_Q_mod_pj_ = phantom::util::make_cuda_auto_ptr<uint64_t>((ibase_.size() + 1) * obase_.size(), stream);
-+        for (size_t idx = 0; idx < ibase_.size() + 1; idx++)
-+            cudaMemcpyAsync(alpha_Q_mod_pj_.get() + idx * obase_.size(), cpu_base_converter.alphaQModp(idx),
-+                            obase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
-+
-+        negPQHatInvModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
-+        cudaMemcpyAsync(negPQHatInvModq_.get(), cpu_base_converter.negPQHatInvModq(),
-+                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
-+
-+        negPQHatInvModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
-+        cudaMemcpyAsync(negPQHatInvModq_shoup_.get(), cpu_base_converter.negPQHatInvModq_shoup(),
-+                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
-+
-+        QInvModp_ = phantom::util::make_cuda_auto_ptr<uint64_t>(obase_.size() * ibase_.size(), stream);
-+        for (size_t idx = 0; idx < obase_.size(); idx++)
-+            cudaMemcpyAsync(QInvModp_.get() + idx * ibase_.size(), cpu_base_converter.QInvModp(idx),
-+                            ibase_.size() * sizeof(std::uint64_t), cudaMemcpyHostToDevice, stream);
-+
-+        PModq_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
-+        cudaMemcpyAsync(PModq_.get(), cpu_base_converter.PModq(), ibase_.size() * sizeof(uint64_t),
-+                        cudaMemcpyHostToDevice, stream);
-+
-+        PModq_shoup_ = phantom::util::make_cuda_auto_ptr<uint64_t>(ibase_.size(), stream);
-+        cudaMemcpyAsync(PModq_shoup_.get(), cpu_base_converter.PModq_shoup(),
-+                        ibase_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice, stream);
-+    }
-+
-+    void bConv_BEHZ(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
-+
-+    void bConv_BEHZ_var1(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
-+
-+    void bConv_HPS(uint64_t *dst, const uint64_t *src, size_t n, const cudaStream_t &stream) const;
-+
-+    void exact_convert_array(uint64_t *dst, const uint64_t *src, uint64_t poly_degree, const cudaStream_t &stream) const;
-+
-+    __host__ inline auto &ibase() const { return ibase_; }
-+
-+    __host__ inline auto &obase() const { return obase_; }
-+
-+    __host__ inline uint64_t *QHatModp() const { return qiHat_mod_pj_.get(); }
-+
-+    __host__ inline uint64_t *alpha_Q_mod_pj() const { return alpha_Q_mod_pj_.get(); }
-+
-+    __host__ inline uint64_t *negPQHatInvModq() const { return negPQHatInvModq_.get(); }
-+
-+    __host__ inline uint64_t *negPQHatInvModq_shoup() const { return negPQHatInvModq_shoup_.get(); }
-+
-+    __host__ inline uint64_t *QInvModp() const { return QInvModp_.get(); }
-+
-+    __host__ inline uint64_t *PModq() const { return PModq_.get(); }
-+
-+    __host__ inline uint64_t *PModq_shoup() const { return PModq_shoup_.get(); }
-+};
-\ No newline at end of file
 diff --git a/include/secretkey.h b/include/secretkey.h
 index b1f540b..7217f21 100644
 --- a/include/secretkey.h
@@ -513,49 +392,6 @@ index 93f6ba4..b996b03 100644
      __forceinline__ __device__ void ld_two_uint64(uint64_t& x, uint64_t& y, const uint64_t* ptr) {
  #ifdef PHANTOM_USE_CUDA_PTX
          asm("ld.global.v2.u64 {%0,%1}, [%2];" : "=l"(x), "=l"(y) : "l"(ptr));
-diff --git a/include/uintmath_t.h b/include/uintmath_t.h
-new file mode 100644
-index 0000000..58c1574
---- /dev/null
-+++ b/include/uintmath_t.h
-@@ -0,0 +1,36 @@
-+#pragma once
-+
-+#include <cstdint>
-+
-+namespace phantom::arith {
-+typedef struct uint128_t {
-+  uint64_t hi;
-+  uint64_t lo;
-+  // TODO: implement uint128_t basic operations
-+  //    __device__ uint128_t &operator+=(const uint128_t &op);
-+} uint128_t;
-+
-+struct uint128_t2 {
-+  uint128_t x;
-+  uint128_t y;
-+};
-+
-+struct uint128_t4 {
-+  uint128_t x;
-+  uint128_t y;
-+  uint128_t z;
-+  uint128_t w;
-+};
-+
-+struct double_t2 {
-+  double x;
-+  double y;
-+};
-+
-+struct double_t4 {
-+  double x;
-+  double y;
-+  double z;
-+  double w;
-+};
-+} // namespace phantom::arith
-\ No newline at end of file
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
 index 81c875c..ab103a7 100644
 --- a/src/CMakeLists.txt
@@ -597,10 +433,34 @@ index 9da8b80..d1263fe 100644
  using namespace std;
  using namespace phantom;
 diff --git a/src/evaluate.cu b/src/evaluate.cu
-index 48616c2..70fe8a5 100644
+index 48616c2..265c42c 100644
 --- a/src/evaluate.cu
 +++ b/src/evaluate.cu
-@@ -1034,8 +1034,8 @@ Returns (f, e1, e2) such that
+@@ -9,6 +9,23 @@ using namespace phantom;
+ using namespace phantom::util;
+ using namespace phantom::arith;
+ 
++__global__ void k_print_data(uint64_t *data, int num) {
++    for (int i = 0;i < num;i ++) {
++        printf("%lu\n", data[i]);
++    }
++}
++
++void PhantomCiphertext::print_data(int num) {
++    cout << "print_data:" << endl;
++    cout << "N         :" << poly_modulus_degree() << endl;
++    cout << "level     :" << coeff_modulus_size() << endl;
++    cout << "scale     :" << scale() << endl;
++    cout << "size      :" << size() << endl;
++    PHANTOM_CHECK_CUDA_LAST();
++    cudaDeviceSynchronize();
++    k_print_data<<<1,1>>>(data_.get(), num);
++}
++
+ namespace phantom {
+ 
+ /**
+@@ -1034,8 +1051,8 @@ Returns (f, e1, e2) such that
              throw std::invalid_argument("encrypted1 and encrypted2 parameter mismatch");
          if (encrypted1.is_ntt_form() != encrypted2.is_ntt_form())
              throw std::invalid_argument("NTT form mismatch");
@@ -684,6 +544,3 @@ index edab41a..144c931 100644
  
  using namespace std;
  using namespace phantom;
--- 
-1.8.3.1
-

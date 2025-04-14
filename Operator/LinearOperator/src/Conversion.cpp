@@ -173,9 +173,7 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
     UnifiedPlaintext plainMaskInv(HOST);
     // HETOSS_coeff only support CPU
     if (HE->server) {
-        // for(int i=0;i<HE->polyModulusDegree;i++){
-        //     cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
-        // }
+        out_ct(0).dcipher().print_data(10);
         if (HE->Backend() == DEVICE){
             cout << "device" << endl;
             for (size_t i = 0; i < out_ct.size(); i++){
