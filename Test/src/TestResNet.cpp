@@ -5,11 +5,11 @@ using namespace std;
 using namespace NonlinearLayer;
 using namespace Model;
 using namespace Datatype;
-#define MAX_THREADS 8
+#define MAX_THREADS 32
 
 int bitlength = 32;
 int party, port = 32000;
-int num_threads = 8;
+int num_threads = 32;
 string address = "127.0.0.1";
 
 uint64_t comm_threads[MAX_THREADS];
@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
   assert(num_threads <= MAX_THREADS);
 
   // you can switch IKNP/VOLE; Cheetah/Nested; HOST/DEVICE
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Nest, Datatype::DEVICE, address, port);
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Nest, Datatype::HOST, address, port);
 
   // ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);
   ResNet_4stages<uint64_t> model = resnet_18(cryptoPrimitive);

@@ -14,7 +14,7 @@ if [ "$1" == "lan" ]
 then
 tc qdisc del dev $DEV root
 ## about 3Gbps
-tc qdisc add dev $DEV root handle 1: tbf rate 1000mbit burst 100000 limit 10000
+tc qdisc add dev $DEV root handle 1: tbf rate 3000mbit burst 100000 limit 10000
 ## ping latency is double
 tc qdisc add dev $DEV parent 1:1 handle 10: netem delay 0.25msec
 fi

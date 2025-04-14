@@ -263,6 +263,4 @@ ResNet_4stages<uint64_t> resnet_50(CryptoPrimitive<T, IO> *cryptoPrimitive){
     return ResNet_4stages<uint64_t>(224, new int[4]{3,4,6,3}, 1000, cryptoPrimitive);
 }
 
-
-
 }
