@@ -197,6 +197,24 @@ class FixPoint {
                 mux_threads[i].join();
             }
         }
+    
+        void max_2d(Tensor<T> &x, Tensor<T> &result, int32_t dim=1, int32_t bw=0, int32_t scale=0){
+            if(x.shape().size() != 2){
+                throw std::invalid_argument("max_2d only support 2D tensor");
+            }
+            if((bw==0 && x.bitwidth == 0) || (scale==0 && x.scale==0)){
+                throw std::invalid_argument("bw or scale is 0, please set bw and scale for max_2d");
+            }
+            if(bw==0){
+                bw = x.bitwidth;
+            }
+            if(scale==0){
+                scale = x.scale;
+            }
+            uint64_t d0 = x.shape()[0];
+            uint64_t d1 = x.shape()[1];
+            result.reshape({d0, d1});
+        }
     private:
         TruncationProtocol **truncationProtocol = nullptr;
         OTProtocol::AuxProtocols **aux = nullptr;

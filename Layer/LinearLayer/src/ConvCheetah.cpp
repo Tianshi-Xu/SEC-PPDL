@@ -104,12 +104,12 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uin
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
     compute_he_params(in_feature_size);
-    this->weight.print_shape();
+    // this->weight.print_shape();
     if(HE->server) {
         weight_pt = PackWeight();
     }
     cout << "padding:" << padding << endl;
-    weight_pt.print_shape();
+    // weight_pt.print_shape();
 }
 
 void Conv2DCheetah::fuse_bn(Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta){
@@ -312,8 +312,9 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::TensorTOHE(Tensor<uint64_t> PackActivat
 
 // 计算卷积核的 Pack 版本
 Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
+    cout << "pack weight begin" << endl;
     std::vector<size_t> shapeTab = {dM, dC};
-    Tensor<UnifiedPlaintext> Ktg(shapeTab,Datatype::HOST);
+    Tensor<UnifiedPlaintext> Ktg(shapeTab,HOST);
     size_t len = OW + 1;
     if (!HE->server){
         return Ktg;
@@ -346,8 +347,13 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
             }
         }
     }
-
-
+    cout << "transfer weight to device" << endl;
+    if (HE->Backend() == DEVICE){
+        for (size_t i = 0; i < Ktg.size(); i++){
+            Ktg(i).to_device(*HE->context);
+        }
+    }
+    cout << "pack weight done" << endl;
     return Ktg;
 }
 
@@ -368,9 +374,11 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
 Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
 //Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
+    const auto target = HE->server ? HE->Backend() : HOST;
+    cout << "target:" << target << endl;
     std::vector<size_t> shapeTab = {dM, dH, dW};
-    Tensor<UnifiedCiphertext> ConvRe(shapeTab,HE->GenerateZeroCiphertext());
-    UnifiedCiphertext interm = HE->GenerateZeroCiphertext();
+    Tensor<UnifiedCiphertext> ConvRe(shapeTab,HE->GenerateZeroCiphertext(target));
+    UnifiedCiphertext interm = HE->GenerateZeroCiphertext(target);
     if (!HE->server){
         return ConvRe;
     }
