@@ -50,7 +50,6 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<uint64_t> distrib(0, HE->plain_mod - 1);
-
     // mask generation and communication
     if (HE->server) {
         for (size_t i = 0; i < out_ct.size(); i++){
@@ -158,7 +157,7 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
 }
 
 
-Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE::HEEvaluator* HE)
+Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE::HEEvaluator* HE)
 {
     auto shapeTab = out_ct.shape();
     Tensor<UnifiedPlaintext> outShare(shapeTab,HOST);
@@ -173,18 +172,17 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
     UnifiedPlaintext plainMaskInv(HOST);
     // HETOSS_coeff only support CPU
     if (HE->server) {
-        // for(int i=0;i<HE->polyModulusDegree;i++){
-        //     cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
-        // }
+        // cout << "begin send" << endl;
+        // HE->SendEncVec(out_ct);
+        cout << "level of out_ct:" << out_ct(0).coeff_modulus_size() << endl;
+        cout << "device of out_ct:" << out_ct(0).location() << endl;
         if (HE->Backend() == DEVICE){
             cout << "device" << endl;
             for (size_t i = 0; i < out_ct.size(); i++){
                 out_ct(i).to_host(*HE->context);
             }
         }
-        for(int i=0;i<HE->polyModulusDegree;i++){
-            cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
-        }
+        cout << "out_ct(0)[0]:" << out_ct(0).hcipher().data()[0] << endl;
         int64_t mask;
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -202,9 +200,9 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
                 // cout << "mask:" << *(plainMaskInv.hplain().data() + l) << endl;
             }
             
-            cout << "add_plain_inplace done1" << endl;
+            // cout << "add_plain_inplace done1" << endl;
             HE->evaluator->add_plain_inplace(out_ct(i), plainMaskInv);
-            cout << "add_plain_inplace done" << endl;
+            // cout << "add_plain_inplace done" << endl;
         }
         out_ct.flatten();
         cout << "HEToSS_coeff done" << endl;

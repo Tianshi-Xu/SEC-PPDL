@@ -373,28 +373,27 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
 // 计算同态卷积
 Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
-//Tensor<UnifiedCiphertext> Conv2DCheetah::ConvCP(Tensor<UnifiedCiphertext> T, Tensor<UnifiedPlaintext> K) {
     const auto target = HE->server ? HE->Backend() : HOST;
     cout << "target:" << target << endl;
     std::vector<size_t> shapeTab = {dM, dH, dW};
-    Tensor<UnifiedCiphertext> ConvRe(shapeTab,HE->GenerateZeroCiphertext(target));
-    UnifiedCiphertext interm = HE->GenerateZeroCiphertext(target);
+    Tensor<UnifiedCiphertext> out_ct(shapeTab,HE->GenerateZeroCiphertext(target));
+    UnifiedCiphertext interm(target);
     if (!HE->server){
-        return ConvRe;
+        return out_ct;
     }
 
     for (size_t theta = 0; theta < dM; theta++) {
         for (size_t alpha = 0; alpha < dH; alpha++) {
             for (size_t beta = 0; beta < dW; beta++) {
-                HE->evaluator->multiply_plain(ac_ct({0, alpha, beta}), weight_pt({theta, 0}), ConvRe({theta, alpha, beta}));
+                HE->evaluator->multiply_plain(ac_ct({0, alpha, beta}), weight_pt({theta, 0}), out_ct({theta, alpha, beta}));
                 for (size_t gama = 1; gama < dC; gama++) {
                     HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), weight_pt({theta, gama}), interm);
-                    HE->evaluator->add_inplace(ConvRe({theta, alpha, beta}), interm);
+                    HE->evaluator->add_inplace(out_ct({theta, alpha, beta}), interm);
                 }
             }
         }
     }
-    return ConvRe;
+    return out_ct;
 }
 
 Tensor<uint64_t> Conv2DCheetah::DepackResult(Tensor<uint64_t> &out){
