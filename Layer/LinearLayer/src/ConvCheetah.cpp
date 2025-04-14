@@ -422,15 +422,15 @@ Tensor<uint64_t> Conv2DCheetah::operator()(Tensor<uint64_t> &x){
     cout << "in Conv2D, x.shape:" << endl;
     x.print_shape();
     auto pack = this->PackActivation(x);
-    cout << "PackActivation done" << endl;
+    // cout << "PackActivation done" << endl;
     auto Cipher = Operator::SSToHE_coeff(pack, HE);
-    cout << "SSTOHE done" << endl;
+    // cout << "SSTOHE done" << endl;
     auto ConvResult = this->HECompute(weight_pt, Cipher);
-    cout << "HECompute done" << endl;
+    // cout << "HECompute done" << endl;
     auto share = Operator::HEToSS_coeff(ConvResult, HE);
-    cout << "HEToSS done" << endl;
+    // cout << "HEToSS done" << endl;
     auto finalR = this->DepackResult(share);
-    cout << "DepackResult done" << endl;
+    // cout << "DepackResult done" << endl;
     return finalR;
 }
 
