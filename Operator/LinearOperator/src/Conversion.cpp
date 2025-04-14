@@ -50,7 +50,6 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<uint64_t> distrib(0, HE->plain_mod - 1);
-
     // mask generation and communication
     if (HE->server) {
         for (size_t i = 0; i < out_ct.size(); i++){
@@ -158,7 +157,7 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
 }
 
 
-Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE::HEEvaluator* HE)
+Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE::HEEvaluator* HE)
 {
     auto shapeTab = out_ct.shape();
     Tensor<UnifiedPlaintext> outShare(shapeTab,HOST);
