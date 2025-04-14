@@ -173,21 +173,20 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
     UnifiedPlaintext plainMaskInv(HOST);
     // HETOSS_coeff only support CPU
     if (HE->server) {
-        out_ct(0).dcipher().print_data(10);
         if (HE->Backend() == DEVICE){
-            cout << "device" << endl;
+            // cout << "device" << endl;
             for (size_t i = 0; i < out_ct.size(); i++){
                 out_ct(i).to_host(*HE->context);
             }
         }
-        for(int i=0;i<HE->polyModulusDegree;i++){
-            cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
-        }
+        // for(int i=0;i<HE->polyModulusDegree;i++){
+        //     cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
+        // }
         int64_t mask;
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<int64_t> dist(0, HE->plain_mod - 1);
-        cout << "numPoly:" << numPoly << endl;
+        // cout << "numPoly:" << numPoly << endl;
         for (size_t i = 0; i < numPoly; i++){
             outShare(i).hplain().resize(HE->polyModulusDegree);
             plainMaskInv.hplain().resize(HE->polyModulusDegree);
@@ -200,12 +199,12 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE:
                 // cout << "mask:" << *(plainMaskInv.hplain().data() + l) << endl;
             }
             
-            cout << "add_plain_inplace done1" << endl;
+            // cout << "add_plain_inplace done1" << endl;
             HE->evaluator->add_plain_inplace(out_ct(i), plainMaskInv);
-            cout << "add_plain_inplace done" << endl;
+            // cout << "add_plain_inplace done" << endl;
         }
         out_ct.flatten();
-        cout << "HEToSS_coeff done" << endl;
+        // cout << "HEToSS_coeff done" << endl;
         // if (HE->Backend() == DEVICE){
         //     out_ct.apply([HE](UnifiedCiphertext &ct){
         //         ct.to_host(*HE->context);

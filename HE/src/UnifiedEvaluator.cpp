@@ -78,7 +78,7 @@ void UnifiedEvaluator::add_plain_inplace(UnifiedCiphertext &encrypted,
                                          const UnifiedPlaintext &plain) const {
   backend_check(encrypted, plain);
   if (encrypted.on_host() && plain.on_host()) {
-    std::cout << "add_plain_inplace on host" << std::endl;
+    // std::cout << "add_plain_inplace on host" << std::endl;
     seal_eval_->add_plain_inplace(encrypted, plain);
   } else {
     phantom_eval_->add_plain_inplace(encrypted, plain);
