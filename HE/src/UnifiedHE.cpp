@@ -37,8 +37,12 @@ void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
                                  PhantomPlaintext &dplain) {
   const auto &first_parms = hcontext.first_context_data()->parms();
   const auto full_data_modulus_size = first_parms.coeff_modulus().size();
-  const auto &curr_parms =
-      hcontext.get_context_data(hplain.parms_id())->parms();
+
+  auto data_ptr = hcontext.get_context_data(hplain.parms_id());
+  if (!data_ptr) {
+    data_ptr = hcontext.first_context_data();
+  }
+  const auto &curr_parms = data_ptr->parms();
   const auto curr_data_modulus_size = curr_parms.coeff_modulus().size();
 
   // * [Important] phantom.chain_index + seal.chain_index = size_Q
