@@ -87,7 +87,7 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     WWprime = (WW - kernel_size + stride) / stride;
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
-    std::cout << "plain" << plain;
+    // std::cout << "plain" << plain;
     weight_pt = this->PackWeight();
     this->fused_bn = false;
     cout << "feature_size:" << this->in_feature_size << endl;

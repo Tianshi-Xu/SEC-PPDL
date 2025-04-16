@@ -27,10 +27,10 @@ int main(int argc, char **argv) {
   assert(num_threads <= MAX_THREADS);
 
   // you can switch IKNP/VOLE; Cheetah/Nested; HOST/DEVICE
-  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Nest, Datatype::HOST, address, port);
+  CryptoPrimitive<uint64_t, Utils::NetIO> *cryptoPrimitive = new CryptoPrimitive<uint64_t, Utils::NetIO>(party, num_threads, bitlength, Datatype::VOLE, 8192, 60, Nest, Datatype::DEVICE, address, port);
 
   // ResNet_3stages<uint64_t> model = resnet_32_c10(cryptoPrimitive);
-  ResNet_4stages<uint64_t> model = resnet_18(cryptoPrimitive);
+  ResNet_4stages<uint64_t> model = resnet_50(cryptoPrimitive);
   Tensor<uint64_t> input({3, 224, 224});
   input.randomize(16);
   auto start = high_resolution_clock::now();

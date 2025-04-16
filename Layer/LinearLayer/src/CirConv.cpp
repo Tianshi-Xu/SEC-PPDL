@@ -6,11 +6,10 @@ using namespace HE::unified;
 
 namespace LinearLayer {
     
-Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
+CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, uint64_t block_size, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HEEvaluator* HE)
     : Conv2D(in_feature_size, stride, padding, weight, bias, HE)
 {
-    // assert(padded_feature_size * padded_feature_size > HE->polyModulusDegree / 2 && "Input feature map is too big, please use Cheetah instead.");
-    
+    this->block_size = block_size;
     int tmp_size = in_feature_size + 2 * padding - 1;
     for (int i = 0; i < 5; i++) {
         tmp_size |= tmp_size >> (1 << i);
@@ -26,8 +25,7 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
     }
 }
 
-void Conv2DNest::compute_he_params(uint64_t in_feature_size) {
-    // cout << "compute_he_params called" << endl;
+void CirConv2D::compute_he_params(uint64_t in_feature_size) {
     cout << "in_feature_size: " << in_feature_size << ", padding: " << this->padding << ", kernel_size: " << this->kernel_size << ", stride: " << this->stride << endl;
     int tmp_size = in_feature_size + 2 * this->padding - 1;
     for (int i = 0; i < 5; i++) {
@@ -53,9 +51,10 @@ void Conv2DNest::compute_he_params(uint64_t in_feature_size) {
     cout << "out_feature_size: " << this->out_feature_size << endl;
 }
 
-Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE)
+CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t block_size, HE::HEEvaluator* HE)
     : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE)
 {
+    this->block_size = block_size;
     compute_he_params(in_feature_size);
     // this->weight.print_shape();
     if(HE->server) {
@@ -63,7 +62,7 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t in_channels, uint64_t 
     }
 }
 
-Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
+Tensor<UnifiedPlaintext> CirConv2D::PackWeight() {
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
     uint64_t offset = (kernel_size - 1) * (padded_feature_size + 1);
     Tensor<UnifiedPlaintext> weight_pt({tiled_in_channels, tiled_out_channels, tile_size}, HE->Backend());
@@ -112,7 +111,7 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     return weight_pt;
 }
 
-Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> &x) {
+Tensor<uint64_t> CirConv2D::PackActivation(Tensor<uint64_t> &x) {
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
     Tensor<uint64_t> ac_msg({tiled_in_channels, HE->polyModulusDegree});
 
@@ -146,7 +145,7 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> &x) {
     return ac_msg;
 }
 
-Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct) {
+Tensor<UnifiedCiphertext> CirConv2D::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct) {
     /** 
      *  NOTE:
      *  Server computes on HE->Backend()
@@ -209,7 +208,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
     return out_ct;
 }
 
-Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
+Tensor<uint64_t> CirConv2D::DepackResult(Tensor<uint64_t> &out_msg) {
     out_channels *= 2;
     Tensor<uint64_t> y({out_channels, out_feature_size, out_feature_size});
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
@@ -244,10 +243,10 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
     return y;
 }
 
-Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
+Tensor<uint64_t> CirConv2D::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
     cout << "in Conv2D, x.shape:" << endl;
     x.print_shape();
-    // cout << "in Conv2DNest operator" << endl;
+    // cout << "in CirConv2D operator" << endl;
     // cout << "x.shape" << endl;
     // x.print_shape();
     // cout << "weight.shape" << endl;
@@ -257,7 +256,7 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci
         cout << "wrong input feature size" << endl;
         exit(1);
     }
-    // std::cout << "Conv2DNest operator called" << std::endl;
+    // std::cout << "CirConv2D operator called" << std::endl;
     Tensor<uint64_t> ac_msg = PackActivation(x);  // ac_msg.shape = {ci, N}
     // std::cout << "ac_msg generated" << std::endl;
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);  // ac_ct.shape = {ci}

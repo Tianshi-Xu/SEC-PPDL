@@ -97,5 +97,26 @@ class Conv2DCheetah : public Conv2D {
         void compute_he_params(uint64_t in_feature_size);
     };
 
+class CirConv2D : public Conv2D {
+    public:
+        uint64_t tiled_in_channels;
+        uint64_t tiled_out_channels;
+        uint64_t tile_size;
+        uint64_t padded_feature_size = 0;
+        uint64_t input_rot;
+        uint64_t block_size = 1;
+        vector<uint64_t> tmp_w;
+
+        CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, uint64_t block_size, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
+        CirConv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t block_size, HE::HEEvaluator* HE);
+        Tensor<uint64_t> operator()(Tensor<uint64_t> &x) ;
+
+    private:
+        Tensor<HE::unified::UnifiedPlaintext> PackWeight() ;
+        Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) ;
+        Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) ;
+        Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out);
+        void compute_he_params(uint64_t in_feature_size);
+};
 
 }
