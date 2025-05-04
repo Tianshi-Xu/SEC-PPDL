@@ -165,7 +165,7 @@ index 03b307e..f5ca0a5 100644
  
  class DModulus {
 diff --git a/include/plaintext.h b/include/plaintext.h
-index 66df8d8..88811b8 100644
+index 66df8d8..0009a43 100644
 --- a/include/plaintext.h
 +++ b/include/plaintext.h
 @@ -58,6 +58,10 @@ public:
@@ -179,7 +179,7 @@ index 66df8d8..88811b8 100644
      [[nodiscard]] auto data() const noexcept {
          return data_.get();
      }
-@@ -96,4 +100,19 @@ public:
+@@ -96,4 +100,21 @@ public:
                          cudaMemcpyHostToDevice, cudaStreamPerThread);
          cudaFreeHost(h_data);
      }
@@ -191,7 +191,9 @@ index 66df8d8..88811b8 100644
 +
 +        chain_index_ = chain_index;
 +        poly_modulus_degree_ = parms.poly_modulus_degree();
-+        coeff_modulus_size_ = coeff_modulus.size();
++        // [Important] Plaintext has no specail primes
++        // FIXME: Assume that alpha=1
++        coeff_modulus_size_ = coeff_modulus.size() - 1;
 +        scale_ = scale;
 +        data_ = phantom::util::make_cuda_auto_ptr<uint64_t>(coeff_modulus_size_ * poly_modulus_degree_,
 +                                                            cudaStreamPerThread);

@@ -39,8 +39,10 @@ void UnifiedPlaintext::to_device(const seal::SEALContext &hcontext,
   const auto full_data_modulus_size = first_parms.coeff_modulus().size();
 
   auto data_ptr = hcontext.get_context_data(hplain.parms_id());
-  if (!data_ptr) {
-    data_ptr = hcontext.first_context_data();
+  if (!data_ptr && (first_parms.scheme() == seal::scheme_type::bfv ||
+                    first_parms.scheme() == seal::scheme_type::bgv)) {
+    // Must BFV/BGV !!
+    data_ptr = hcontext.last_context_data();
   }
   const auto &curr_parms = data_ptr->parms();
   const auto curr_data_modulus_size = curr_parms.coeff_modulus().size();
