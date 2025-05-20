@@ -371,17 +371,19 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
+#define MULTI_STRAEM
 Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
     const auto target = HE->server ? HE->Backend() : HOST;
     cout << "target:" << target << endl;
     std::vector<size_t> shapeTab = {dM, dH, dW};
     Tensor<UnifiedCiphertext> out_ct(shapeTab,HE->GenerateZeroCiphertext(target));
-    UnifiedCiphertext interm(target);
     if (!HE->server){
         return out_ct;
     }
 
+    #ifndef MULTI_STRAEM
+    UnifiedCiphertext interm(target);
     for (size_t theta = 0; theta < dM; theta++) {
         for (size_t alpha = 0; alpha < dH; alpha++) {
             for (size_t beta = 0; beta < dW; beta++) {
@@ -393,6 +395,44 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
             }
         }
     }
+    #else
+    // 定义线程工作函数
+    auto worker = [&](size_t theta_start, size_t theta_end) {
+        UnifiedCiphertext interm(target);
+        for (size_t theta = theta_start; theta < theta_end; theta++) {
+            for (size_t alpha = 0; alpha < dH; alpha++) {
+                for (size_t beta = 0; beta < dW; beta++) {
+                    HE->evaluator->multiply_plain(ac_ct({0, alpha, beta}), 
+                                                weight_pt({theta, 0}), 
+                                                out_ct({theta, alpha, beta}));
+                    for (size_t gama = 1; gama < dC; gama++) {
+                        HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), 
+                                                    weight_pt({theta, gama}), 
+                                                    interm);
+                        HE->evaluator->add_inplace(out_ct({theta, alpha, beta}), interm);
+                    }
+                }
+            }
+        }
+    };
+
+    const size_t num_threads = 4; // [可修改]
+    const size_t theta_per_thread = (dM + num_threads - 1) / num_threads;
+
+    std::vector<std::thread> threads;
+    for (size_t t = 0; t < num_threads; t++) {
+        size_t start = t * theta_per_thread;
+        size_t end = std::min(start + theta_per_thread, dM);
+        if (start < dM) {
+            threads.emplace_back(worker, start, end);
+        }
+    }
+
+    // 等待所有线程完成
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    #endif
     return out_ct;
 }
 
