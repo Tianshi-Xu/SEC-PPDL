@@ -165,10 +165,21 @@ index 03b307e..f5ca0a5 100644
  
  class DModulus {
 diff --git a/include/plaintext.h b/include/plaintext.h
-index 66df8d8..0009a43 100644
+index 66df8d8..392cf82 100644
 --- a/include/plaintext.h
 +++ b/include/plaintext.h
-@@ -58,6 +58,10 @@ public:
+@@ -50,6 +50,10 @@ public:
+         return poly_modulus_degree_ * coeff_modulus_size_;
+     }
+ 
++    [[nodiscard]] std::size_t coeff_modulus_size() const noexcept {
++        return coeff_modulus_size_;
++    }
++
+     [[nodiscard]] auto &chain_index() const noexcept {
+         return chain_index_;
+     }
+@@ -58,6 +62,10 @@ public:
          return scale_;
      }
  
@@ -179,7 +190,16 @@ index 66df8d8..0009a43 100644
      [[nodiscard]] auto data() const noexcept {
          return data_.get();
      }
-@@ -96,4 +100,21 @@ public:
+@@ -66,6 +74,8 @@ public:
+         return data_;
+     }
+ 
++    void print_data(int num = 10);
++
+     void save(std::ostream &stream) const {
+         stream.write(reinterpret_cast<const char *>(&chain_index_), sizeof(chain_index_));
+         stream.write(reinterpret_cast<const char *>(&poly_modulus_degree_), sizeof(poly_modulus_degree_));
+@@ -96,4 +106,21 @@ public:
                          cudaMemcpyHostToDevice, cudaStreamPerThread);
          cudaFreeHost(h_data);
      }
@@ -615,10 +635,10 @@ index 9da8b80..d1263fe 100644
  using namespace std;
  using namespace phantom;
 diff --git a/src/evaluate.cu b/src/evaluate.cu
-index 48616c2..265c42c 100644
+index 48616c2..66fcf37 100644
 --- a/src/evaluate.cu
 +++ b/src/evaluate.cu
-@@ -9,6 +9,23 @@ using namespace phantom;
+@@ -9,6 +9,33 @@ using namespace phantom;
  using namespace phantom::util;
  using namespace phantom::arith;
  
@@ -639,10 +659,20 @@ index 48616c2..265c42c 100644
 +    k_print_data<<<1,1>>>(data_.get(), num);
 +}
 +
++void PhantomPlaintext::print_data(int num) {
++    cout << "print_data :" << endl;
++    cout << "chain index:" << chain_index() << endl;
++    cout << "level      :" << coeff_modulus_size() << endl;
++    cout << "scale      :" << scale() << endl;
++    PHANTOM_CHECK_CUDA_LAST();
++    cudaDeviceSynchronize();
++    k_print_data<<<1,1>>>(data_.get(), num);
++}
++
  namespace phantom {
  
  /**
-@@ -1034,8 +1051,8 @@ Returns (f, e1, e2) such that
+@@ -1034,8 +1061,8 @@ Returns (f, e1, e2) such that
              throw std::invalid_argument("encrypted1 and encrypted2 parameter mismatch");
          if (encrypted1.is_ntt_form() != encrypted2.is_ntt_form())
              throw std::invalid_argument("NTT form mismatch");
