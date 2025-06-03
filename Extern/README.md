@@ -19,7 +19,7 @@ cmake --install build
 . ./build-ot.sh
 ```
 #### phantom-fhe
-- If you don't use GPU, you can skip this step and set `-DUSE_HE_GPU=ON` when building the project.
+- If you don't use GPU, you can skip this step and set `-DUSE_HE_GPU=OFF` when building the project.
 ```
 git clone https://github.com/encryptorion-lab/phantom-fhe.git
 cd phantom-fhe
