@@ -1,5 +1,6 @@
-#include <HE/HE.h>
-#include <Utils/ArgMapping/ArgMapping.h>
+#include <Model/ResNet.h>
+#include <fstream>
+#include <iostream>
 using namespace std;
 using namespace HE;
 
@@ -16,7 +17,18 @@ int main(int argc, char* argv[]) {
     
     Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
     std::cout << "netio generated" << std::endl;
-    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::HOST);
+    HE::HEEvaluator HE(netio, party, 8192,60,Datatype::DEVICE);
     HE.GenerateNewKey();
+    UnifiedCiphertext ct1_r(HE.GenerateZeroCiphertext(HE.Backend()));
+    UnifiedCiphertext temp_add_ct(HE.GenerateZeroCiphertext(HE.Backend()));
+    UnifiedCiphertext ct1_l(HE.GenerateZeroCiphertext(HE.Backend()));
+    Tensor<UnifiedCiphertext> temp_results1({2, 64}, HE.GenerateZeroCiphertext(HE.Backend()));
+    Tensor<UnifiedCiphertext> rotatedIR({2, 64}, HE.GenerateZeroCiphertext(HE.Backend()));
+    Tensor<UnifiedPlaintext> encodeMatrix_p1({128, 2}, DEVICE);
+    for (size_t i = 0; i < 1000; i++){
+        HE.evaluator->multiply_plain(rotatedIR({0, 0}),          encodeMatrix_p1({0, 0}), ct1_l);
+        HE.evaluator->multiply_plain(rotatedIR({0, 32}), encodeMatrix_p1({0, 0}), ct1_r);
+        HE.evaluator->add(ct1_l, ct1_r, temp_results1({0, 0}));
+    }
     return 0;
 }
