@@ -1,13 +1,14 @@
 #pragma once
 
-#include "HE/unified/UnifiedCiphertext.h"
-#include "HE/unified/UnifiedEvk.h"
-#include "HE/unified/UnifiedPlaintext.h"
-#include <HE/unified/UnifiedContext.h>
 #include <seal/evaluator.h>
 
 #ifdef USE_HE_GPU
 #include "HE/unified/PhantomWrapper.h"
+#include "HE/unified/UnifiedCiphertext.h"
+#include "HE/unified/UnifiedEvk.h"
+#include "HE/unified/UnifiedPlaintext.h"
+#else
+#include "Datatype/UnifiedType.h"
 #endif
 
 namespace HE {
@@ -20,7 +21,7 @@ public:
   // Explicitly inherit all constructors from the Base class
   using seal::Evaluator::Evaluator;
 
-  inline LOCATION backend() const { return LOCATION::HOST; }
+  inline Datatype::LOCATION backend() const { return Datatype::LOCATION::HOST; }
 };
 
 #else

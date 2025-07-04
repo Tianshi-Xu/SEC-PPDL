@@ -50,6 +50,26 @@ public:
 #endif
   }
 
+  UnifiedContext(const seal::EncryptionParameters &parms,
+                 LOCATION backend = HOST)
+      : is_gpu_enable_(backend == DEVICE) {
+#ifndef USE_HE_GPU
+    if (backend != LOCATION::HOST) {
+      throw std::invalid_argument("Non GPU version");
+    }
+#else
+    if (backend != HOST && backend != DEVICE) {
+      throw std::invalid_argument("UnifiedContext: Invalid backend");
+    }
+#endif
+    seal_context_ = std::make_unique<seal::SEALContext>(parms);
+#ifdef USE_HE_GPU
+    if (backend == LOCATION::DEVICE) {
+      phantom_context_ = std::make_unique<PhantomContext>(get_parms(parms));
+    }
+#endif
+  }
+
   ~UnifiedContext() = default;
 
   inline bool is_gpu_enable() const { return is_gpu_enable_; }
@@ -62,6 +82,41 @@ public:
   inline const PhantomContext &dcontext() const { return *phantom_context_; }
 
   operator const PhantomContext &() const { return dcontext(); };
+#endif
+
+private:
+#ifdef USE_HE_GPU
+  inline static phantom::EncryptionParameters
+  get_parms(const seal::EncryptionParameters &parms) {
+
+    auto get_scheme_type = [](seal::scheme_type type) {
+      switch (type) {
+      case seal::scheme_type::bfv:
+        return phantom::scheme_type::bfv;
+      case seal::scheme_type::ckks:
+        return phantom::scheme_type::ckks;
+      default:
+        throw std::invalid_argument("Not support");
+      }
+    };
+
+    auto convert_seal_to_phantom_modulus =
+        [](const seal::Modulus &seal_modulus) {
+          phantom::arith::Modulus phantom_modulus(seal_modulus.value());
+          return phantom::arith::Modulus(seal_modulus.value());
+        };
+
+    phantom::EncryptionParameters target_parms(get_scheme_type(parms.scheme()));
+    std::vector<phantom::arith::Modulus> modulus(parms.coeff_modulus().size());
+    for (size_t i = 0; i < modulus.size(); i++) {
+      modulus[i] = convert_seal_to_phantom_modulus(parms.coeff_modulus()[i]);
+    }
+    target_parms.set_poly_modulus_degree(parms.poly_modulus_degree());
+    target_parms.set_coeff_modulus(modulus);
+    target_parms.set_plain_modulus(
+        convert_seal_to_phantom_modulus(parms.plain_modulus()));
+    return target_parms;
+  }
 #endif
 
 private:
