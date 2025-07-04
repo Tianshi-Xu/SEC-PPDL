@@ -43,13 +43,12 @@ void UnifiedEvaluator::multiply_inplace(
   }
 }
 
-template <typename RelinKey_t>
 void UnifiedEvaluator::relinearize_inplace(UnifiedCiphertext &encrypted,
-                                           const RelinKey_t &relin_keys) const {
+                                           const UnifiedRelinKeys &relin_keys) const {
   backend_check(encrypted);
-  if constexpr (std::is_same_v<RelinKey_t, seal::RelinKeys>) {
+  if (encrypted.on_host()) {
     seal_eval_->relinearize_inplace(encrypted, relin_keys);
-  } else if constexpr (std::is_same_v<RelinKey_t, PhantomRelinKey>) {
+  } else {
     phantom_eval_->relinearize_inplace(encrypted, relin_keys);
   }
 }
@@ -146,12 +145,5 @@ void UnifiedEvaluator::rotate_columns_inplace(
     phantom_eval_->complex_conjugate_inplace(encrypted, galois_key);
   }
 }
-
-// function template specializations
-template void UnifiedEvaluator::relinearize_inplace<seal::RelinKeys>(
-    UnifiedCiphertext &encrypted, const seal::RelinKeys &relin_keys) const;
-
-template void UnifiedEvaluator::relinearize_inplace<PhantomRelinKey>(
-    UnifiedCiphertext &encrypted, const PhantomRelinKey &relin_keys) const;
 
 #endif

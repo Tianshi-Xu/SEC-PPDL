@@ -111,13 +111,11 @@ public:
     multiply_inplace(destination, encrypted);
   }
 
-  template <typename RelinKey_t>
   void relinearize_inplace(UnifiedCiphertext &encrypted,
-                           const RelinKey_t &relin_keys) const;
+                           const UnifiedRelinKeys &relin_keys) const;
 
-  template <typename RelinKey_t>
   inline void relinearize(const UnifiedCiphertext &encrypted,
-                          const RelinKey_t &relin_keys,
+                          const UnifiedRelinKeys &relin_keys,
                           UnifiedCiphertext &destination) const {
     destination = encrypted;
     relinearize_inplace(destination, relin_keys);
