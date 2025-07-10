@@ -371,7 +371,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-#define MULTI_STRAEM
+// #define MULTI_STRAEM
 Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
     const auto target = HE->server ? HE->Backend() : HOST;
