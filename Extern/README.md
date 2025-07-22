@@ -3,7 +3,7 @@
 git clone https://github.com/microsoft/SEAL.git
 cd SEAL
 cmake -S . -B build -DSEAL_USE_INTEL_HEXL=ON
-cmake --build build
+cmake --build build -j
 ```
 #### HEXL
 - HEXL is used for NTT
