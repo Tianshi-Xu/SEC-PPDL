@@ -1,12 +1,12 @@
 #pragma once
 
 #include <seal/evaluator.h>
-
-#ifdef USE_HE_GPU
-#include "HE/unified/PhantomWrapper.h"
 #include "HE/unified/UnifiedCiphertext.h"
 #include "HE/unified/UnifiedEvk.h"
 #include "HE/unified/UnifiedPlaintext.h"
+
+#ifdef USE_HE_GPU
+#include "HE/unified/PhantomWrapper.h"
 #else
 #include "Datatype/UnifiedType.h"
 #endif

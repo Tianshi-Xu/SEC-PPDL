@@ -13,6 +13,9 @@ if(USE_HE_GPU)
     target_link_libraries(testHEGPU PUBLIC HE Datatype)
 endif()
 
+add_executable(testFFN ${CMAKE_CURRENT_LIST_DIR}/src/TestFFN.cpp)
+target_link_libraries(testFFN PUBLIC HE Datatype)
+
 add_executable(test_linear_operator ${CMAKE_CURRENT_LIST_DIR}/src/TestLinearOperator.cpp)
 target_link_libraries(test_linear_operator PUBLIC LinearOperator Utils)
 
