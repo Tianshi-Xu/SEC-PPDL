@@ -1,103 +1,127 @@
 #pragma once
 
-#include "HE/unified/UnifiedContext.h"
 #include <seal/plaintext.h>
+#include "HE/unified/UnifiedContext.h"
 #ifdef USE_HE_GPU
 #include <phantom/plaintext.h>
 #endif
 
-namespace HE {
-namespace unified {
+namespace HE
+{
+    namespace unified
+    {
 
-class UnifiedPlaintext : public UnifiedBase {
+        class UnifiedPlaintext : public UnifiedBase
+        {
+        public:
+            UnifiedPlaintext(LOCATION loc = UNDEF) : UnifiedBase(loc)
+            {}
 
-public:
-  UnifiedPlaintext(LOCATION loc = UNDEF) : UnifiedBase(loc) {}
+            UnifiedPlaintext(const seal::Plaintext &hplain);
 
-  UnifiedPlaintext(const seal::Plaintext &hplain);
-
-  UnifiedPlaintext(seal::Plaintext &&hplain);
-
-#ifdef USE_HE_GPU
-  UnifiedPlaintext(const PhantomPlaintext &dplain);
-
-  UnifiedPlaintext(PhantomPlaintext &&dplain);
-#endif
-
-  ~UnifiedPlaintext() = default;
-
-  UnifiedPlaintext(const UnifiedPlaintext &) = default;
-
-  UnifiedPlaintext &operator=(const UnifiedPlaintext &) = default;
-
-  UnifiedPlaintext(UnifiedPlaintext &&) = default;
-
-  UnifiedPlaintext &operator=(UnifiedPlaintext &&) = default;
-
-  bool on_host() const override {
-    return loc_ == HOST || loc_ == HOST_AND_DEVICE;
-  }
-
-  bool on_device() const override {
-    return loc_ == DEVICE || loc_ == HOST_AND_DEVICE;
-  }
-
-  const seal::Plaintext &hplain() const {
-    if (on_host()) {
-      return host_plain_;
-    }
-    throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
-  }
-
-  seal::Plaintext &hplain() {
-    if (on_host()) {
-      return host_plain_;
-    }
-    throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
-  }
-
-  operator const seal::Plaintext &() const { return hplain(); }
-
-  operator seal::Plaintext &() { return hplain(); }
-
-  void to_device(const UnifiedContext &context);
+            UnifiedPlaintext(seal::Plaintext &&hplain);
 
 #ifdef USE_HE_GPU
-  const PhantomPlaintext &dplain() const {
-    if (on_device()) {
-      return device_plain_;
-    }
-    throw std::runtime_error("UnifiedPlaintext: NOT in DEVICE");
-  }
+            UnifiedPlaintext(const PhantomPlaintext &dplain);
 
-  PhantomPlaintext &dplain() {
-    if (on_device()) {
-      return device_plain_;
-    }
-    throw std::runtime_error("UnifiedPlaintext: NOT in DEVICE");
-  }
-
-  operator const PhantomPlaintext &() const { return dplain(); }
-
-  operator PhantomPlaintext &() { return dplain(); }
-
-  static void to_device(const seal::SEALContext &hcontext,
-                        const seal::Plaintext &hplain,
-                        const PhantomContext &dcontext,
-                        PhantomPlaintext &dplain);
-
+            UnifiedPlaintext(PhantomPlaintext &&dplain);
 #endif
 
-  const double &scale() const;
+            ~UnifiedPlaintext() = default;
 
-  double &scale();
+            UnifiedPlaintext(const UnifiedPlaintext &) = default;
 
-private:
-  seal::Plaintext host_plain_;
+            UnifiedPlaintext &operator=(const UnifiedPlaintext &) = default;
+
+            UnifiedPlaintext(UnifiedPlaintext &&) = default;
+
+            UnifiedPlaintext &operator=(UnifiedPlaintext &&) = default;
+
+            bool on_host() const override
+            {
+                return loc_ == HOST || loc_ == HOST_AND_DEVICE;
+            }
+
+            bool on_device() const override
+            {
+                return loc_ == DEVICE || loc_ == HOST_AND_DEVICE;
+            }
+
+            const seal::Plaintext &hplain() const
+            {
+                if (on_host())
+                {
+                    return host_plain_;
+                }
+                throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
+            }
+
+            seal::Plaintext &hplain()
+            {
+                if (on_host())
+                {
+                    return host_plain_;
+                }
+                throw std::runtime_error("UnifiedPlaintext: NOT in HOST");
+            }
+
+            operator const seal::Plaintext &() const
+            {
+                return hplain();
+            }
+
+            operator seal::Plaintext &()
+            {
+                return hplain();
+            }
+
+            void to_device(const UnifiedContext &context);
+
 #ifdef USE_HE_GPU
-  PhantomPlaintext device_plain_;
-#endif
-};
+            const PhantomPlaintext &dplain() const
+            {
+                if (on_device())
+                {
+                    return device_plain_;
+                }
+                throw std::runtime_error("UnifiedPlaintext: NOT in DEVICE");
+            }
 
-} // namespace unified
+            PhantomPlaintext &dplain()
+            {
+                if (on_device())
+                {
+                    return device_plain_;
+                }
+                throw std::runtime_error("UnifiedPlaintext: NOT in DEVICE");
+            }
+
+            operator const PhantomPlaintext &() const
+            {
+                return dplain();
+            }
+
+            operator PhantomPlaintext &()
+            {
+                return dplain();
+            }
+
+            static void to_device(
+                const seal::SEALContext &hcontext, const seal::Plaintext &hplain, const PhantomContext &dcontext,
+                PhantomPlaintext &dplain, bool coeff = false);
+
+#endif
+
+            const double &scale() const;
+
+            double &scale();
+
+        private:
+            seal::Plaintext host_plain_;
+#ifdef USE_HE_GPU
+            PhantomPlaintext device_plain_;
+#endif
+        };
+
+    } // namespace unified
 } // namespace HE

@@ -11,7 +11,7 @@ index 9f003f7..810b48a 100644
  ### JetBrains template
  # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 94adbeb..c87660e 100644
+index 94adbeb..332fd92 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -1,5 +1,7 @@
@@ -22,7 +22,21 @@ index 94adbeb..c87660e 100644
  project(Phantom LANGUAGES CXX CUDA VERSION 2.1 DESCRIPTION "CUDA-Accelerated Homomorphic Encryption Library")
  
  # [option] PHANTOM_USE_CUDA_PTX (default: ON)
-@@ -65,6 +67,11 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
+@@ -9,6 +11,13 @@ if (PHANTOM_USE_CUDA_PTX)
+     add_compile_definitions(PHANTOM_USE_CUDA_PTX)
+ endif ()
+ 
++# [option] FP64_MM_ARITH (default: OFF)
++option(FP64_MM_ARITH "Use FP64 arithmetic for modular multiplication" OFF)
++message(STATUS "Use FP64 arithmetic for modular multiplication: ${FP64_MM_ARITH}")
++if (FP64_MM_ARITH)
++    add_compile_definitions(FP64_MM_ARITH)
++endif ()
++
+ if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+     set(CMAKE_CUDA_ARCHITECTURES native)
+ endif ()
+@@ -65,6 +74,11 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
  endif ()
  
  # config for installation
@@ -35,6 +49,19 @@ index 94adbeb..c87660e 100644
 +        INCLUDES DESTINATION include/phantom)
  install(EXPORT PhantomConfig NAMESPACE phantom:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phantom)
  install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/phantom)
+diff --git a/include/butterfly.cuh b/include/butterfly.cuh
+index fa6cb78..cc9da2b 100644
+--- a/include/butterfly.cuh
++++ b/include/butterfly.cuh
+@@ -11,7 +11,7 @@ namespace phantom::arith {
+                                                  const uint64_t& tw, const uint64_t& tw_shoup,
+                                                  const uint64_t& mod) {
+         // const uint64_t tw_y = multiply_and_reduce_shoup_lazy(y, tw, tw_shoup, mod);
+-        const uint64_t hi = __umul64hi(y, tw_shoup);
++        const uint64_t hi = mul_hi(y, tw_shoup);
+         const uint64_t tw_y = y * tw - hi * mod;
+         // csub_q(x, mod2);
+         const uint64_t mod2 = 2 * mod;
 diff --git a/include/ciphertext.h b/include/ciphertext.h
 index c6716b3..6e4b115 100644
 --- a/include/ciphertext.h
@@ -87,6 +114,66 @@ index c6716b3..6e4b115 100644
      void save_symmetric(std::ostream &stream) const {
          if (is_asymmetric_)
              throw std::runtime_error("Asymmetric ciphertext does not have seed.");
+diff --git a/include/evaluate.cuh b/include/evaluate.cuh
+index 59cec72..f91ad50 100644
+--- a/include/evaluate.cuh
++++ b/include/evaluate.cuh
+@@ -26,6 +26,7 @@ namespace phantom {
+                                const phantom::DRNSTool &rns_tool, const DModulus *modulus_QP,
+                                size_t reduction_threshold, const cudaStream_t &stream);
+ 
++    template <bool batch = false>
+     void keyswitch_inplace(const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
+                            const PhantomRelinKey &relin_keys,
+                            bool is_relin, // false
+@@ -100,6 +101,16 @@ namespace phantom {
+         return destination;
+     }
+ 
++    void
++    multiply_plain_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted, const PhantomPlaintext &plain);
++
++    inline auto multiply_plain_ntt(const PhantomContext &context, const PhantomCiphertext &encrypted,
++                                   const PhantomPlaintext &plain) {
++        PhantomCiphertext destination = encrypted;
++        multiply_plain_ntt_inplace(context, destination, plain);
++        return destination;
++    }
++
+     // encrypted1 *= encrypted2
+     void
+     multiply_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1, const PhantomCiphertext &encrypted2);
+@@ -232,6 +243,30 @@ namespace phantom {
+         return destination;
+     }
+ 
++    void transform_to_ntt_inplace(const PhantomContext &context, PhantomPlaintext &plain, size_t chain_index);
++
++    inline auto transform_to_ntt(const PhantomContext &context, const PhantomPlaintext &plain, size_t chain_index) {
++        PhantomPlaintext destination = plain;
++        transform_to_ntt_inplace(context, destination, chain_index);
++        return destination;
++    }
++
++    void transform_to_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted);
++
++    inline auto transform_to_ntt(const PhantomContext &context, const PhantomCiphertext &encrypted) {
++        PhantomCiphertext destination = encrypted;
++        transform_to_ntt_inplace(context, destination);
++        return destination;
++    }
++
++    void transform_from_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted);
++
++    inline auto transform_from_ntt(const PhantomContext &context, const PhantomCiphertext &encrypted) {
++        PhantomCiphertext destination = encrypted;
++        transform_from_ntt_inplace(context, destination);
++        return destination;
++    }
++
+ /*************************************************** Advanced APIs ****************************************************/
+ 
+     void hoisting_inplace(const PhantomContext &context, PhantomCiphertext &ct, const PhantomGaloisKey &glk,
 diff --git a/include/galois.cuh b/include/galois.cuh
 index 89c0be8..c55d6b1 100644
 --- a/include/galois.cuh
@@ -152,8 +239,64 @@ index 89c0be8..c55d6b1 100644
          [[nodiscard]] inline std::vector<std::uint32_t> get_elts_from_steps(const std::vector<int> &steps) const {
              std::vector<std::uint32_t> elts;
              for (auto step: steps)
+diff --git a/include/host/modulus.h b/include/host/modulus.h
+index 05f3035..3755faf 100644
+--- a/include/host/modulus.h
++++ b/include/host/modulus.h
+@@ -19,6 +19,8 @@ namespace phantom::arith {
+ 
+         std::array<uint64_t, 3> const_ratio_{0, 0, 0};
+ 
++        std::array<uint64_t, 2> const_ratio_fp64_{0, 0};
++
+         std::size_t uint64_count_ = 0;
+ 
+         int bit_count_ = 0;
+@@ -83,6 +85,10 @@ namespace phantom::arith {
+             return const_ratio_;
+         }
+ 
++        [[nodiscard]] inline auto &const_ratio_fp64() const noexcept {
++            return const_ratio_fp64_;
++        }
++
+         // Returns whether the value of the current Modulus is zero.
+         [[nodiscard]] inline bool is_zero() const noexcept {
+             return value_ == 0;
+diff --git a/include/host/uintarithsmallmod.h b/include/host/uintarithsmallmod.h
+index 729e3ef..fb3e7ca 100644
+--- a/include/host/uintarithsmallmod.h
++++ b/include/host/uintarithsmallmod.h
+@@ -119,7 +119,11 @@ namespace phantom::arith {
+     inline uint64_t compute_shoup(const uint64_t operand, const uint64_t modulus) {
+         // Using __uint128_t to avoid overflow during multiplication
+         __uint128_t temp = operand;
++        #ifdef FP64_MM_ARITH
++        temp <<= 52; // multiplying by 2^52
++        #else
+         temp <<= 64; // multiplying by 2^64
++        #endif
+         return temp / modulus;
+     }
+ 
+@@ -130,6 +134,7 @@ namespace phantom::arith {
+     */
+     [[nodiscard]] inline std::uint64_t multiply_uint_mod_shoup(
+             const uint64_t x, const uint64_t y, const uint64_t y_shoup, const Modulus &modulus) {
++        return (x * (__uint128_t)y) % modulus.value();
+         uint64_t tmp1;
+         const std::uint64_t p = modulus.value();
+         multiply_uint64_hw64(x, y_shoup, &tmp1);
+@@ -144,6 +149,7 @@ namespace phantom::arith {
+     */
+     [[nodiscard]] inline std::uint64_t multiply_uint_mod_lazy(
+             const uint64_t x, const uint64_t y, const uint64_t y_shoup, const Modulus &modulus) {
++        return (x * (__uint128_t)y) % modulus.value();
+         uint64_t tmp1;
+         const std::uint64_t p = modulus.value();
+         multiply_uint64_hw64(x, y_shoup, &tmp1);
 diff --git a/include/ntt.cuh b/include/ntt.cuh
-index 03b307e..f5ca0a5 100644
+index 03b307e..4050c7f 100644
 --- a/include/ntt.cuh
 +++ b/include/ntt.cuh
 @@ -1,6 +1,6 @@
@@ -164,6 +307,62 @@ index 03b307e..f5ca0a5 100644
  #include "cuda_wrapper.cuh"
  
  class DModulus {
+@@ -9,6 +9,7 @@ private:
+ 
+     uint64_t value_ = 0;
+     uint64_t const_ratio_[2] = {0, 0}; // 0 corresponding low, 1 corresponding high
++    uint64_t const_ratio_fp64_[2] = {0, 0}; // 0 corresponding low, 1 corresponding high
+ 
+ public:
+ 
+@@ -17,6 +18,9 @@ public:
+     DModulus(const uint64_t value, const uint64_t ratio0, const uint64_t ratio1) :
+             value_(value), const_ratio_{ratio0, ratio1} {}
+ 
++    DModulus(const uint64_t value, const uint64_t ratio0, const uint64_t ratio1, const uint64_t ratio0_fp64, const uint64_t ratio1_fp64) :
++            value_(value), const_ratio_{ratio0, ratio1}, const_ratio_fp64_{ratio0_fp64, ratio1_fp64} {}
++
+     void set(const uint64_t value, const uint64_t const_ratio0, const uint64_t const_ratio1) {
+         cudaMemcpyAsync(&value_, &value, sizeof(uint64_t), cudaMemcpyHostToDevice);
+         cudaMemcpyAsync(&(const_ratio_[0]), &const_ratio0, sizeof(uint64_t), cudaMemcpyHostToDevice);
+@@ -29,6 +33,8 @@ public:
+     __device__ __host__ inline uint64_t value() const { return value_; }
+ 
+     __device__ __host__ inline auto &const_ratio() const { return const_ratio_; }
++
++    __device__ __host__ inline auto &const_ratio_fp64() const { return const_ratio_fp64_; }
+ };
+ 
+ class DNTTTable {
+@@ -173,6 +179,9 @@ void inwt_1d_opt(uint64_t *inout, const uint64_t *itwiddles, const uint64_t *itw
+ void nwt_2d_radix8_forward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
+                                    size_t start_modulus_idx, const cudaStream_t &stream);
+ 
++void nwt_2d_radix8_forward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
++                                   size_t start_modulus_idx, size_t batch_num, const cudaStream_t &stream);
++
+ void nwt_2d_radix8_forward_inplace_fuse_moddown(uint64_t *ct, const uint64_t *cx, const uint64_t *bigPInv_mod_q,
+                                                 const uint64_t *bigPInv_mod_q_shoup, uint64_t *delta,
+                                                 const DNTTTable &ntt_tables, size_t coeff_modulus_size,
+@@ -203,6 +212,9 @@ void nwt_2d_radix8_forward_modup_fuse(uint64_t *out, const uint64_t *in, size_t
+ void nwt_2d_radix8_backward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
+                                     size_t start_modulus_idx, const cudaStream_t &stream);
+ 
++void nwt_2d_radix8_backward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
++                                    size_t start_modulus_idx, size_t batch_num, const cudaStream_t &stream);
++
+ void nwt_2d_radix8_backward(uint64_t *out, const uint64_t *in, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
+                             size_t start_modulus_idx, const cudaStream_t &stream);
+ 
+@@ -217,7 +229,7 @@ void nwt_2d_radix8_backward_inplace_scale(uint64_t *inout, const DNTTTable &ntt_
+ void nwt_2d_radix8_backward_inplace_include_special_mod(uint64_t *inout, const DNTTTable &ntt_tables,
+                                                         size_t coeff_modulus_size, size_t start_modulus_idx,
+                                                         size_t size_QP, size_t size_P,
+-                                                        const cudaStream_t &stream);
++                                                        const cudaStream_t &stream, size_t batch_num = 1);
+ 
+ void nwt_2d_radix8_backward_inplace_include_temp_mod_scale(uint64_t *inout, const DNTTTable &ntt_tables,
+                                                            size_t coeff_modulus_size, size_t start_modulus_idx,
 diff --git a/include/plaintext.h b/include/plaintext.h
 index 66df8d8..392cf82 100644
 --- a/include/plaintext.h
@@ -222,7 +421,7 @@ index 66df8d8..392cf82 100644
 +    }
  };
 diff --git a/include/polymath.cuh b/include/polymath.cuh
-index b385d8a..a16d679 100644
+index b385d8a..a19359c 100644
 --- a/include/polymath.cuh
 +++ b/include/polymath.cuh
 @@ -1,6 +1,5 @@
@@ -232,8 +431,22 @@ index b385d8a..a16d679 100644
  #include "ntt.cuh"
  
  __global__ void negate_rns_poly(const uint64_t* operand,
+@@ -80,6 +79,13 @@ __global__ void multiply_rns_poly(const uint64_t* operand1,
+                                   uint64_t poly_degree,
+                                   uint64_t coeff_mod_size);
+ 
++__global__ void multiply_rns_poly_ct_pt(const uint64_t* operand1,
++                                        const uint64_t* operand2,
++                                        const DModulus* modulus,
++                                        uint64_t* result,
++                                        uint64_t poly_degree,
++                                        uint64_t coeff_mod_size);
++
+ /**  result = (operand1 * scalar) % modulus
+  * @param[in] operand1 Operand1
+  * @param[in] operand2 Operand2
 diff --git a/include/rns.cuh b/include/rns.cuh
-index 7958567..8eba584 100644
+index 7958567..5be21cd 100644
 --- a/include/rns.cuh
 +++ b/include/rns.cuh
 @@ -2,7 +2,7 @@
@@ -245,6 +458,25 @@ index 7958567..8eba584 100644
  #include "cuda_wrapper.cuh"
  
  #include "host/encryptionparams.h"
+@@ -162,6 +162,9 @@ namespace phantom {
+         void moddown_from_NTT(uint64_t *ct_i, uint64_t *cx_i, const DNTTTable &ntt_tables,
+                               const scheme_type &scheme, const cudaStream_t &stream) const;
+ 
++        void moddown_from_NTT_batch(uint64_t *ct_i, uint64_t *cx_i, const DNTTTable &ntt_tables,
++                                    size_t batch_num, const scheme_type &scheme, const cudaStream_t &stream) const;
++
+         void behz_decrypt_scale_and_round(uint64_t *src, uint64_t *temp, const DNTTTable &rns_table,
+                                           uint64_t temp_mod_size, uint64_t poly_modulus_degree, uint64_t *dst,
+                                           const cudaStream_t &stream) const;
+@@ -177,6 +180,8 @@ namespace phantom {
+ 
+         void ExpandCRTBasis_Ql_Q(uint64_t *dst, const uint64_t *src, const cudaStream_t &stream) const;
+ 
++        void ExpandCRTBasis_Ql_Q_batch(uint64_t *dst, const uint64_t *src, size_t batch_num, const cudaStream_t &stream) const;
++
+         void ExpandCRTBasis_Ql_Q_add_to_ct(uint64_t *dst, const uint64_t *src, const cudaStream_t &stream) const;
+ 
+         void divide_and_round_q_last(const uint64_t *src, size_t cipher_size, uint64_t *dst,
 diff --git a/include/rns_base.cuh b/include/rns_base.cuh
 index 5f2e635..a3be304 100644
 --- a/include/rns_base.cuh
@@ -258,7 +490,7 @@ index 5f2e635..a3be304 100644
  
  #include "host/rns.h"
 diff --git a/include/rns_bconv.cuh b/include/rns_bconv.cuh
-index 9ee9230..3aac421 100644
+index 9ee9230..bae62bb 100644
 --- a/include/rns_bconv.cuh
 +++ b/include/rns_bconv.cuh
 @@ -1,90 +1,5 @@
@@ -353,6 +585,35 @@ index 9ee9230..3aac421 100644
  
  __global__ void bconv_mult_kernel(uint64_t *dst, const uint64_t *src, const uint64_t *scale,
                                    const uint64_t *scale_shoup, const DModulus *base, uint64_t base_size, uint64_t n);
+@@ -134,11 +49,20 @@ __forceinline__ __device__ auto base_convert_acc_unroll2(const uint64_t *ptr, co
+ 
+         uint64_t op1_x, op1_y;
+         phantom::arith::ld_two_uint64(op1_x, op1_y, ptr + i * degree + degree_idx);
+-        out.x = phantom::arith::multiply_uint64_uint64(op1_x, op2);
++        out.x = phantom::arith::multiply_uint64_uint64_fp64(op1_x, op2);
+         add_uint128_uint128(out.x, accum.x, accum.x);
+-        out.y = phantom::arith::multiply_uint64_uint64(op1_y, op2);
++        out.y = phantom::arith::multiply_uint64_uint64_fp64(op1_y, op2);
+         add_uint128_uint128(out.y, accum.y, accum.y);
+     }
++    #ifdef FP64_MM_ARITH
++    // For barrett_reduce_uint128_uint64_fp64
++    accum.x = adjust_accum_int64_to_fp64(accum.x);
++    accum.y = adjust_accum_int64_to_fp64(accum.y);
++
++    // For barrett_reduce_uint128_uint64
++    // accum.x = adjust_accum_fp64_to_int64(accum.x);
++    // accum.y = adjust_accum_fp64_to_int64(accum.y);
++    #endif
+     return accum;
+ }
+ 
+@@ -215,3 +139,5 @@ __forceinline__ __device__ auto base_convert_acc_frac_unroll4(const uint64_t *pt
+ }
+ 
+ __global__ void add_to_ct_kernel(uint64_t *ct, const uint64_t *cx, const DModulus *modulus, size_t n, size_t size_Ql);
++
++__global__ void add_to_ct_kernel_batch(uint64_t *ct, const uint64_t *cx, const DModulus *modulus, size_t n, size_t dst_size_limb, size_t src_size_limb);
 diff --git a/include/rns_bconv_t.h b/include/rns_bconv_t.h
 new file mode 100644
 index 0000000..e3f6ea5
@@ -505,10 +766,10 @@ index b1f540b..7217f21 100644
  
  /** PhantomSecretKey contains the secret key in RNS and NTT form
 diff --git a/include/uintmath.cuh b/include/uintmath.cuh
-index 93f6ba4..b996b03 100644
+index 93f6ba4..0d9440c 100644
 --- a/include/uintmath.cuh
 +++ b/include/uintmath.cuh
-@@ -1,40 +1,10 @@
+@@ -1,39 +1,122 @@
  #pragma once
  
 -#include <cuComplex.h>
@@ -547,10 +808,135 @@ index 93f6ba4..b996b03 100644
 -        double z;
 -        double w;
 -    };
--
++    #ifdef FP64_MM_ARITH
++    #define MASK      0x000FFFFFFFFFFFFFull
++    #define FORE_MASK 0xFFF0000000000000ull
++
++    static __device__ __forceinline__ uint64_t full(double d) {
++        uint64_t x;
++        asm volatile("mov.b64 %0,%1;" : "=l"(x) : "d"(d));
++        return x;
++    }
++
++    static __device__ __forceinline__ double make_double(uint32_t hi, uint32_t lo) {
++        double d;
++
++        asm volatile("mov.b64 %0,{%1,%2};" : "=d"(d) : "r"(lo), "r"(hi));
++        return d;
++    }
++
++    __forceinline__ __device__ uint128_t adjust_accum_fp64_to_int64(uint128_t &accum) {        
++        uint64_t new_lo, new_hi;
++        
++        asm volatile("{\n\t"
++            "and.b64 %0, %2, 0xFFF;\n\t"      // 1. Extract lower 12 bits of hi (bits 0-11)
++            "shr.u64 %1, %2, 12;\n\t"         // 2. Right shift hi by 12 bits
++            "shl.b64 %0, %0, 52;\n\t"         // 3. Shift extracted bits left by 52 (to upper 12 bits of lo)
++            "add.cc.u64 %0, %0, %3;\n\t"      // 4. Add shifted bits to lower 52 bits of lo
++            "addc.u64 %1, %1, 0;\n\t"         // 5. Add carry to hi
++            "}"
++            // Output operands:
++            : "=l"(new_lo),    // %0: New lower 64 bits
++            "=l"(new_hi)      // %1: New upper 64 bits
++            // Input operands:
++            : "l"(accum.hi),   // %2: Original hi value
++            "l"(accum.lo)     // %3: Original lo value
++        );
++        
++        return {new_hi, new_lo};
++    }
++
++    __forceinline__ __device__ uint128_t adjust_accum_int64_to_fp64(uint128_t &accum) {
++        uint64_t new_lo, new_hi;
++        
++        asm volatile("{\n\t"
++            "shr.u64 %0, %3, 52;\n\t"         // 1. Extract upper 12 bits of lo (bits 52-63)
++            "and.b64 %1, %3, 0xFFFFFFFFFFFFF;\n\t" // 2. Clear upper 12 bits of lo
++            "add.u64 %0, %0, %2;\n\t"      // 4. Add extracted bits to lower 12 bits of hi
++            "}"
++            // Output operands:
++            : "=l"(new_hi),    // %0: New upper 64 bits (with added bits)
++            "=l"(new_lo)      // %1: New lower 64 bits (cleared upper 12 bits)
++            // Input operands:
++            : "l"(accum.hi),   // %2: Original hi value
++            "l"(accum.lo)     // %3: Original lo value
++        );
++        
++        return {new_hi, new_lo};
++    }
++
++    __inline__ __device__ uint64_t mul_lo_FP64(uint64_t a, uint64_t b) {
++        double d, c1, c2;
++        uint64_t tmp;
++        c1 = make_double(0x46700000, 0);  // 2^104（105比特）
++        c2 = make_double(0x46700000, 1);  // 2^104（105比特）+2^52（53比特）
++        d = __fma_rz((double)b, (double)a, c1);
++        d = c2 - d;
++        d = __fma_rz((double)b, (double)a, d);
++        tmp = full(d);
++        return tmp & MASK;
++    }
++    #endif
++
++    __inline__ __device__ void mul_lo_hi(uint64_t a, uint64_t b, uint64_t &r_lo,
++                                         uint64_t &r_hi) {
++    #ifdef FP64_MM_ARITH
++        double d, c1, c2;
++        uint64_t tmp;
++        c1 = make_double(0x46700000, 0);  // 2^104（105比特）
++        c2 = make_double(0x46700000, 1);  // 2^104（105比特）+2^52（53比特）
++        d = __fma_rz((double)b, (double)a, c1);
++        tmp = full(d);
++        r_hi = tmp & MASK;
++        d = c2 - d;
++        d = __fma_rz((double)b, (double)a, d);
++        tmp = full(d);
++        r_lo = tmp & MASK;
++    #else
++        r_hi = __umul64hi(a, b);
++        r_lo = a * b;
++    #endif
++    }
++
++    __inline__ __device__ uint64_t mul_lo(uint64_t a, uint64_t b) {
++    #ifdef FP64_MM_ARITH
++        return a * b;
++        // Slow
++        // return mul_lo_FP64(a, b, r_lo);
++    #else
++        return a * b;
++    #endif
++    }
++
++    __inline__ __device__ uint64_t mul_hi(uint64_t a, uint64_t b) {
++    #ifdef FP64_MM_ARITH
++        double d, c1;
++        uint64_t tmp;
++        c1 = make_double(0x46700000, 0);  // 2^104（105比特）
++        d = __fma_rz((double)b, (double)a, c1);
++        tmp = full(d);
++        return tmp & MASK;
++    #else
++        return __umul64hi(a, b);
++    #endif
++    }
+ 
      __forceinline__ __device__ void ld_two_uint64(uint64_t& x, uint64_t& y, const uint64_t* ptr) {
  #ifdef PHANTOM_USE_CUDA_PTX
-         asm("ld.global.v2.u64 {%0,%1}, [%2];" : "=l"(x), "=l"(y) : "l"(ptr));
+@@ -373,6 +456,13 @@ namespace phantom::arith {
+         return result_;
+     }
+ 
++    __forceinline__ __device__ uint128_t multiply_uint64_uint64_fp64(const uint64_t& operand1,
++                                                                     const uint64_t& operand2) {
++        uint128_t result_;
++        mul_lo_hi(operand1, operand2, result_.lo, result_.hi);
++        return result_;
++    }
++
+     /** multiply a long integer with an unsigned 64-bit integer.
+      * @param[in] operand1 The operand 1
+      * @param[in] uint64_count size of operand1
 diff --git a/include/uintmath_t.h b/include/uintmath_t.h
 new file mode 100644
 index 0000000..58c1574
@@ -594,6 +980,112 @@ index 0000000..58c1574
 +};
 +} // namespace phantom::arith
 \ No newline at end of file
+diff --git a/include/uintmodmath.cuh b/include/uintmodmath.cuh
+index f418ad5..5e8e9c4 100644
+--- a/include/uintmodmath.cuh
++++ b/include/uintmodmath.cuh
+@@ -135,6 +135,42 @@ namespace phantom::arith {
+         return result;
+     }
+ 
++    __forceinline__ __device__
++        uint64_t barrett_reduce_uint128_uint64_fp64(const uint128_t& product,
++                                                    const uint64_t& modulus,
++                                                    const uint64_t* barrett_mu) {
++        uint64_t result;
++
++#ifdef FP64_MM_ARITH
++        // 1. 从输入中提取 52-bit limbs
++        uint64_t p0 = product.lo;
++        uint64_t p1 = product.hi;
++        uint64_t m0 = barrett_mu[0];
++        uint64_t m1 = barrett_mu[1];
++
++        // 2. 计算 q_hat = floor((product * mu) / 2^104)
++        uint64_t p0m0_hi, p1m0_lo, p1m0_hi, p0m1_lo, p0m1_hi, p1m1_lo;
++        uint128_t q_hat;
++
++        p0m0_hi = mul_hi(p0, m0);
++        mul_lo_hi(p1, m0, p1m0_lo, p1m0_hi);
++        mul_lo_hi(p0, m1, p0m1_lo, p0m1_hi);
++        p1m1_lo = mul_lo(p1, m1);
++
++        q_hat.lo = ((p0m0_hi + p1m0_lo + p0m1_lo) >> 52) + p1m0_hi + p0m1_hi + p1m1_lo;
++        
++        // 3. 计算 r = product - q_hat * modulus
++        result = p0 - q_hat.lo * modulus;
++        result &= MASK;
++
++        // 4. 最终修正
++        csub_q(result, modulus);
++#else
++        result = barrett_reduce_uint128_uint64(product, modulus, barrett_mu);
++#endif
++        return result;
++    }
++
+     /** Barrett reduction for arbitrary 64-bit unsigned integer
+      * @param[in] operand The operand.
+      * @param[in] modulus The modulus.
+@@ -150,6 +186,16 @@ namespace phantom::arith {
+         return result_;
+     }
+ 
++    __forceinline__ __device__ 
++        uint64_t barrett_reduce_uint64_uint64_fp64(const uint64_t& operand,
++                                                   const uint64_t& modulus,
++                                                   const uint64_t& barrett_mu_hi) {
++        uint64_t s = mul_hi(barrett_mu_hi, operand);
++        uint64_t result_ = operand - s * modulus;
++        csub_q(result_, modulus);
++        return result_;
++    }
++
+     /** uint64 modular multiplication, result = operand1 * operand2 % mod
+      * @param[in] operand1 The first operand (64 bits).
+      * @param[in] operand2 The second operand (64 bits).
+@@ -197,6 +243,19 @@ namespace phantom::arith {
+ #endif
+     }
+ 
++    __forceinline__ __device__
++        uint64_t multiply_and_barrett_reduce_uint64_fp64(const uint64_t& operand1,
++                                                         const uint64_t& operand2,
++                                                         const uint64_t& modulus,
++                                                         const uint64_t* barrett_mu) {
++#ifdef FP64_MM_ARITH
++        const uint128_t product = multiply_uint64_uint64_fp64(operand1, operand2);
++        return barrett_reduce_uint128_uint64_fp64(product, modulus, barrett_mu);
++#else
++        return multiply_and_barrett_reduce_uint64(operand1, operand2, modulus, barrett_mu);
++#endif
++    }
++
+     /** Modular multiplication, result = operand1 * operand2 % mod
+      * @param[in] operand1 The first operand (64 bits).
+      * @param[in] operand2 Second operand (64-bit operand).
+@@ -208,8 +267,8 @@ namespace phantom::arith {
+                                                                            const uint64_t& operand2,
+                                                                            const uint64_t& operand2_shoup,
+                                                                            const uint64_t& modulus) {
+-        const uint64_t hi = __umul64hi(operand1, operand2_shoup);
+-        uint64_t res = operand1 * operand2 - hi * modulus;
++        const uint64_t hi = mul_hi(operand1, operand2_shoup);
++        uint64_t res = mul_lo(operand1, operand2) - mul_lo(hi, modulus);
+         csub_q(res, modulus);
+         return res;
+     }
+@@ -226,8 +285,8 @@ namespace phantom::arith {
+         const uint64_t& operand2,
+         const uint64_t& operand2_shoup,
+         const uint64_t& modulus) {
+-        const uint64_t hi = __umul64hi(operand1, operand2_shoup);
+-        return operand1 * operand2 - hi * modulus;
++        const uint64_t hi = mul_hi(operand1, operand2_shoup);
++        return mul_lo(operand1, operand2) - mul_lo(hi, modulus);
+     }
+ 
+     // calculate (op2 - op1) * op3 mod modulus
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
 index 81c875c..ab103a7 100644
 --- a/src/CMakeLists.txt
@@ -620,8 +1112,46 @@ index d3c18be..089e9b7 100644
  
  using namespace std;
  using namespace phantom;
+diff --git a/src/context.cu b/src/context.cu
+index 5b59d3e..8309ec1 100644
+--- a/src/context.cu
++++ b/src/context.cu
+@@ -172,8 +172,16 @@ PhantomContext::PhantomContext(const phantom::EncryptionParameters &params) {
+     auto &small_ntt_tables = get_context_data(0).small_ntt_tables();
+     gpu_rns_tables().init(poly_degree_, coeff_mod_size_, s);
+     for (size_t i = 0; i < coeff_mod_size_; i++) {
++        #ifdef FP64_MM_ARITH
++        DModulus temp = DModulus(coeff_modulus_cpu[i].value(),
++                                 coeff_modulus_cpu[i].const_ratio()[0],
++                                 coeff_modulus_cpu[i].const_ratio()[1],
++                                 coeff_modulus_cpu[i].const_ratio_fp64()[0],
++                                 coeff_modulus_cpu[i].const_ratio_fp64()[1]);
++        #else
+         DModulus temp = DModulus(coeff_modulus_cpu[i].value(), coeff_modulus_cpu[i].const_ratio()[0],
+                                  coeff_modulus_cpu[i].const_ratio()[1]);
++        #endif
+         gpu_rns_tables().set(&temp, small_ntt_tables->get_ntt_at(i).get_from_root_powers().data(),
+                              small_ntt_tables->get_ntt_at(i).get_from_root_powers_shoup().data(),
+                              small_ntt_tables->get_ntt_at(i).get_from_inv_root_powers().data(),
+@@ -186,8 +194,16 @@ PhantomContext::PhantomContext(const phantom::EncryptionParameters &params) {
+         auto &plain_ntt_tables = get_context_data(0).plain_ntt_tables();
+         auto &plain_modulus_cpu = params.plain_modulus();
+         gpu_plain_tables().init(poly_degree_, 1, s);
++        #ifdef FP64_MM_ARITH
++        const auto temp = DModulus(plain_modulus_cpu.value(),
++                                   plain_modulus_cpu.const_ratio()[0],
++                                   plain_modulus_cpu.const_ratio()[1],
++                                   plain_modulus_cpu.const_ratio_fp64()[0],
++                                   plain_modulus_cpu.const_ratio_fp64()[1]);
++        #else
+         const auto temp = DModulus(plain_modulus_cpu.value(), plain_modulus_cpu.const_ratio()[0],
+                                    plain_modulus_cpu.const_ratio()[1]);
++        #endif
+         gpu_plain_tables().set(&temp, plain_ntt_tables->get_from_root_powers().data(),
+                                plain_ntt_tables->get_from_root_powers_shoup().data(),
+                                plain_ntt_tables->get_from_inv_root_powers().data(),
 diff --git a/src/eval_key_switch.cu b/src/eval_key_switch.cu
-index 9da8b80..d1263fe 100644
+index 9da8b80..6a62d24 100644
 --- a/src/eval_key_switch.cu
 +++ b/src/eval_key_switch.cu
 @@ -1,8 +1,8 @@
@@ -634,8 +1164,156 @@ index 9da8b80..d1263fe 100644
  
  using namespace std;
  using namespace phantom;
+@@ -17,6 +17,7 @@ namespace phantom {
+                                                      size_t size_QlP, size_t size_QlP_n, size_t size_Q, size_t size_Ql,
+                                                      size_t beta, size_t reduction_threshold) {
+         for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < size_QlP_n; tid += blockDim.x * gridDim.x) {
++            size_t cnt = reduction_threshold; // FIX BUG
+             size_t nid = tid / n;
+             size_t twr = (nid >= size_Ql ? size_Q + (nid - size_Ql) : nid);
+             // base_rns = {q0, q1, ..., qj, p}
+@@ -40,31 +41,59 @@ namespace phantom {
+             // decomp_mod_size = number of evks
+ 
+             // evk[0]_a
+-            acc0 = multiply_uint64_uint64(c2[c2_id], evks[0][evk_id]);
++            acc0 = multiply_uint64_uint64_fp64(c2[c2_id], evks[0][evk_id]);
+             // evk[0]_b
+-            acc1 = multiply_uint64_uint64(c2[c2_id], evks[0][evk_id + size_QP_n]);
++            acc1 = multiply_uint64_uint64_fp64(c2[c2_id], evks[0][evk_id + size_QP_n]);
+ 
+             for (uint64_t i = 1; i < beta; i++) {
+-                if (i && reduction_threshold == 0) {
+-                    acc0.lo = barrett_reduce_uint128_uint64(acc0, mod.value(), mod.const_ratio());
++                if (i && cnt == 0 /* FIX BUG */) {
++                    #ifdef FP64_MM_ARITH
++                    acc0 = adjust_accum_int64_to_fp64(acc0);
++                    // acc0 = adjust_accum_fp64_to_int64(acc0);
++                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
+                     acc0.hi = 0;
+ 
+-                    acc1.lo = barrett_reduce_uint128_uint64(acc1, mod.value(), mod.const_ratio());
++                    acc1 = adjust_accum_int64_to_fp64(acc1);
++                    // acc1 = adjust_accum_fp64_to_int64(acc1);
++                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
+                     acc1.hi = 0;
++                    #else
++                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
++                    acc0.hi = 0;
++
++                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
++                    acc1.hi = 0;
++                    #endif
++                    
++                    cnt = reduction_threshold; // FIX BUG
+                 }
+ 
+-                prod0 = multiply_uint64_uint64(c2[c2_id + i * size_QlP_n], evks[i][evk_id]);
++                prod0 = multiply_uint64_uint64_fp64(c2[c2_id + i * size_QlP_n], evks[i][evk_id]);
+                 add_uint128_uint128(acc0, prod0, acc0);
+ 
+-                prod1 = multiply_uint64_uint64(c2[c2_id + i * size_QlP_n], evks[i][evk_id + size_QP_n]);
++                prod1 = multiply_uint64_uint64_fp64(c2[c2_id + i * size_QlP_n], evks[i][evk_id + size_QP_n]);
+                 add_uint128_uint128(acc1, prod1, acc1);
++
++                cnt --; // FIX BUG: reduction_threshold should be reduced by 1
+             }
+ 
+-            uint64_t res0 = barrett_reduce_uint128_uint64(acc0, mod.value(), mod.const_ratio());
++            #ifdef FP64_MM_ARITH
++            acc0 = adjust_accum_int64_to_fp64(acc0);
++            // acc0 = adjust_accum_fp64_to_int64(acc0);
++            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
++            dst[tid] = res0;
++
++            acc1 = adjust_accum_int64_to_fp64(acc1);
++            // acc1 = adjust_accum_fp64_to_int64(acc1);
++            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
++            dst[tid + size_QlP_n] = res1;
++            #else
++            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
+             dst[tid] = res0;
+ 
+-            uint64_t res1 = barrett_reduce_uint128_uint64(acc1, mod.value(), mod.const_ratio());
++            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
+             dst[tid + size_QlP_n] = res1;
++            #endif
+         }
+     }
+ 
+@@ -92,6 +121,7 @@ namespace phantom {
+     }
+ 
+ // cks refers to cipher to be key-switched
++    template <bool batch>
+     void keyswitch_inplace(const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
+                            const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream) {
+         const auto &s = stream;
+@@ -159,25 +189,48 @@ namespace phantom {
+                               reduction_threshold, s);
+ 
+         // mod down
+-        for (size_t i = 0; i < 2; i++) {
+-            auto cx_i = cx.get() + i * size_QlP_n;
+-            rns_tool.moddown_from_NTT(cx_i, cx_i, context.gpu_rns_tables(), scheme, s);
++        if constexpr (batch) {
++            rns_tool.moddown_from_NTT_batch(cx.get(), cx.get(), context.gpu_rns_tables(), 2, scheme, s);
++        } else {
++            for (size_t i = 0; i < 2; i++) {
++                auto cx_i = cx.get() + i * size_QlP_n;
++                rns_tool.moddown_from_NTT(cx_i, cx_i, context.gpu_rns_tables(), scheme, s);
++            }
+         }
+ 
+-        for (size_t i = 0; i < 2; i++) {
+-            auto cx_i = cx.get() + i * size_QlP_n;
+-
++        if constexpr (batch) {
+             if (mul_tech == mul_tech_type::hps_overq_leveled && levelsDropped) {
+-                auto ct_i = encrypted.data() + i * size_Q * n;
+-                auto t_cx = make_cuda_auto_ptr<uint64_t>(size_Q * n, s);
+-                rns_tool.ExpandCRTBasis_Ql_Q(t_cx.get(), cx_i, s);
+-                add_to_ct_kernel<<<(size_Q * n) / blockDimGlb.x, blockDimGlb, 0, s>>>(
+-                        ct_i, t_cx.get(), rns_tool.base_Q().base(), n, size_Q);
++                auto t_cx = make_cuda_auto_ptr<uint64_t>(2 * size_Q * n, s);
++                rns_tool.ExpandCRTBasis_Ql_Q_batch(t_cx.get(), cx.get(), 2, s);
++                add_to_ct_kernel_batch<<<dim3((size_Q * n) / blockDimGlb.x, 2), blockDimGlb, 0, s>>>(
++                        encrypted.data(), t_cx.get(), rns_tool.base_Q().base(), n, size_Q, size_Q);
+             } else {
+-                auto ct_i = encrypted.data() + i * size_Ql_n;
+-                add_to_ct_kernel<<<size_Ql_n / blockDimGlb.x, blockDimGlb, 0, s>>>(
+-                        ct_i, cx_i, rns_tool.base_Ql().base(), n, size_Ql);
++                add_to_ct_kernel_batch<<<dim3(size_Ql_n / blockDimGlb.x, 2), blockDimGlb, 0, s>>>(
++                        encrypted.data(), cx.get(), rns_tool.base_Ql().base(), n, size_Ql, size_QlP);
++            }
++        } else {
++            for (size_t i = 0; i < 2; i++) {
++                auto cx_i = cx.get() + i * size_QlP_n;
++
++                if (mul_tech == mul_tech_type::hps_overq_leveled && levelsDropped) {
++                    auto ct_i = encrypted.data() + i * size_Q * n;
++                    auto t_cx = make_cuda_auto_ptr<uint64_t>(size_Q * n, s);
++                    rns_tool.ExpandCRTBasis_Ql_Q(t_cx.get(), cx_i, s);
++                    add_to_ct_kernel<<<(size_Q * n) / blockDimGlb.x, blockDimGlb, 0, s>>>(
++                            ct_i, t_cx.get(), rns_tool.base_Q().base(), n, size_Q);
++                } else {
++                    auto ct_i = encrypted.data() + i * size_Ql_n;
++                    add_to_ct_kernel<<<size_Ql_n / blockDimGlb.x, blockDimGlb, 0, s>>>(
++                            ct_i, cx_i, rns_tool.base_Ql().base(), n, size_Ql);
++                }
+             }
+         }
+     }
++
++    template void keyswitch_inplace<false>(
++        const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
++        const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
++    template void keyswitch_inplace<true>(
++        const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
++        const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
+ }
 diff --git a/src/evaluate.cu b/src/evaluate.cu
-index 48616c2..66fcf37 100644
+index 48616c2..7369d85 100644
 --- a/src/evaluate.cu
 +++ b/src/evaluate.cu
 @@ -9,6 +9,33 @@ using namespace phantom;
@@ -683,6 +1361,173 @@ index 48616c2..66fcf37 100644
          if (encrypted1.size() != encrypted2.size())
              throw std::invalid_argument("poly number mismatch");
  
+@@ -1294,6 +1321,79 @@ Returns (f, e1, e2) such that
+         encrypted.set_scale(new_scale);
+     }
+ 
++    static void multiply_plain_normal_batch(
++        const PhantomContext &context, PhantomCiphertext &encrypted,
++        const PhantomPlaintext &plain, const cudaStream_t &stream) {
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(encrypted.chain_index());
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        auto poly_degree = parms.poly_modulus_degree();
++        auto rns_coeff_count = poly_degree * coeff_mod_size;
++        auto base_rns = context.gpu_rns_tables().modulus();
++        auto encrypted_size = encrypted.size();
++
++        auto plain_upper_half_threshold = context_data.plain_upper_half_threshold();
++        auto plain_upper_half_increment = context.plain_upper_half_increment();
++
++        double new_scale = encrypted.scale() * plain.scale();
++
++        dim3 gridDimCtxt(rns_coeff_count / blockDimGlb.x, encrypted_size);
++        // Generic case: any plaintext polynomial
++        // Allocate temporary space for an entire RNS polynomial
++        auto temp = make_cuda_auto_ptr<uint64_t>(rns_coeff_count, stream);
++
++        // if (context_data.qualifiers().using_fast_plain_lift) {
++        // if t is smaller than every qi
++        abs_plain_rns_poly<<<rns_coeff_count / blockDimGlb.x, blockDimGlb, 0, stream>>>(
++                plain.data(), plain_upper_half_threshold, plain_upper_half_increment, temp.get(), poly_degree,
++                coeff_mod_size);
++
++        nwt_2d_radix8_forward_inplace(temp.get(), context.gpu_rns_tables(), coeff_mod_size, 0, stream);
++
++        // (c0 * pt, c1 * pt)
++        uint64_t *ci = encrypted.data();
++        // NTT
++        nwt_2d_radix8_forward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, encrypted_size, stream);
++        // Pointwise multiplication
++        multiply_rns_poly_ct_pt<<<gridDimCtxt, blockDimGlb, 0, stream>>>(
++                ci, temp.get(), base_rns, ci, poly_degree, coeff_mod_size);
++        // inverse NTT
++        nwt_2d_radix8_backward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, encrypted_size, stream);
++
++        encrypted.set_scale(new_scale);
++    }
++
++    void multiply_plain_ntt_inplace(
++        const PhantomContext &context, PhantomCiphertext &encrypted,
++        const PhantomPlaintext &plain) {
++        const auto &s = cudaStreamPerThread;
++
++        if (encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
++            throw std::invalid_argument("encrypted and plain parameter mismatch");
++        }
++
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(encrypted.chain_index());
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        auto poly_degree = parms.poly_modulus_degree();
++        auto base_rns = context.gpu_rns_tables().modulus();
++        auto rns_coeff_count = poly_degree * coeff_mod_size;
++
++        double new_scale = encrypted.scale() * plain.scale();
++
++        //(c0 * pt, c1 * pt)
++        dim3 gridDimCtxt(rns_coeff_count / blockDimGlb.x, encrypted.size());
++        // Pointwise multiplication
++        multiply_rns_poly_ct_pt<<<gridDimCtxt, blockDimGlb, 0, s>>>(
++                encrypted.data(), plain.data(), base_rns, encrypted.data(), poly_degree, coeff_mod_size);
++
++        encrypted.set_scale(new_scale);
++    }
++
+     void multiply_plain_inplace(const PhantomContext &context, PhantomCiphertext &encrypted,
+                                 const PhantomPlaintext &plain) {
+         const auto &s = cudaStreamPerThread;
+@@ -1304,7 +1404,8 @@ Returns (f, e1, e2) such that
+         auto scheme = parms.scheme();
+ 
+         if (scheme == scheme_type::bfv) {
+-            multiply_plain_normal(context, encrypted, plain, s);
++            // multiply_plain_normal(context, encrypted, plain, s);
++            multiply_plain_normal_batch(context, encrypted, plain, s);
+         } else if (scheme == scheme_type::ckks) {
+             multiply_plain_ntt(context, encrypted, plain, s);
+         } else if (scheme == scheme_type::bgv) {
+@@ -1626,7 +1727,11 @@ Returns (f, e1, e2) such that
+         // END: Apply Galois for each ciphertext
+         // REORDERING IS SAFE NOW
+         // Calculate (temp * galois_key[0], temp * galois_key[1]) + (c0, 0)
+-        keyswitch_inplace(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
++        if (parms.scheme() == scheme_type::bfv) {
++            keyswitch_inplace<true>(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
++        } else {
++            keyswitch_inplace<false>(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
++        }
+     }
+ 
+ // TODO: remove recursive chain
+@@ -1863,4 +1968,63 @@ Returns (f, e1, e2) such that
+                             cudaMemcpyDeviceToDevice, s);
+         }
+     }
++
++    void transform_to_ntt_inplace(const PhantomContext &context, PhantomPlaintext &plain, size_t chain_index) {
++        const auto &s = cudaStreamPerThread;
++
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(chain_index);
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        auto poly_degree = parms.poly_modulus_degree();
++        auto rns_coeff_count = poly_degree * coeff_mod_size;
++        auto base_rns = context.gpu_rns_tables().modulus();
++
++        auto plain_upper_half_threshold = context_data.plain_upper_half_threshold();
++        auto plain_upper_half_increment = context.plain_upper_half_increment();
++
++        uint64_t gridDimGlb = rns_coeff_count / blockDimGlb.x;
++        // Generic case: any plaintext polynomial
++        // Allocate temporary space for an entire RNS polynomial
++
++        auto plain_copy = plain;
++        plain.resize(coeff_mod_size, poly_degree, s);
++
++        // if (context_data.qualifiers().using_fast_plain_lift) {
++        // if t is smaller than every qi
++        abs_plain_rns_poly<<<gridDimGlb, blockDimGlb, 0, s>>>(
++                plain_copy.data(), plain_upper_half_threshold, plain_upper_half_increment, plain.data(), poly_degree,
++                coeff_mod_size);
++
++        nwt_2d_radix8_forward_inplace(plain.data(), context.gpu_rns_tables(), coeff_mod_size, 0, s);
++    }
++
++    void transform_to_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted) {
++        const auto &s = cudaStreamPerThread;
++
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(encrypted.chain_index());
++        auto &parms = context_data.parms();
++
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        nwt_2d_radix8_forward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++
++        encrypted.set_ntt_form(true);
++    }
++
++    void transform_from_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted) {
++        const auto &s = cudaStreamPerThread;
++
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(encrypted.chain_index());
++        auto &parms = context_data.parms();
++
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        nwt_2d_radix8_backward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++
++        encrypted.set_ntt_form(false);
++    }
+ }
 diff --git a/src/fft.cu b/src/fft.cu
 index 2609cc4..9440e78 100644
 --- a/src/fft.cu
@@ -705,8 +1550,271 @@ index 92346e1..abb5c51 100644
  
  #include "host/numth.h"
  
+diff --git a/src/host/modulus.cu b/src/host/modulus.cu
+index 5dfe64a..7cf3a20 100644
+--- a/src/host/modulus.cu
++++ b/src/host/modulus.cu
+@@ -19,6 +19,9 @@ namespace phantom::arith {
+             uint64_count_ = 1;
+             value_ = 0;
+             const_ratio_ = {{0, 0, 0}};
++            #ifdef FP64_MM_ARITH
++            const_ratio_fp64_ = {0, 0};
++            #endif
+             is_prime_ = false;
+         } else if ((value >> MOD_BIT_COUNT_MAX != 0) || (value == 1)) {
+             throw invalid_argument("value can be at most 61-bit and cannot be 1");
+@@ -40,6 +43,23 @@ namespace phantom::arith {
+             // We store also the remainder
+             const_ratio_[2] = numerator[0];
+ 
++            #ifdef FP64_MM_ARITH
++            // Compute Barrett ratios for 52-bit words (barrett_reduce_128)
++            numerator[0] = 0;
++            numerator[1] = 1ull << 40;
++            numerator[2] = 0;
++            quotient[0] = 0;
++            quotient[1] = 0;
++            quotient[2] = 0;
++
++            // quotient = numerator（1<<104）/ value_,
++            // numerator = numerator - quotient * value
++            divide_uint192_inplace(numerator, value_, quotient);
++
++            const_ratio_fp64_[0] = quotient[0] & 0xFFFFFFFFFFFFull;
++            const_ratio_fp64_[1] = (quotient[1] << 12) | (quotient[0] >> 52);
++            #endif
++
+             uint64_count_ = 1;
+ 
+             // Set the primality flag
+diff --git a/src/ntt/fntt_2d.cu b/src/ntt/fntt_2d.cu
+index 8284c8b..2fd0612 100644
+--- a/src/ntt/fntt_2d.cu
++++ b/src/ntt/fntt_2d.cu
+@@ -26,6 +26,7 @@ inplace_fnwt_radix8_phase1(uint64_t *inout,
+     // size of a block
+     uint64_t samples[8];
+     size_t t = n / 2;
++    const size_t batch_offset = coeff_mod_size * n * blockIdx.y;
+ 
+     for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+          tid < n / 8 * coeff_mod_size;
+@@ -36,7 +37,7 @@ inplace_fnwt_radix8_phase1(uint64_t *inout,
+         // index in n/8 range (in each tower)
+         size_t n_idx = tid % (n / 8);
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const uint64_t *psi = twiddles + twr_idx * n;
+         const uint64_t *psi_shoup = twiddles_shoup + twr_idx * n;
+         const DModulus *modulus_table = modulus;
+@@ -115,6 +116,7 @@ inplace_fnwt_radix8_phase2(uint64_t *inout,
+     // size of a block
+     uint64_t samples[8];
+     size_t t = n2 / 2;
++    const size_t batch_offset = coeff_mod_size * n * blockIdx.y;
+ 
+     for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+          tid < (n / 8 * coeff_mod_size);
+@@ -128,7 +130,7 @@ inplace_fnwt_radix8_phase2(uint64_t *inout,
+         size_t m_idx = n_idx / (t / 4);
+         size_t t_idx = n_idx % (t / 4);
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const DModulus *modulus_table = modulus;
+         uint64_t modulus = modulus_table[twr_idx].value();
+         const uint64_t *psi = twiddles + n * twr_idx;
+@@ -652,6 +654,43 @@ void nwt_2d_radix8_forward_inplace(uint64_t *inout,
+             phase2_sample_size);
+ }
+ 
++void nwt_2d_radix8_forward_inplace(uint64_t *inout,
++                                   const DNTTTable &ntt_tables,
++                                   size_t coeff_modulus_size,
++                                   size_t start_modulus_idx,
++                                   size_t batch_num,
++                                   const cudaStream_t &stream) {
++    size_t poly_degree = ntt_tables.n();
++    size_t phase1_sample_size = SAMPLE_SIZE(poly_degree);
++    const size_t phase2_sample_size = poly_degree / phase1_sample_size;
++    const size_t per_block_memory = blockDimNTT.x * per_thread_sample_size * sizeof(uint64_t);
++    dim3 grid(4096, batch_num);
++    inplace_fnwt_radix8_phase1<<<
++    grid, (phase1_sample_size / 8) * per_block_pad,
++    (phase1_sample_size + per_block_pad + 1) * per_block_pad * sizeof(uint64_t), stream>>>(
++            inout,
++            ntt_tables.twiddle(),
++            ntt_tables.twiddle_shoup(),
++            ntt_tables.modulus(),
++            coeff_modulus_size,
++            start_modulus_idx,
++            poly_degree,
++            phase1_sample_size,
++            per_block_pad);
++    // max 512 threads per block
++    inplace_fnwt_radix8_phase2<<<
++    grid, blockDimNTT, per_block_memory, stream>>>(
++            inout,
++            ntt_tables.twiddle(),
++            ntt_tables.twiddle_shoup(),
++            ntt_tables.modulus(),
++            coeff_modulus_size,
++            start_modulus_idx,
++            poly_degree,
++            phase1_sample_size,
++            phase2_sample_size);
++}
++
+ void nwt_2d_radix8_forward_inplace_include_temp_mod(uint64_t *inout,
+                                                     const DNTTTable &ntt_tables,
+                                                     size_t coeff_modulus_size,
+diff --git a/src/ntt/intt_2d.cu b/src/ntt/intt_2d.cu
+index 5302d8d..b067bc8 100644
+--- a/src/ntt/intt_2d.cu
++++ b/src/ntt/intt_2d.cu
+@@ -17,6 +17,7 @@ inplace_inwt_radix8_phase1(uint64_t *inout,
+                            const size_t n1,
+                            const size_t n2) {
+     extern __shared__ uint64_t buffer[];
++    const size_t batch_offset = coeff_mod_size * blockIdx.y * n;
+     for (size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+          i < (n / 8 * coeff_mod_size);
+          i += blockDim.x * gridDim.x) {
+@@ -33,7 +34,7 @@ inplace_inwt_radix8_phase1(uint64_t *inout,
+         size_t m_idx = n_idx / (t / 4);
+         size_t t_idx = n_idx % (t / 4);
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const uint64_t *psi = itwiddles + n * twr_idx;
+         const uint64_t *psi_shoup = itwiddles_shoup + n * twr_idx;
+         const DModulus *modulus_table = modulus;
+@@ -116,6 +117,7 @@ inplace_inwt_radix8_phase2(uint64_t *inout,
+                            const size_t n1,
+                            const size_t pad) {
+     extern __shared__ uint64_t buffer[];
++    const size_t batch_offset = coeff_mod_size * blockIdx.y * n;
+     for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < (n / 8 * coeff_mod_size);
+          i += blockDim.x * gridDim.x) {
+         // pad address
+@@ -132,7 +134,7 @@ inplace_inwt_radix8_phase2(uint64_t *inout,
+         size_t n_idx = i % (n / 8);
+ 
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const uint64_t *psi = itwiddles + n * twr_idx;
+         const uint64_t *psi_shoup = itwiddles_shoup + n * twr_idx;
+         const DModulus *modulus_table = modulus;
+@@ -421,6 +423,7 @@ inplace_inwt_radix8_phase1_include_special_mod(uint64_t *inout,
+                                                size_t n1,
+                                                size_t n2) {
+     extern __shared__ uint64_t buffer[];
++    const size_t batch_offset = coeff_mod_size * n * blockIdx.y;
+     for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < (n / 8 * coeff_mod_size);
+          i += blockDim.x * gridDim.x) {
+         size_t group = n2 / 8;
+@@ -439,7 +442,7 @@ inplace_inwt_radix8_phase1_include_special_mod(uint64_t *inout,
+         size_t m_idx = n_idx / (t / 4);
+         size_t t_idx = n_idx % (t / 4);
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const uint64_t *psi = itwiddles + n * twr_idx2;
+         const uint64_t *psi_shoup = itwiddles_shoup + n * twr_idx2;
+         const DModulus *modulus_table = modulus;
+@@ -524,6 +527,7 @@ inplace_inwt_radix8_phase2_include_special_mod(uint64_t *inout,
+                                                size_t n1,
+                                                size_t pad) {
+     extern __shared__ uint64_t buffer[];
++    const size_t batch_offset = coeff_mod_size * n * blockIdx.y;
+     for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < (n / 8 * coeff_mod_size);
+          i += blockDim.x * gridDim.x) {
+         // pad address
+@@ -542,7 +546,7 @@ inplace_inwt_radix8_phase2_include_special_mod(uint64_t *inout,
+         // index in N/2 range
+         size_t n_idx = i % (n / 8);
+         // base address
+-        uint64_t *data_ptr = inout + twr_idx * n;
++        uint64_t *data_ptr = inout + twr_idx * n + batch_offset;
+         const uint64_t *psi = itwiddles + n * twr_idx2;
+         const uint64_t *psi_shoup = itwiddles_shoup + n * twr_idx2;
+         const DModulus *modulus_table = modulus;
+@@ -756,6 +760,43 @@ void nwt_2d_radix8_backward_inplace(uint64_t *inout,
+             per_block_pad);
+ }
+ 
++void nwt_2d_radix8_backward_inplace(uint64_t *inout,
++                                    const DNTTTable &ntt_tables,
++                                    size_t coeff_modulus_size,
++                                    size_t start_modulus_idx,
++                                    size_t batch_num,
++                                    const cudaStream_t &stream) {
++    size_t poly_degree = ntt_tables.n();
++    size_t phase2_sample_size = SAMPLE_SIZE(poly_degree);
++
++    const size_t phase1_sample_size = poly_degree / phase2_sample_size;
++    constexpr size_t per_block_memory = blockDimNTT.x * per_thread_sample_size * sizeof(uint64_t);
++    dim3 grid(4096, batch_num);
++    inplace_inwt_radix8_phase1<<<
++    grid, blockDimNTT, per_block_memory, stream>>>(
++            inout,
++            ntt_tables.itwiddle(),
++            ntt_tables.itwiddle_shoup(),
++            ntt_tables.modulus(),
++            coeff_modulus_size,
++            start_modulus_idx,
++            poly_degree,
++            phase1_sample_size,
++            phase2_sample_size);
++    inplace_inwt_radix8_phase2<<<
++    grid, (phase1_sample_size / 8) * per_block_pad,
++    (phase1_sample_size + per_block_pad + 1) * per_block_pad * sizeof(uint64_t), stream>>>(
++            inout,
++            ntt_tables.itwiddle(), ntt_tables.itwiddle_shoup(),
++            ntt_tables.n_inv_mod_q(), ntt_tables.n_inv_mod_q_shoup(),
++            ntt_tables.modulus(),
++            coeff_modulus_size,
++            start_modulus_idx,
++            poly_degree,
++            phase1_sample_size,
++            per_block_pad);
++}
++
+ void nwt_2d_radix8_backward_inplace_scale(uint64_t *inout,
+                                           const DNTTTable &ntt_tables,
+                                           size_t coeff_modulus_size,
+@@ -799,13 +840,15 @@ void nwt_2d_radix8_backward_inplace_include_special_mod(uint64_t *inout,
+                                                         size_t start_modulus_idx,
+                                                         size_t size_QP,
+                                                         size_t size_P,
+-                                                        const cudaStream_t &stream) {
++                                                        const cudaStream_t &stream,
++                                                        size_t batch_num) {
+     size_t poly_degree = ntt_tables.n();
+     size_t phase2_sample_size = SAMPLE_SIZE(poly_degree);
+     const size_t phase1_sample_size = poly_degree / phase2_sample_size;
+     const size_t per_block_memory = blockDimNTT.x * per_thread_sample_size * sizeof(uint64_t);
++    dim3 gridBatchNTT(gridDimNTT.x, batch_num);
+     inplace_inwt_radix8_phase1_include_special_mod<<<
+-    gridDimNTT, blockDimNTT, per_block_memory, stream>>>(
++    gridBatchNTT, blockDimNTT, per_block_memory, stream>>>(
+             inout,
+             ntt_tables.itwiddle(),
+             ntt_tables.itwiddle_shoup(),
+@@ -818,7 +861,7 @@ void nwt_2d_radix8_backward_inplace_include_special_mod(uint64_t *inout,
+             phase1_sample_size,
+             phase2_sample_size);
+     inplace_inwt_radix8_phase2_include_special_mod<<<
+-    gridDimNTT, (phase1_sample_size / 8) * per_block_pad,
++    gridBatchNTT, (phase1_sample_size / 8) * per_block_pad,
+     (phase1_sample_size + per_block_pad + 1) * per_block_pad * sizeof(uint64_t), stream>>>(
+             inout,
+             ntt_tables.itwiddle(), ntt_tables.itwiddle_shoup(),
 diff --git a/src/polymath.cu b/src/polymath.cu
-index 1b268af..dfec08a 100644
+index 1b268af..fdb29a8 100644
 --- a/src/polymath.cu
 +++ b/src/polymath.cu
 @@ -1,4 +1,5 @@
@@ -715,8 +1823,42 @@ index 1b268af..dfec08a 100644
  
  //#include <rmm/device_scalar.hpp>
  //#include <rmm/device_vector.hpp>
+@@ -172,6 +173,33 @@ __global__ void multiply_rns_poly(const uint64_t *operand1,
+     }
+ }
+ 
++__global__ void multiply_rns_poly_ct_pt(const uint64_t *operand1,
++                                        const uint64_t *operand2,
++                                        const DModulus *modulus,
++                                        uint64_t *result,
++                                        const uint64_t poly_degree,
++                                        const uint64_t coeff_mod_size) {
++    const size_t base = blockIdx.y * coeff_mod_size * poly_degree;
++    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
++         tid < poly_degree * coeff_mod_size;
++         tid += blockDim.x * gridDim.x) {
++        size_t twr = tid / poly_degree;
++        DModulus mod = modulus[twr];
++#ifdef FP64_MM_ARITH
++        result[base + tid] = 
++            multiply_and_barrett_reduce_uint64_fp64(operand1[base + tid],
++                                                    operand2[tid],
++                                                    mod.value(),
++                                                    mod.const_ratio_fp64());
++#else
++        result[base + tid] = multiply_and_barrett_reduce_uint64(operand1[base + tid],
++                                                                operand2[tid],
++                                                                mod.value(),
++                                                                mod.const_ratio());
++#endif
++    }
++}
++
+ /**  res = operand1 * operand2 % coeff_mod
+  * @param[in] operand Operand1
+  * @param[in] scalar Operand2
 diff --git a/src/rns.cu b/src/rns.cu
-index ab9de3a..ee27e73 100644
+index ab9de3a..e4a3886 100644
 --- a/src/rns.cu
 +++ b/src/rns.cu
 @@ -1,6 +1,8 @@
@@ -728,8 +1870,158 @@ index ab9de3a..ee27e73 100644
  
  using namespace std;
  using namespace phantom;
+@@ -1361,14 +1363,18 @@ namespace phantom {
+                     base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
+ 
+             uint64_t obase_value = obase[out_prime_idx].value();
++            #ifdef FP64_MM_ARITH
++            uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
++            #else
+             uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
++            #endif
+             auto &scale = inv_prod_q_mod_Bsk[out_prime_idx];
+             auto &scale_shoup = inv_prod_q_mod_Bsk_shoup[out_prime_idx];
+             uint64_t out1, out2;
+             uint64_t input1, input2;
+ 
+-            out1 = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
+-            out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
++            out1 = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
++            out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
+             ld_two_uint64(input1, input2, input_base_Bsk + out_prime_idx * n + degree_idx);
+ 
+             sub_uint64_uint64(obase_value, out1, out1);
+@@ -1438,14 +1444,18 @@ namespace phantom {
+                     base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
+ 
+             uint64_t obase_value = obase.value();
++            #ifdef FP64_MM_ARITH
++            uint64_t obase_ratio[2] = {obase.const_ratio_fp64()[0], obase.const_ratio_fp64()[1]};
++            #else
+             uint64_t obase_ratio[2] = {obase.const_ratio()[0], obase.const_ratio()[1]};
++            #endif
+             auto &scale = inv_prod_q_mod_Bsk;
+             auto &scale_shoup = inv_prod_q_mod_Bsk_shoup;
+             uint64_t out1, out2;
+             uint64_t input1, input2;
+ 
+-            out1 = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
+-            out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
++            out1 = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
++            out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
+             ld_two_uint64(input1, input2, input_base_Bsk + out_prime_idx * n + degree_idx);
+ 
+             sub_uint64_uint64(obase_value, input1, input1);
+@@ -1716,21 +1726,29 @@ namespace phantom {
+             for (size_t j = 0; j < size_Rl; j++) {
+                 uint128_t curValue = {0, 0};
+                 auto rj = base_Rl[j].value();
++                #ifdef FP64_MM_ARITH
++                auto rj_ratio = base_Rl[j].const_ratio_fp64();
++                #else
+                 auto rj_ratio = base_Rl[j].const_ratio();
++                #endif
+                 auto t_R_SHatInv_mod_s_div_s_mod_rj = t_R_SHatInv_mod_s_div_s_mod_r + j * (size_Ql + 1);
+ 
+                 for (size_t i = 0; i < size_Ql; i++) {
+                     uint64_t xi = src_Ql[i * n + tid];
+-                    uint128_t temp = multiply_uint64_uint64(xi, t_R_SHatInv_mod_s_div_s_mod_rj[i]);
++                    uint128_t temp = multiply_uint64_uint64_fp64(xi, t_R_SHatInv_mod_s_div_s_mod_rj[i]);
+                     add_uint128_uint128(temp, curValue, curValue);
+                 }
+ 
+                 uint64_t xi = src_Rl[j * n + tid];
+-                uint128_t temp = multiply_uint64_uint64(xi, t_R_SHatInv_mod_s_div_s_mod_rj[size_Ql]);
++                uint128_t temp = multiply_uint64_uint64_fp64(xi, t_R_SHatInv_mod_s_div_s_mod_rj[size_Ql]);
+                 add_uint128_uint128(temp, curValue, curValue);
+ 
+-                uint64_t curNativeValue = barrett_reduce_uint128_uint64(curValue, rj, rj_ratio);
+-                alpha = barrett_reduce_uint64_uint64(alpha, rj, rj_ratio[1]);
++                #ifdef FP64_MM_ARITH
++                curValue = adjust_accum_int64_to_fp64(curValue);
++                // curValue = adjust_accum_fp64_to_int64(curValue);
++                #endif
++                uint64_t curNativeValue = barrett_reduce_uint128_uint64_fp64(curValue, rj, rj_ratio);
++                alpha = barrett_reduce_uint64_uint64_fp64(alpha, rj, rj_ratio[1]);
+                 dst[j * n + tid] = add_uint64_uint64_mod(curNativeValue, alpha, rj);
+             }
+         }
+@@ -1769,18 +1787,26 @@ namespace phantom {
+ 
+                 for (size_t j = 0; j < size_Rl; j++) {
+                     uint64_t xj = src_Rl[j * n + tid];
+-                    uint128_t temp = multiply_uint64_uint64(xj, tQlSlHatInvModsDivsModqi[j]);
++                    uint128_t temp = multiply_uint64_uint64_fp64(xj, tQlSlHatInvModsDivsModqi[j]);
+                     add_uint128_uint128(temp, curValue, curValue);
+                 }
+ 
+                 uint64_t xi = src_Ql[i * n + tid];
+-                uint128_t temp = multiply_uint64_uint64(xi, tQlSlHatInvModsDivsModqi[size_Rl]);
++                uint128_t temp = multiply_uint64_uint64_fp64(xi, tQlSlHatInvModsDivsModqi[size_Rl]);
+                 add_uint128_uint128(temp, curValue, curValue);
+ 
++                #ifdef FP64_MM_ARITH
++                curValue = adjust_accum_int64_to_fp64(curValue);
++                // curValue = adjust_accum_fp64_to_int64(curValue);
++                #endif
+                 auto qi = base_Ql[i].value();
++                #ifdef FP64_MM_ARITH
++                auto qi_ratio = base_Ql[i].const_ratio_fp64();
++                #else
+                 auto qi_ratio = base_Ql[i].const_ratio();
+-                uint64_t curNativeValue = barrett_reduce_uint128_uint64(curValue, qi, qi_ratio);
+-                alpha = barrett_reduce_uint64_uint64(alpha, qi, qi_ratio[1]);
++                #endif
++                uint64_t curNativeValue = barrett_reduce_uint128_uint64_fp64(curValue, qi, qi_ratio);
++                alpha = barrett_reduce_uint64_uint64_fp64(alpha, qi, qi_ratio[1]);
+                 dst[i * n + tid] = add_uint64_uint64_mod(curNativeValue, alpha, qi);
+             }
+         }
+@@ -1822,6 +1848,22 @@ namespace phantom {
+         }
+     }
+ 
++    __global__ void ExpandCRTBasisQlHat_kernel(uint64_t *out, const uint64_t *in, const uint64_t *QlDropModq,
++                                               const uint64_t *QlDropModq_shoup, const DModulus *base_Ql,
++                                               size_t size_Ql, size_t size_Q, size_t size_QlP, uint64_t n) {
++        const size_t in_batch_offset = size_QlP * n * blockIdx.y;
++        const size_t out_batch_offset = size_Q * n * blockIdx.y;
++        for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < n * size_Q; tid += blockDim.x * gridDim.x) {
++            size_t i = tid / n;
++            if (i < size_Ql) {
++                auto modulus = base_Ql[i].value();
++                out[out_batch_offset + tid] = multiply_and_reduce_shoup(in[in_batch_offset + tid], QlDropModq[i], QlDropModq_shoup[i], modulus);
++            } else {
++                out[out_batch_offset + tid] = 0;
++            }
++        }
++    }
++
+     void DRNSTool::ExpandCRTBasis_Ql_Q(uint64_t *dst, const uint64_t *src, const cudaStream_t &stream) const {
+         size_t size_Ql = base_Ql_.size();
+         size_t size_Q = base_Q_.size();
+@@ -1834,6 +1876,19 @@ namespace phantom {
+                 size_Ql, size_Q, n);
+     }
+ 
++    void DRNSTool::ExpandCRTBasis_Ql_Q_batch(uint64_t *dst, const uint64_t *src, size_t batch_num, const cudaStream_t &stream) const {
++        size_t size_Ql = base_Ql_.size();
++        size_t size_Q = base_Q_.size();
++        size_t size_QlP = base_QlP_.size();
++
++        size_t n = n_;
++        dim3 gridDimGlb(n * size_Q / blockDimGlb.x, batch_num);
++        ExpandCRTBasisQlHat_kernel<<<gridDimGlb, blockDimGlb, 0, stream>>>(
++                dst, src, base_Ql_to_QlDrop_conv_.PModq(),
++                base_Ql_to_QlDrop_conv_.PModq_shoup(), base_Ql_.base(),
++                size_Ql, size_Q, size_QlP, n);
++    }
++
+     __global__ void ExpandCRTBasisQlHat_add_to_ct_kernel(uint64_t *out, const uint64_t *in, const uint64_t *QlDropModq,
+                                                          const uint64_t *QlDropModq_shoup, const DModulus *base_Ql,
+                                                          size_t size_Ql, uint64_t n) {
 diff --git a/src/rns_base.cu b/src/rns_base.cu
-index 05d25e9..265de1f 100644
+index 05d25e9..9123e28 100644
 --- a/src/rns_base.cu
 +++ b/src/rns_base.cu
 @@ -1,7 +1,7 @@
@@ -741,8 +2033,24 @@ index 05d25e9..265de1f 100644
  
  using namespace std;
  using namespace phantom;
+@@ -14,7 +14,15 @@ void DRNSBase::init(const RNSBase &cpu_rns_base, const cudaStream_t &stream) {
+     base_ = phantom::util::make_cuda_auto_ptr<DModulus>(size_, stream);
+     for (size_t idx = 0; idx < size_; idx++) {
+         auto temp_modulus = *(cpu_rns_base.base() + idx);
++        #ifdef FP64_MM_ARITH
++        DModulus temp(
++            temp_modulus.value(),
++            temp_modulus.const_ratio().at(0), temp_modulus.const_ratio().at(1),
++            temp_modulus.const_ratio_fp64().at(0), temp_modulus.const_ratio_fp64().at(1)
++        );
++        #else
+         DModulus temp(temp_modulus.value(), temp_modulus.const_ratio().at(0), temp_modulus.const_ratio().at(1));
++        #endif
+         cudaMemcpyAsync(base() + idx, &temp, sizeof(DModulus),
+                         cudaMemcpyHostToDevice, stream);
+     }
 diff --git a/src/rns_bconv.cu b/src/rns_bconv.cu
-index edab41a..144c931 100644
+index edab41a..a25baac 100644
 --- a/src/rns_bconv.cu
 +++ b/src/rns_bconv.cu
 @@ -1,8 +1,9 @@
@@ -756,3 +2064,185 @@ index edab41a..144c931 100644
  
  using namespace std;
  using namespace phantom;
+@@ -159,10 +160,14 @@ __global__ void bconv_matmul_unroll2_kernel(uint64_t *dst, const uint64_t *xi_qi
+                 base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
+ 
+         uint64_t obase_value = obase[out_prime_idx].value();
++        #ifdef FP64_MM_ARITH
++        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
++        #else
+         uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
++        #endif
+ 
+-        uint64_t out = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
+-        uint64_t out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
++        uint64_t out = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
++        uint64_t out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
+         st_two_uint64(dst + out_prime_idx * n + degree_idx, out, out2);
+     }
+ }
+@@ -297,10 +302,14 @@ __global__ static void base_convert_matmul_hps_unroll2_kernel(uint64_t *dst, con
+         double_t2 accum_frac = base_convert_acc_frac_unroll2(xi_qiHatInv_mod_qi, qiInv, n, ibase_size, degree_idx);
+ 
+         uint64_t obase_value = obase[out_prime_idx].value();
++        #ifdef FP64_MM_ARITH
++        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
++        #else
+         uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
+-
+-        uint64_t out = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
+-        uint64_t out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
++        #endif
++        uint64_t out = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
++        uint64_t out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
++        
+         uint64_t vQ_mod_pj = v_Q_mod_pj[llround(accum_frac.x) * obase_size + out_prime_idx];
+         uint64_t vQ_mod_pj2 = v_Q_mod_pj[llround(accum_frac.y) * obase_size + out_prime_idx];
+         out = sub_uint64_uint64_mod(out, vQ_mod_pj, obase_value);
+@@ -473,13 +482,17 @@ __global__ static void bconv_matmul_padded_unroll2_kernel(uint64_t *dst, const u
+                 base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_qiHat_mod_pj, out_prime_idx, n, ibase_size, degree_idx);
+ 
+         uint64_t obase_value = obase[out_prime_idx].value();
++        #ifdef FP64_MM_ARITH
++        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
++        #else
+         uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
++        #endif
+ 
+         // Leap over the overlapped region.
+         const size_t padded_out_prime_idx = out_prime_idx + ((out_prime_idx >= startPartIdx) ? size_PartQl : 0);
+ 
+-        uint64_t out = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
+-        uint64_t out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
++        uint64_t out = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
++        uint64_t out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
+         st_two_uint64(dst + padded_out_prime_idx * n + degree_idx, out, out2);
+     }
+ }
+@@ -688,6 +701,19 @@ __global__ static void moddown_kernel(uint64_t *dst, const uint64_t *cx, const u
+     }
+ }
+ 
++__global__ static void moddown_kernel_batch(uint64_t *dst, const uint64_t *cx, const uint64_t *delta, const DModulus *modulus,
++                                            const uint64_t *PInv_mod_qi, const uint64_t *PInv_mod_qi_shoup, size_t n,
++                                            size_t size_Ql, size_t size_QlP) {
++    const size_t delta_batch_offset = n * size_Ql * blockIdx.y;
++    const size_t ct_batch_offset = n * size_QlP * blockIdx.y;
++    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < n * size_Ql; tid += blockDim.x * gridDim.x) {
++        size_t i = tid / n;
++        uint64_t mod = modulus[i].value();
++        uint64_t temp = sub_uint64_uint64_mod(cx[ct_batch_offset + tid], delta[delta_batch_offset + tid], mod);
++        dst[ct_batch_offset + tid] = multiply_and_reduce_shoup(temp, PInv_mod_qi[i], PInv_mod_qi_shoup[i], mod);
++    }
++}
++
+ __global__ static void moddown_bconv_single_p_kernel(uint64_t *dst, const uint64_t *src, size_t n,
+                                                      const DModulus *base_QlP, uint64_t size_QlP) {
+     const size_t size_Ql = size_QlP - 1;
+@@ -706,6 +732,26 @@ __global__ static void moddown_bconv_single_p_kernel(uint64_t *dst, const uint64
+     dst[tid] = result;
+ }
+ 
++__global__ static void moddown_bconv_single_p_kernel_batch(uint64_t *dst, const uint64_t *src, size_t n,
++                                                           const DModulus *base_QlP, uint64_t size_QlP) {
++    const size_t size_Ql = size_QlP - 1;
++    const size_t src_batch_offset = n * size_QlP * blockIdx.y;
++    const size_t dst_batch_offset = n * size_Ql * blockIdx.y;
++    size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
++    const size_t out_prime_idx = tid / n;
++    const size_t coeff_idx = tid % n;
++    const uint64_t in_prime = base_QlP[size_Ql].value(); // special prime
++    const uint64_t out_prime = base_QlP[out_prime_idx].value();
++    const uint64_t barret_ratio = base_QlP[out_prime_idx].const_ratio()[1];
++    const uint64_t coeff = src[src_batch_offset + coeff_idx];
++    uint64_t result;
++    if (in_prime > out_prime)
++        result = barrett_reduce_uint64_uint64(coeff, out_prime, barret_ratio);
++    else
++        result = coeff;
++    dst[dst_batch_offset + tid] = result;
++}
++
+ /*
+  * input: CKKS and BGV in NTT domain, BFV in normal domain
+  */
+@@ -768,6 +814,16 @@ __global__ void add_to_ct_kernel(uint64_t *ct, const uint64_t *cx, const DModulu
+     }
+ }
+ 
++__global__ void add_to_ct_kernel_batch(uint64_t *ct, const uint64_t *cx, const DModulus *modulus, size_t n, size_t dst_size_limb, size_t src_size_limb) {
++    const size_t src_batch_offset = src_size_limb * n * blockIdx.y;
++    const size_t dst_batch_offset = dst_size_limb * n * blockIdx.y;
++    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < n * dst_size_limb; tid += blockDim.x * gridDim.x) {
++        size_t twr = tid / n;
++        DModulus mod = modulus[twr];
++        ct[dst_batch_offset + tid] = add_uint64_uint64_mod(ct[dst_batch_offset + tid], cx[src_batch_offset + tid], mod.value());
++    }
++}
++
+ /*
+  * used in key switching
+  * input: in NTT domain
+@@ -826,3 +882,61 @@ void DRNSTool::moddown_from_NTT(uint64_t *ct_i, uint64_t *cx_i, const DNTTTable
+                 bigPInv_mod_q(), bigPInv_mod_q_shoup(), n, size_Ql);
+     }
+ }
++
++void DRNSTool::moddown_from_NTT_batch(uint64_t *ct_i, uint64_t *cx_i, const DNTTTable &ntt_tables,
++                                      size_t batch_num, const scheme_type &scheme, const cudaStream_t &stream) const {
++    size_t n = n_;
++    size_t size_Ql = base_Ql_.size();
++    size_t size_QlP = size_Ql + size_P_;
++    size_t alpha = size_P_;
++    size_t size_Ql_n = size_Ql * n;
++
++    auto delta = make_cuda_auto_ptr<uint64_t>(size_Ql_n * batch_num, stream);
++
++    if (scheme == scheme_type::ckks) {
++        // Transform cx_i[P] to normal domain
++        nwt_2d_radix8_backward_inplace_include_special_mod(
++                cx_i, ntt_tables, size_P_, size_Ql, size_QP_, size_P_, stream, batch_num);
++    } else if (scheme == scheme_type::bgv || scheme == scheme_type::bfv) {
++        // Transform cx_i[QlP] to normal domain
++        nwt_2d_radix8_backward_inplace_include_special_mod(
++                cx_i, ntt_tables, size_QlP, 0, size_QP_, size_P_, stream, batch_num);
++    }
++
++    if (alpha == 1) {
++        dim3 gridDimGlb(size_Ql_n / blockDimGlb.x, batch_num);
++        moddown_bconv_single_p_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(
++                delta.get(), cx_i + size_Ql_n, n, base_QlP_.base(), size_QlP);
++    } else {
++        throw invalid_argument("unsupport batch");
++        base_P_to_Ql_conv_.bConv_BEHZ(delta.get(), cx_i + size_Ql_n, n, stream);
++    }
++
++    if (scheme == scheme_type::bgv) {
++        throw invalid_argument("unsupport batch");
++        auto temp_t = make_cuda_auto_ptr<uint64_t>(n, stream);
++
++        base_P_to_t_conv_.bConv_BEHZ(temp_t.get(), cx_i + size_Ql_n, n, stream);
++
++        // delta = [Cp + [-Cp * pInv]_t * p]_qi
++        // ci' = [(ci - delta) * pInv]_qi
++        bgv_moddown_kernel<<<size_Ql_n / blockDimGlb.x, blockDimGlb, 0, stream>>>(
++                ct_i, cx_i, delta.get(), temp_t.get(), bigP_mod_q(), bigP_mod_q_shoup(), bigPInv_mod_q(),
++                bigPInv_mod_q_shoup(), bigPInv_mod_t_, bigPInv_mod_t_shoup_, ntt_tables.modulus(), size_Ql, t_.value(),
++                n);
++
++        nwt_2d_radix8_forward_inplace(ct_i, ntt_tables, size_Ql, 0, stream);
++    } else if (scheme == scheme_type::ckks) {
++        throw invalid_argument("unsupport batch");
++        // CKKS can compute the last step in NTT domain
++        // ct_i += (cxi - delta) * factor mod qi
++        nwt_2d_radix8_forward_inplace_fuse_moddown(ct_i, cx_i, bigPInv_mod_q_.get(), bigPInv_mod_q_shoup_.get(),
++                                                   delta.get(), ntt_tables, size_Ql, 0, stream);
++    } else if (scheme == scheme_type::bfv) {
++        // ct_i += (cxi - delta) * factor mod qi
++        dim3 gridDimGlb(size_Ql_n / blockDimGlb.x, batch_num);
++        moddown_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(
++                ct_i, cx_i, delta.get(), ntt_tables.modulus(),
++                bigPInv_mod_q(), bigPInv_mod_q_shoup(), n, size_Ql, size_QlP);
++    }
++}
+\ No newline at end of file
