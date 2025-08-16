@@ -1101,6 +1101,19 @@ index 81c875c..ab103a7 100644
  target_compile_options(Phantom PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--default-stream per-thread>)
  target_compile_options(Phantom PRIVATE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G;-src-in-ptx>)
  target_compile_features(Phantom PUBLIC cxx_std_17 cuda_std_17)
+diff --git a/src/batchencoder.cu b/src/batchencoder.cu
+index c2a0851..7d2d17e 100644
+--- a/src/batchencoder.cu
++++ b/src/batchencoder.cu
+@@ -28,7 +28,7 @@ void PhantomBatchEncoder::populate_matrix_reps_index_map(const cudaStream_t &str
+     // Copy from the matrix to the value vectors
+     size_t row_size = slots_ >> 1;
+     size_t m = slots_ << 1;
+-    uint64_t gen = 5;
++    uint64_t gen = 3;
+     uint64_t pos = 1;
+     temp.resize(slots_);
+     for (size_t i = 0; i < row_size; i++) {
 diff --git a/src/ckks.cu b/src/ckks.cu
 index d3c18be..089e9b7 100644
 --- a/src/ckks.cu
