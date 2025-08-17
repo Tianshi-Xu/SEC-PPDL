@@ -11,7 +11,7 @@ index 9f003f7..810b48a 100644
  ### JetBrains template
  # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 94adbeb..332fd92 100644
+index 94adbeb..c15bf9c 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -1,5 +1,7 @@
@@ -22,7 +22,7 @@ index 94adbeb..332fd92 100644
  project(Phantom LANGUAGES CXX CUDA VERSION 2.1 DESCRIPTION "CUDA-Accelerated Homomorphic Encryption Library")
  
  # [option] PHANTOM_USE_CUDA_PTX (default: ON)
-@@ -9,6 +11,13 @@ if (PHANTOM_USE_CUDA_PTX)
+@@ -9,6 +11,20 @@ if (PHANTOM_USE_CUDA_PTX)
      add_compile_definitions(PHANTOM_USE_CUDA_PTX)
  endif ()
  
@@ -33,10 +33,17 @@ index 94adbeb..332fd92 100644
 +    add_compile_definitions(FP64_MM_ARITH)
 +endif ()
 +
++# [option] RNS_POLY_BATCH (default: ON)
++option(RNS_POLY_BATCH "Use RNS polynomial batch processing" ON)
++message(STATUS "Use RNS polynomial batch processing: ${RNS_POLY_BATCH}")
++if (RNS_POLY_BATCH)
++    add_compile_definitions(RNS_POLY_BATCH)
++endif ()
++
  if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
      set(CMAKE_CUDA_ARCHITECTURES native)
  endif ()
-@@ -65,6 +74,11 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
+@@ -65,6 +81,11 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
  endif ()
  
  # config for installation
@@ -296,7 +303,7 @@ index 729e3ef..fb3e7ca 100644
          const std::uint64_t p = modulus.value();
          multiply_uint64_hw64(x, y_shoup, &tmp1);
 diff --git a/include/ntt.cuh b/include/ntt.cuh
-index 03b307e..4050c7f 100644
+index 03b307e..d19ad96 100644
 --- a/include/ntt.cuh
 +++ b/include/ntt.cuh
 @@ -1,6 +1,6 @@
@@ -334,27 +341,31 @@ index 03b307e..4050c7f 100644
  };
  
  class DNTTTable {
-@@ -173,6 +179,9 @@ void inwt_1d_opt(uint64_t *inout, const uint64_t *itwiddles, const uint64_t *itw
+@@ -173,6 +179,11 @@ void inwt_1d_opt(uint64_t *inout, const uint64_t *itwiddles, const uint64_t *itw
  void nwt_2d_radix8_forward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
                                     size_t start_modulus_idx, const cudaStream_t &stream);
  
++#ifdef RNS_POLY_BATCH
 +void nwt_2d_radix8_forward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
 +                                   size_t start_modulus_idx, size_t batch_num, const cudaStream_t &stream);
++#endif
 +
  void nwt_2d_radix8_forward_inplace_fuse_moddown(uint64_t *ct, const uint64_t *cx, const uint64_t *bigPInv_mod_q,
                                                  const uint64_t *bigPInv_mod_q_shoup, uint64_t *delta,
                                                  const DNTTTable &ntt_tables, size_t coeff_modulus_size,
-@@ -203,6 +212,9 @@ void nwt_2d_radix8_forward_modup_fuse(uint64_t *out, const uint64_t *in, size_t
+@@ -203,6 +214,11 @@ void nwt_2d_radix8_forward_modup_fuse(uint64_t *out, const uint64_t *in, size_t
  void nwt_2d_radix8_backward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
                                      size_t start_modulus_idx, const cudaStream_t &stream);
  
++#ifdef RNS_POLY_BATCH
 +void nwt_2d_radix8_backward_inplace(uint64_t *inout, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
 +                                    size_t start_modulus_idx, size_t batch_num, const cudaStream_t &stream);
++#endif
 +
  void nwt_2d_radix8_backward(uint64_t *out, const uint64_t *in, const DNTTTable &ntt_tables, size_t coeff_modulus_size,
                              size_t start_modulus_idx, const cudaStream_t &stream);
  
-@@ -217,7 +229,7 @@ void nwt_2d_radix8_backward_inplace_scale(uint64_t *inout, const DNTTTable &ntt_
+@@ -217,7 +233,7 @@ void nwt_2d_radix8_backward_inplace_scale(uint64_t *inout, const DNTTTable &ntt_
  void nwt_2d_radix8_backward_inplace_include_special_mod(uint64_t *inout, const DNTTTable &ntt_tables,
                                                          size_t coeff_modulus_size, size_t start_modulus_idx,
                                                          size_t size_QP, size_t size_P,
@@ -364,7 +375,7 @@ index 03b307e..4050c7f 100644
  void nwt_2d_radix8_backward_inplace_include_temp_mod_scale(uint64_t *inout, const DNTTTable &ntt_tables,
                                                             size_t coeff_modulus_size, size_t start_modulus_idx,
 diff --git a/include/plaintext.h b/include/plaintext.h
-index 66df8d8..392cf82 100644
+index 66df8d8..6442162 100644
 --- a/include/plaintext.h
 +++ b/include/plaintext.h
 @@ -50,6 +50,10 @@ public:
@@ -378,7 +389,7 @@ index 66df8d8..392cf82 100644
      [[nodiscard]] auto &chain_index() const noexcept {
          return chain_index_;
      }
-@@ -58,6 +62,10 @@ public:
+@@ -58,6 +62,14 @@ public:
          return scale_;
      }
  
@@ -386,10 +397,14 @@ index 66df8d8..392cf82 100644
 +        return scale_;
 +    }
 +
++    [[nodiscard]] auto is_ntt_form() const noexcept {
++        return chain_index_ != 0;
++    }
++
      [[nodiscard]] auto data() const noexcept {
          return data_.get();
      }
-@@ -66,6 +74,8 @@ public:
+@@ -66,6 +78,8 @@ public:
          return data_;
      }
  
@@ -398,7 +413,7 @@ index 66df8d8..392cf82 100644
      void save(std::ostream &stream) const {
          stream.write(reinterpret_cast<const char *>(&chain_index_), sizeof(chain_index_));
          stream.write(reinterpret_cast<const char *>(&poly_modulus_degree_), sizeof(poly_modulus_degree_));
-@@ -96,4 +106,21 @@ public:
+@@ -96,4 +110,24 @@ public:
                          cudaMemcpyHostToDevice, cudaStreamPerThread);
          cudaFreeHost(h_data);
      }
@@ -410,9 +425,12 @@ index 66df8d8..392cf82 100644
 +
 +        chain_index_ = chain_index;
 +        poly_modulus_degree_ = parms.poly_modulus_degree();
-+        // [Important] Plaintext has no specail primes
-+        // FIXME: Assume that alpha=1
-+        coeff_modulus_size_ = coeff_modulus.size() - 1;
++        if (chain_index == 0) {
++            // Only for BFV/BGV (non-NTT & non-CRT)
++            coeff_modulus_size_ = 1;
++        } else {
++            coeff_modulus_size_ = coeff_modulus.size();
++        }
 +        scale_ = scale;
 +        data_ = phantom::util::make_cuda_auto_ptr<uint64_t>(coeff_modulus_size_ * poly_modulus_degree_,
 +                                                            cudaStreamPerThread);
@@ -1326,7 +1344,7 @@ index 9da8b80..6a62d24 100644
 +        const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
  }
 diff --git a/src/evaluate.cu b/src/evaluate.cu
-index 48616c2..7369d85 100644
+index 48616c2..d30cfba 100644
 --- a/src/evaluate.cu
 +++ b/src/evaluate.cu
 @@ -9,6 +9,33 @@ using namespace phantom;
@@ -1374,10 +1392,19 @@ index 48616c2..7369d85 100644
          if (encrypted1.size() != encrypted2.size())
              throw std::invalid_argument("poly number mismatch");
  
-@@ -1294,6 +1321,79 @@ Returns (f, e1, e2) such that
+@@ -1249,6 +1276,7 @@ Returns (f, e1, e2) such that
          encrypted.set_scale(new_scale);
      }
  
++#ifndef RNS_POLY_BATCH
+     static void multiply_plain_normal(const PhantomContext &context, PhantomCiphertext &encrypted,
+                                       const PhantomPlaintext &plain, const cudaStream_t &stream) {
+         // Extract encryption parameters.
+@@ -1293,6 +1321,81 @@ Returns (f, e1, e2) such that
+ 
+         encrypted.set_scale(new_scale);
+     }
++#else
 +    static void multiply_plain_normal_batch(
 +        const PhantomContext &context, PhantomCiphertext &encrypted,
 +        const PhantomPlaintext &plain, const cudaStream_t &stream) {
@@ -1421,13 +1448,15 @@ index 48616c2..7369d85 100644
 +
 +        encrypted.set_scale(new_scale);
 +    }
++#endif
 +
 +    void multiply_plain_ntt_inplace(
 +        const PhantomContext &context, PhantomCiphertext &encrypted,
 +        const PhantomPlaintext &plain) {
 +        const auto &s = cudaStreamPerThread;
 +
-+        if (encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
++        if (encrypted.chain_index() != plain.chain_index() ||
++            encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
 +            throw std::invalid_argument("encrypted and plain parameter mismatch");
 +        }
 +
@@ -1450,39 +1479,48 @@ index 48616c2..7369d85 100644
 +
 +        encrypted.set_scale(new_scale);
 +    }
-+
+ 
      void multiply_plain_inplace(const PhantomContext &context, PhantomCiphertext &encrypted,
                                  const PhantomPlaintext &plain) {
-         const auto &s = cudaStreamPerThread;
-@@ -1304,7 +1404,8 @@ Returns (f, e1, e2) such that
+@@ -1304,7 +1407,11 @@ Returns (f, e1, e2) such that
          auto scheme = parms.scheme();
  
          if (scheme == scheme_type::bfv) {
--            multiply_plain_normal(context, encrypted, plain, s);
-+            // multiply_plain_normal(context, encrypted, plain, s);
++#ifdef RNS_POLY_BATCH
 +            multiply_plain_normal_batch(context, encrypted, plain, s);
++#else
+             multiply_plain_normal(context, encrypted, plain, s);
++#endif
          } else if (scheme == scheme_type::ckks) {
              multiply_plain_ntt(context, encrypted, plain, s);
          } else if (scheme == scheme_type::bgv) {
-@@ -1626,7 +1727,11 @@ Returns (f, e1, e2) such that
+@@ -1626,7 +1733,15 @@ Returns (f, e1, e2) such that
          // END: Apply Galois for each ciphertext
          // REORDERING IS SAFE NOW
          // Calculate (temp * galois_key[0], temp * galois_key[1]) + (c0, 0)
 -        keyswitch_inplace(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
 +        if (parms.scheme() == scheme_type::bfv) {
++#ifdef RNS_POLY_BATCH
 +            keyswitch_inplace<true>(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
++#else
++            keyswitch_inplace<false>(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
++#endif
 +        } else {
 +            keyswitch_inplace<false>(context, encrypted, temp.get(), galois_keys.get_relin_keys(galois_elt_index), false, s);
 +        }
      }
  
  // TODO: remove recursive chain
-@@ -1863,4 +1968,63 @@ Returns (f, e1, e2) such that
+@@ -1863,4 +1978,96 @@ Returns (f, e1, e2) such that
                              cudaMemcpyDeviceToDevice, s);
          }
      }
 +
 +    void transform_to_ntt_inplace(const PhantomContext &context, PhantomPlaintext &plain, size_t chain_index) {
++        if (plain.is_ntt_form()) {
++            throw invalid_argument("plain is already in NTT form");
++        }
++        
 +        const auto &s = cudaStreamPerThread;
 +
 +        // Extract encryption parameters.
@@ -1502,6 +1540,7 @@ index 48616c2..7369d85 100644
 +        // Allocate temporary space for an entire RNS polynomial
 +
 +        auto plain_copy = plain;
++        plain.set_chain_index(chain_index);
 +        plain.resize(coeff_mod_size, poly_degree, s);
 +
 +        // if (context_data.qualifiers().using_fast_plain_lift) {
@@ -1514,6 +1553,10 @@ index 48616c2..7369d85 100644
 +    }
 +
 +    void transform_to_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted) {
++        if (encrypted.is_ntt_form()) {
++            throw invalid_argument("encrypted is already in NTT form");
++        }
++
 +        const auto &s = cudaStreamPerThread;
 +
 +        // Extract encryption parameters.
@@ -1522,12 +1565,26 @@ index 48616c2..7369d85 100644
 +
 +        auto &coeff_modulus = parms.coeff_modulus();
 +        auto coeff_mod_size = coeff_modulus.size();
-+        nwt_2d_radix8_forward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++        auto rns_coeff_count = parms.poly_modulus_degree() * coeff_mod_size;
 +
++#ifdef RNS_POLY_BATCH
++        nwt_2d_radix8_forward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++#else
++        auto encrypted_size = encrypted.size();
++        for (size_t i = 0; i < encrypted_size; i++) {
++            uint64_t *ci = encrypted.data() + i * rns_coeff_count;
++            // NTT
++            nwt_2d_radix8_forward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, s);
++        }
++#endif
 +        encrypted.set_ntt_form(true);
 +    }
 +
 +    void transform_from_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted) {
++        if (!encrypted.is_ntt_form()) {
++            throw invalid_argument("encrypted_ntt is not in NTT form");
++        }
++
 +        const auto &s = cudaStreamPerThread;
 +
 +        // Extract encryption parameters.
@@ -1536,8 +1593,18 @@ index 48616c2..7369d85 100644
 +
 +        auto &coeff_modulus = parms.coeff_modulus();
 +        auto coeff_mod_size = coeff_modulus.size();
-+        nwt_2d_radix8_backward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++        auto rns_coeff_count = parms.poly_modulus_degree() * coeff_mod_size;
 +
++#ifdef RNS_POLY_BATCH
++        nwt_2d_radix8_backward_inplace(encrypted.data(), context.gpu_rns_tables(), coeff_mod_size, 0, encrypted.size(), s);
++#else
++        auto encrypted_size = encrypted.size();
++        for (size_t i = 0; i < encrypted_size; i++) {
++            uint64_t *ci = encrypted.data() + i * rns_coeff_count;
++            // NTT
++            nwt_2d_radix8_backward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, s);
++        }
++#endif
 +        encrypted.set_ntt_form(false);
 +    }
  }

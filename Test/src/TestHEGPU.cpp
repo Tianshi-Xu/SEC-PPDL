@@ -1,4 +1,6 @@
 #include <HE/unified/UnifiedEvaluator.h>
+#include <cassert>
+#include <iomanip>
 #include <seal/seal.h>
 #include "Datatype/UnifiedType.h"
 #include "HE/unified/UnifiedEncoder.h"
@@ -7,6 +9,36 @@
 using namespace std;
 using namespace seal;
 using namespace HE::unified;
+
+// Test result verification functions
+bool verify_results(const vector<uint64_t> &expected, const vector<uint64_t> &actual, const string &test_name)
+{
+    if (expected.size() != actual.size())
+    {
+        cout << "\n\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        cout << "\033[1;31mFAILED: " << test_name << "\033[0m" << endl;
+        cout << "\033[1;31mSize mismatch: expected " << expected.size() << ", got " << actual.size() << "\033[0m"
+             << endl;
+        cout << "\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        return false;
+    }
+
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        if (expected[i] != actual[i])
+        {
+            cout << "\n\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+            cout << "\033[1;31mFAILED: " << test_name << "\033[0m" << endl;
+            cout << "\033[1;31mMismatch at index " << i << ": expected " << expected[i] << ", got " << actual[i]
+                 << "\033[0m" << endl;
+            cout << "\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+            return false;
+        }
+    }
+
+    cout << "\033[1;32mPASSED: " << test_name << "\033[0m" << endl;
+    return true;
+}
 
 void print_banner(std::string msg)
 {
@@ -177,10 +209,11 @@ void bfv_rotation_example()
     Plaintext plain_result;
     cout << "    + Noise budget after rotation: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> expected(slot_count, 0ULL);
+    encoder.decode(plain_result, expected);
+    cout << "    + Expected result (HOST):" << endl;
+    print_matrix(expected, row_size);
 
     print_line(__LINE__);
     cout << "Rotate rows " << step << " steps left (on DEVICE)." << endl;
@@ -188,10 +221,14 @@ void bfv_rotation_example()
     d_encrypted_matrix.to_host(context);
     cout << "    + Noise budget after rotation: " << decryptor.invariant_noise_budget(d_encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(d_encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> actual(slot_count, 0ULL);
+    encoder.decode(plain_result, actual);
+    cout << "    + Actual result (DEVICE):" << endl;
+    print_matrix(actual, row_size);
+
+    // Verify results
+    verify_results(expected, actual, "BFV Rotation Test");
 }
 
 void bfv_ct_ct_mult_example()
@@ -265,10 +302,11 @@ void bfv_ct_ct_mult_example()
     Plaintext plain_result;
     cout << "    + Noise budget after squaring: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> expected(slot_count, 0ULL);
+    encoder.decode(plain_result, expected);
+    cout << "    + Expected result (HOST):" << endl;
+    print_matrix(expected, row_size);
 
     print_line(__LINE__);
     cout << "Square (on DEVICE)." << endl;
@@ -277,10 +315,14 @@ void bfv_ct_ct_mult_example()
     d_encrypted_matrix.to_host(context);
     cout << "    + Noise budget after squaring: " << decryptor.invariant_noise_budget(d_encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(d_encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> actual(slot_count, 0ULL);
+    encoder.decode(plain_result, actual);
+    cout << "    + Actual result (DEVICE):" << endl;
+    print_matrix(actual, row_size);
+
+    // Verify results
+    verify_results(expected, actual, "BFV Ciphertext-Ciphertext Multiplication Test");
 }
 
 void bfv_pt_ct_mult_example()
@@ -349,25 +391,30 @@ void bfv_pt_ct_mult_example()
       Now rotate both matrix rows 3 steps to the left, decrypt, decode, and print.
     */
     print_line(__LINE__);
-    cout << "Square (on HOST)." << endl;
+    cout << "Plaintext-Ciphertext multiplication (on HOST)." << endl;
     evaluator.multiply_plain_inplace(encrypted_matrix, plain_matrix);
     Plaintext plain_result;
     cout << "    + Noise budget after pmult: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits" << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> expected(slot_count, 0ULL);
+    encoder.decode(plain_result, expected);
+    cout << "    + Expected result (HOST):" << endl;
+    print_matrix(expected, row_size);
 
     print_line(__LINE__);
-    cout << "Square (on DEVICE)." << endl;
+    cout << "Plaintext-Ciphertext multiplication (on DEVICE)." << endl;
     evaluator.multiply_plain_inplace(d_encrypted_matrix, d_plain_matrix);
     d_encrypted_matrix.to_host(context);
     cout << "    + Noise budget after pmult: " << decryptor.invariant_noise_budget(d_encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(d_encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> actual(slot_count, 0ULL);
+    encoder.decode(plain_result, actual);
+    cout << "    + Actual result (DEVICE):" << endl;
+    print_matrix(actual, row_size);
+
+    // Verify results
+    verify_results(expected, actual, "BFV Plaintext-Ciphertext Multiplication Test");
 }
 
 void bfv_pt_ct_mult_with_pre_ntt_example()
@@ -440,33 +487,102 @@ void bfv_pt_ct_mult_with_pre_ntt_example()
       Now rotate both matrix rows 3 steps to the left, decrypt, decode, and print.
     */
     print_line(__LINE__);
-    cout << "Square (on HOST)." << endl;
+    cout << "Plaintext-Ciphertext multiplication with pre-NTT (on HOST)." << endl;
     evaluator.multiply_plain_inplace(encrypted_matrix, plain_matrix);
     Plaintext plain_result;
     cout << "    + Noise budget after pmult: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits" << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> expected(slot_count, 0ULL);
+    encoder.decode(plain_result, expected);
+    cout << "    + Expected result (HOST):" << endl;
+    print_matrix(expected, row_size);
 
     print_line(__LINE__);
-    cout << "Square (on DEVICE)." << endl;
+    cout << "Plaintext-Ciphertext multiplication with pre-NTT (on DEVICE)." << endl;
     evaluator.multiply_plain_ntt_inplace(d_encrypted_matrix, d_plain_matrix);
     evaluator.transform_from_ntt_inplace(d_encrypted_matrix);
     d_encrypted_matrix.to_host(context);
     cout << "    + Noise budget after pmult: " << decryptor.invariant_noise_budget(d_encrypted_matrix) << " bits"
          << endl;
-    cout << "    + Decrypt and decode ...... Correct." << endl;
     decryptor.decrypt(d_encrypted_matrix, plain_result);
-    encoder.decode(plain_result, pod_matrix);
-    print_matrix(pod_matrix, row_size);
+    vector<uint64_t> actual(slot_count, 0ULL);
+    encoder.decode(plain_result, actual);
+    cout << "    + Actual result (DEVICE):" << endl;
+    print_matrix(actual, row_size);
+
+    // Verify results
+    verify_results(expected, actual, "BFV Plaintext-Ciphertext Multiplication with Pre-NTT Test");
+}
+
+// Wrapper function to run tests with exception handling
+bool run_test_with_exception_handling(const string &test_name, function<void()> test_func)
+{
+    try
+    {
+        test_func();
+        return true;
+    }
+    catch (const exception &e)
+    {
+        cout << "\n\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        cout << "\033[1;31mEXCEPTION in " << test_name << "\033[0m" << endl;
+        cout << "\033[1;31mError: " << e.what() << "\033[0m" << endl;
+        cout << "\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        return false;
+    }
+    catch (...)
+    {
+        cout << "\n\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        cout << "\033[1;31mUNKNOWN EXCEPTION in " << test_name << "\033[0m" << endl;
+        cout << "\033[1;31m" << string(60, '=') << "\033[0m" << endl;
+        return false;
+    }
 }
 
 int main()
 {
-    bfv_rotation_example();
-    bfv_ct_ct_mult_example();
-    bfv_pt_ct_mult_example();
-    bfv_pt_ct_mult_with_pre_ntt_example();
-    return 0;
+    cout << "\033[1;36mStarting HE GPU Tests...\033[0m" << endl;
+    cout << "\033[1;36m" << string(60, '=') << "\033[0m" << endl;
+
+    int total_tests = 4;
+    int passed_tests = 0;
+
+    if (run_test_with_exception_handling("BFV Rotation Test", bfv_rotation_example))
+    {
+        passed_tests++;
+    }
+
+    if (run_test_with_exception_handling("BFV Ciphertext-Ciphertext Multiplication Test", bfv_ct_ct_mult_example))
+    {
+        passed_tests++;
+    }
+
+    if (run_test_with_exception_handling("BFV Plaintext-Ciphertext Multiplication Test", bfv_pt_ct_mult_example))
+    {
+        passed_tests++;
+    }
+
+    if (run_test_with_exception_handling(
+            "BFV Plaintext-Ciphertext Multiplication with Pre-NTT Test", bfv_pt_ct_mult_with_pre_ntt_example))
+    {
+        passed_tests++;
+    }
+
+    cout << "\n\033[1;36m" << string(60, '=') << "\033[0m" << endl;
+    cout << "\033[1;36mTest Summary:\033[0m" << endl;
+    cout << "\033[1;36mTotal Tests: " << total_tests << "\033[0m" << endl;
+    cout << "\033[1;36mPassed: " << passed_tests << "\033[0m" << endl;
+    cout << "\033[1;36mFailed: " << (total_tests - passed_tests) << "\033[0m" << endl;
+
+    if (passed_tests == total_tests)
+    {
+        cout << "\033[1;32mAll tests passed!\033[0m" << endl;
+    }
+    else
+    {
+        cout << "\033[1;31mSome tests failed!\033[0m" << endl;
+    }
+    cout << "\033[1;36m" << string(60, '=') << "\033[0m" << endl;
+
+    return (passed_tests == total_tests) ? 0 : 1;
 }

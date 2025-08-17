@@ -224,9 +224,7 @@ void UnifiedEvaluator::transform_to_ntt_inplace(UnifiedPlaintext &plain, const s
     }
     else
     {
-        throw std::invalid_argument(
-            "transform_to_ntt_inplace: plaintext must be "
-            "on host when using parms_id");
+        throw std::invalid_argument("transform_to_ntt_inplace: plaintext must be on host when using parms_id");
     }
 }
 
@@ -235,9 +233,7 @@ void UnifiedEvaluator::transform_to_ntt_inplace(UnifiedPlaintext &plain, size_t 
     backend_check(plain);
     if (plain.on_host())
     {
-        throw std::invalid_argument(
-            "transform_to_ntt_inplace: plaintext must be "
-            "on device when using chain_index");
+        throw std::invalid_argument("transform_to_ntt_inplace: plaintext must be on device when using chain_index");
     }
     else
     {
@@ -252,9 +248,7 @@ void UnifiedEvaluator::transform_to_ntt_inplace(UnifiedCiphertext &encrypted) co
     {
         if (encrypted.hcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "transform_to_ntt_inplace: ciphertext must "
-                "be NOT in NTT form");
+            throw std::invalid_argument("transform_to_ntt_inplace: ciphertext must be NOT in NTT form");
         }
         seal_eval_->transform_to_ntt_inplace(encrypted);
     }
@@ -262,9 +256,7 @@ void UnifiedEvaluator::transform_to_ntt_inplace(UnifiedCiphertext &encrypted) co
     {
         if (encrypted.dcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "transform_to_ntt_inplace: ciphertext must "
-                "be NOT in NTT form");
+            throw std::invalid_argument("transform_to_ntt_inplace: ciphertext must be NOT in NTT form");
         }
         phantom_eval_->transform_to_ntt_inplace(encrypted);
     }
@@ -277,9 +269,7 @@ void UnifiedEvaluator::transform_from_ntt_inplace(UnifiedCiphertext &encrypted) 
     {
         if (!encrypted.hcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "transform_from_ntt_inplace: ciphertext "
-                "must be in NTT form");
+            throw std::invalid_argument("transform_from_ntt_inplace: ciphertext must be in NTT form");
         }
         seal_eval_->transform_from_ntt_inplace(encrypted);
     }
@@ -287,9 +277,7 @@ void UnifiedEvaluator::transform_from_ntt_inplace(UnifiedCiphertext &encrypted) 
     {
         if (!encrypted.dcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "transform_from_ntt_inplace: ciphertext "
-                "must be in NTT form");
+            throw std::invalid_argument("transform_from_ntt_inplace: ciphertext must be in NTT form");
         }
         phantom_eval_->transform_from_ntt_inplace(encrypted);
     }

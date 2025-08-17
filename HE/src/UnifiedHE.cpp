@@ -1,4 +1,3 @@
-#include <seal/galoiskeys.h>
 #include "HE/unified/UnifiedCiphertext.h"
 #include "HE/unified/UnifiedEvk.h"
 #include "HE/unified/UnifiedPlaintext.h"
@@ -50,7 +49,9 @@ void UnifiedPlaintext::to_device(
         }
         else
         {
-            data_ptr = hcontext.first_context_data();
+            // Only for BFV/BGV
+            dplain.load(hplain.data(), dcontext, 0, hplain.scale());
+            return;
         }
     }
     const auto &curr_parms = data_ptr->parms();

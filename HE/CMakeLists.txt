@@ -6,9 +6,6 @@ set(FATHER_PROJECT_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 # find_package(SEAL CONFIG REQUIRED)
 find_package(SEAL 4.1.2 EXACT QUIET PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/SEAL/build" NO_DEFAULT_PATH)
 
-# if(DEFINED USE_HE_GPU)
-#     unset(USE_HE_GPU CACHE)
-# endif()
 option(USE_HE_GPU "Use GPU backend for HE" OFF)
 message(STATUS "USE_HE_GPU: ${USE_HE_GPU}")
 # Phantom: GPU backend for HE
