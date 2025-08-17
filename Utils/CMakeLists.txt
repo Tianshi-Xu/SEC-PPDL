@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.10)
 
 
 project(Utils_test)
+
+# EMP-TOOL相关配置
+set(EMP-TOOL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-tool")
+set(EMP-TOOL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-tool")
+set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-ot")
+
+# 设置全局include目录，供其他模块使用
+include_directories(${EMP-OT_INCLUDE_DIR} ${EMP-TOOL_INCLUDE_DIR})
+
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
