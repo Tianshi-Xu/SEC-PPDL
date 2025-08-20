@@ -29,11 +29,21 @@ namespace HE
                 return Datatype::LOCATION::HOST;
             }
 
+            void multiply_plain_ntt_inplace(UnifiedCiphertext &encrypted, const UnifiedPlaintext &plain) const;
+
+            inline void multiply_plain_ntt(
+                const UnifiedCiphertext &encrypted, const UnifiedPlaintext &plain, UnifiedCiphertext &destination) const
+            {
+                destination = encrypted;
+                multiply_plain_ntt_inplace(destination, plain);
+            }
+
             inline void sync() {};
 
             inline auto &device_evaluator() const
             {
                 throw std::invalid_argument("Unregistered GPU backend");
+                return *this;
             }
 
             inline auto &host_evalutor() const

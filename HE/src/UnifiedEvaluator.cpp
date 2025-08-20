@@ -1,8 +1,8 @@
-#ifdef USE_HE_GPU
-
 #include "HE/unified/UnifiedEvaluator.h"
 
 using namespace HE::unified;
+
+#ifdef USE_HE_GPU
 
 void UnifiedEvaluator::negate_inplace(UnifiedCiphertext &encrypted) const
 {
@@ -142,9 +142,7 @@ void UnifiedEvaluator::multiply_plain_ntt_inplace(UnifiedCiphertext &encrypted, 
     {
         if (!plain.hplain().is_ntt_form() || !encrypted.hcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "multiply_plain_ntt_inplace: plaintext and "
-                "ciphertext must be in NTT form");
+            throw std::invalid_argument("multiply_plain_ntt_inplace: plaintext and ciphertext must be in NTT form");
         }
         seal_eval_->multiply_plain_inplace(encrypted, plain);
     }
@@ -152,9 +150,7 @@ void UnifiedEvaluator::multiply_plain_ntt_inplace(UnifiedCiphertext &encrypted, 
     {
         if (!encrypted.dcipher().is_ntt_form())
         {
-            throw std::invalid_argument(
-                "multiply_plain_ntt_inplace: plaintext and "
-                "ciphertext must be in NTT form");
+            throw std::invalid_argument("multiply_plain_ntt_inplace: plaintext and ciphertext must be in NTT form");
         }
         phantom_eval_->multiply_plain_ntt_inplace(encrypted, plain);
     }
@@ -280,6 +276,24 @@ void UnifiedEvaluator::transform_from_ntt_inplace(UnifiedCiphertext &encrypted) 
             throw std::invalid_argument("transform_from_ntt_inplace: ciphertext must be in NTT form");
         }
         phantom_eval_->transform_from_ntt_inplace(encrypted);
+    }
+}
+
+#else
+
+void UnifiedEvaluator::multiply_plain_ntt_inplace(UnifiedCiphertext &encrypted, const UnifiedPlaintext &plain) const
+{
+    if (encrypted.on_host() && plain.on_host())
+    {
+        if (!plain.hplain().is_ntt_form() || !encrypted.hcipher().is_ntt_form())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_inplace: plaintext and ciphertext must be in NTT form");
+        }
+        seal_eval_->multiply_plain_inplace(encrypted, plain);
+    }
+    else
+    {
+        throw std::runtime_error("USE_HE_GPU=OFF");
     }
 }
 
