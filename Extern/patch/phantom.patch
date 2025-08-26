@@ -271,37 +271,52 @@ index 05f3035..3755faf 100644
          [[nodiscard]] inline bool is_zero() const noexcept {
              return value_ == 0;
 diff --git a/include/host/uintarithsmallmod.h b/include/host/uintarithsmallmod.h
-index 729e3ef..fb3e7ca 100644
+index 729e3ef..b592f7a 100644
 --- a/include/host/uintarithsmallmod.h
 +++ b/include/host/uintarithsmallmod.h
 @@ -119,7 +119,11 @@ namespace phantom::arith {
      inline uint64_t compute_shoup(const uint64_t operand, const uint64_t modulus) {
          // Using __uint128_t to avoid overflow during multiplication
          __uint128_t temp = operand;
-+        #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +        temp <<= 52; // multiplying by 2^52
-+        #else
++#else
          temp <<= 64; // multiplying by 2^64
-+        #endif
++#endif
          return temp / modulus;
      }
  
-@@ -130,6 +134,7 @@ namespace phantom::arith {
+@@ -130,11 +134,15 @@ namespace phantom::arith {
      */
      [[nodiscard]] inline std::uint64_t multiply_uint_mod_shoup(
              const uint64_t x, const uint64_t y, const uint64_t y_shoup, const Modulus &modulus) {
++#ifdef FP64_MM_ARITH
 +        return (x * (__uint128_t)y) % modulus.value();
++#else
          uint64_t tmp1;
          const std::uint64_t p = modulus.value();
          multiply_uint64_hw64(x, y_shoup, &tmp1);
-@@ -144,6 +149,7 @@ namespace phantom::arith {
+         const uint64_t tmp2 = y * x - tmp1 * p;
+         return tmp2 >= p ? tmp2 - p : tmp2;
++#endif
+     }
+ 
+     /**
+@@ -144,10 +152,14 @@ namespace phantom::arith {
      */
      [[nodiscard]] inline std::uint64_t multiply_uint_mod_lazy(
              const uint64_t x, const uint64_t y, const uint64_t y_shoup, const Modulus &modulus) {
++#ifdef FP64_MM_ARITH
 +        return (x * (__uint128_t)y) % modulus.value();
++#else
          uint64_t tmp1;
          const std::uint64_t p = modulus.value();
          multiply_uint64_hw64(x, y_shoup, &tmp1);
+         return y * x - tmp1 * p;
++#endif
+     }
+ 
+     /**
 diff --git a/include/ntt.cuh b/include/ntt.cuh
 index 03b307e..d19ad96 100644
 --- a/include/ntt.cuh
@@ -439,7 +454,7 @@ index 66df8d8..6442162 100644
 +    }
  };
 diff --git a/include/polymath.cuh b/include/polymath.cuh
-index b385d8a..a19359c 100644
+index b385d8a..4ea719d 100644
 --- a/include/polymath.cuh
 +++ b/include/polymath.cuh
 @@ -1,6 +1,5 @@
@@ -449,7 +464,7 @@ index b385d8a..a19359c 100644
  #include "ntt.cuh"
  
  __global__ void negate_rns_poly(const uint64_t* operand,
-@@ -80,6 +79,13 @@ __global__ void multiply_rns_poly(const uint64_t* operand1,
+@@ -80,6 +79,14 @@ __global__ void multiply_rns_poly(const uint64_t* operand1,
                                    uint64_t poly_degree,
                                    uint64_t coeff_mod_size);
  
@@ -459,6 +474,7 @@ index b385d8a..a19359c 100644
 +                                        uint64_t* result,
 +                                        uint64_t poly_degree,
 +                                        uint64_t coeff_mod_size);
++
 +
  /**  result = (operand1 * scalar) % modulus
   * @param[in] operand1 Operand1
@@ -1105,10 +1121,10 @@ index f418ad5..5e8e9c4 100644
  
      // calculate (op2 - op1) * op3 mod modulus
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 81c875c..ab103a7 100644
+index 81c875c..34c8b2d 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -36,6 +36,10 @@ add_library(Phantom SHARED
+@@ -36,6 +36,17 @@ add_library(Phantom SHARED
          host/uintarithsmallmod.cu
  )
  
@@ -1116,6 +1132,13 @@ index 81c875c..ab103a7 100644
 +    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
 +    $<INSTALL_INTERFACE:include>
 +)
++if (FP64_MM_ARITH)
++    target_compile_definitions(Phantom PUBLIC FP64_MM_ARITH)
++endif()
++
++if (RNS_POLY_BATCH)
++    target_compile_definitions(Phantom PUBLIC RNS_POLY_BATCH)
++endif()
  target_compile_options(Phantom PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--default-stream per-thread>)
  target_compile_options(Phantom PRIVATE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G;-src-in-ptx>)
  target_compile_features(Phantom PUBLIC cxx_std_17 cuda_std_17)
@@ -1182,7 +1205,7 @@ index 5b59d3e..8309ec1 100644
                                 plain_ntt_tables->get_from_root_powers_shoup().data(),
                                 plain_ntt_tables->get_from_inv_root_powers().data(),
 diff --git a/src/eval_key_switch.cu b/src/eval_key_switch.cu
-index 9da8b80..6a62d24 100644
+index 9da8b80..27f06db 100644
 --- a/src/eval_key_switch.cu
 +++ b/src/eval_key_switch.cu
 @@ -1,8 +1,8 @@
@@ -1217,7 +1240,7 @@ index 9da8b80..6a62d24 100644
 -                if (i && reduction_threshold == 0) {
 -                    acc0.lo = barrett_reduce_uint128_uint64(acc0, mod.value(), mod.const_ratio());
 +                if (i && cnt == 0 /* FIX BUG */) {
-+                    #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +                    acc0 = adjust_accum_int64_to_fp64(acc0);
 +                    // acc0 = adjust_accum_fp64_to_int64(acc0);
 +                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
@@ -1228,13 +1251,13 @@ index 9da8b80..6a62d24 100644
 +                    // acc1 = adjust_accum_fp64_to_int64(acc1);
 +                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
                      acc1.hi = 0;
-+                    #else
++#else
 +                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
 +                    acc0.hi = 0;
 +
 +                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
 +                    acc1.hi = 0;
-+                    #endif
++#endif
 +                    
 +                    cnt = reduction_threshold; // FIX BUG
                  }
@@ -1251,7 +1274,7 @@ index 9da8b80..6a62d24 100644
              }
  
 -            uint64_t res0 = barrett_reduce_uint128_uint64(acc0, mod.value(), mod.const_ratio());
-+            #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +            acc0 = adjust_accum_int64_to_fp64(acc0);
 +            // acc0 = adjust_accum_fp64_to_int64(acc0);
 +            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
@@ -1261,14 +1284,14 @@ index 9da8b80..6a62d24 100644
 +            // acc1 = adjust_accum_fp64_to_int64(acc1);
 +            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
 +            dst[tid + size_QlP_n] = res1;
-+            #else
++#else
 +            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
              dst[tid] = res0;
  
 -            uint64_t res1 = barrett_reduce_uint128_uint64(acc1, mod.value(), mod.const_ratio());
 +            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
              dst[tid + size_QlP_n] = res1;
-+            #endif
++#endif
          }
      }
  
@@ -1344,7 +1367,7 @@ index 9da8b80..6a62d24 100644
 +        const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
  }
 diff --git a/src/evaluate.cu b/src/evaluate.cu
-index 48616c2..d30cfba 100644
+index 48616c2..f09699b 100644
 --- a/src/evaluate.cu
 +++ b/src/evaluate.cu
 @@ -9,6 +9,33 @@ using namespace phantom;
@@ -1392,15 +1415,56 @@ index 48616c2..d30cfba 100644
          if (encrypted1.size() != encrypted2.size())
              throw std::invalid_argument("poly number mismatch");
  
-@@ -1249,6 +1276,7 @@ Returns (f, e1, e2) such that
+@@ -1249,6 +1276,48 @@ Returns (f, e1, e2) such that
          encrypted.set_scale(new_scale);
      }
  
++    void multiply_plain_ntt_inplace(
++        const PhantomContext &context, PhantomCiphertext &encrypted,
++        const PhantomPlaintext &plain) {
++        const auto &s = cudaStreamPerThread;
++
++        if (encrypted.chain_index() != plain.chain_index() ||
++            encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
++            throw std::invalid_argument("encrypted and plain parameter mismatch");
++        }
++
++        // Extract encryption parameters.
++        auto &context_data = context.get_context_data(encrypted.chain_index());
++        auto &parms = context_data.parms();
++        auto &coeff_modulus = parms.coeff_modulus();
++        auto coeff_mod_size = coeff_modulus.size();
++        auto poly_degree = parms.poly_modulus_degree();
++        auto base_rns = context.gpu_rns_tables().modulus();
++        auto rns_coeff_count = poly_degree * coeff_mod_size;
++
++        double new_scale = encrypted.scale() * plain.scale();
++
++        //(c0 * pt, c1 * pt)
++        dim3 gridDimCtxt(rns_coeff_count / blockDimGlb.x, encrypted.size());
++        // Pointwise multiplication
++#ifndef RNS_POLY_BATCH
++        //(c0 * pt, c1 * pt)
++        for (size_t i = 0; i < encrypted.size(); i++) {
++            uint64_t gridDimGlb = poly_degree * coeff_mod_size / blockDimGlb.x;
++            multiply_rns_poly<<<gridDimGlb, blockDimGlb, 0, s>>>(
++                    encrypted.data() + i * rns_coeff_count, plain.data(), base_rns,
++                    encrypted.data() + i * rns_coeff_count, poly_degree, coeff_mod_size);
++        }
++#else
++        multiply_rns_poly_ct_pt<<<gridDimCtxt, blockDimGlb, 0, s>>>(
++                encrypted.data(), plain.data(), base_rns, encrypted.data(), poly_degree, coeff_mod_size);
++#endif
++
++        encrypted.set_scale(new_scale);
++    }
++
++
 +#ifndef RNS_POLY_BATCH
      static void multiply_plain_normal(const PhantomContext &context, PhantomCiphertext &encrypted,
                                        const PhantomPlaintext &plain, const cudaStream_t &stream) {
          // Extract encryption parameters.
-@@ -1293,6 +1321,81 @@ Returns (f, e1, e2) such that
+@@ -1293,6 +1362,51 @@ Returns (f, e1, e2) such that
  
          encrypted.set_scale(new_scale);
      }
@@ -1449,40 +1513,10 @@ index 48616c2..d30cfba 100644
 +        encrypted.set_scale(new_scale);
 +    }
 +#endif
-+
-+    void multiply_plain_ntt_inplace(
-+        const PhantomContext &context, PhantomCiphertext &encrypted,
-+        const PhantomPlaintext &plain) {
-+        const auto &s = cudaStreamPerThread;
-+
-+        if (encrypted.chain_index() != plain.chain_index() ||
-+            encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
-+            throw std::invalid_argument("encrypted and plain parameter mismatch");
-+        }
-+
-+        // Extract encryption parameters.
-+        auto &context_data = context.get_context_data(encrypted.chain_index());
-+        auto &parms = context_data.parms();
-+        auto &coeff_modulus = parms.coeff_modulus();
-+        auto coeff_mod_size = coeff_modulus.size();
-+        auto poly_degree = parms.poly_modulus_degree();
-+        auto base_rns = context.gpu_rns_tables().modulus();
-+        auto rns_coeff_count = poly_degree * coeff_mod_size;
-+
-+        double new_scale = encrypted.scale() * plain.scale();
-+
-+        //(c0 * pt, c1 * pt)
-+        dim3 gridDimCtxt(rns_coeff_count / blockDimGlb.x, encrypted.size());
-+        // Pointwise multiplication
-+        multiply_rns_poly_ct_pt<<<gridDimCtxt, blockDimGlb, 0, s>>>(
-+                encrypted.data(), plain.data(), base_rns, encrypted.data(), poly_degree, coeff_mod_size);
-+
-+        encrypted.set_scale(new_scale);
-+    }
  
      void multiply_plain_inplace(const PhantomContext &context, PhantomCiphertext &encrypted,
                                  const PhantomPlaintext &plain) {
-@@ -1304,7 +1407,11 @@ Returns (f, e1, e2) such that
+@@ -1304,7 +1418,11 @@ Returns (f, e1, e2) such that
          auto scheme = parms.scheme();
  
          if (scheme == scheme_type::bfv) {
@@ -1494,7 +1528,7 @@ index 48616c2..d30cfba 100644
          } else if (scheme == scheme_type::ckks) {
              multiply_plain_ntt(context, encrypted, plain, s);
          } else if (scheme == scheme_type::bgv) {
-@@ -1626,7 +1733,15 @@ Returns (f, e1, e2) such that
+@@ -1626,7 +1744,15 @@ Returns (f, e1, e2) such that
          // END: Apply Galois for each ciphertext
          // REORDERING IS SAFE NOW
          // Calculate (temp * galois_key[0], temp * galois_key[1]) + (c0, 0)
@@ -1511,7 +1545,7 @@ index 48616c2..d30cfba 100644
      }
  
  // TODO: remove recursive chain
-@@ -1863,4 +1978,96 @@ Returns (f, e1, e2) such that
+@@ -1863,4 +1989,96 @@ Returns (f, e1, e2) such that
                              cudaMemcpyDeviceToDevice, s);
          }
      }
@@ -1631,16 +1665,16 @@ index 92346e1..abb5c51 100644
  #include "host/numth.h"
  
 diff --git a/src/host/modulus.cu b/src/host/modulus.cu
-index 5dfe64a..7cf3a20 100644
+index 5dfe64a..4cae5bc 100644
 --- a/src/host/modulus.cu
 +++ b/src/host/modulus.cu
 @@ -19,6 +19,9 @@ namespace phantom::arith {
              uint64_count_ = 1;
              value_ = 0;
              const_ratio_ = {{0, 0, 0}};
-+            #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +            const_ratio_fp64_ = {0, 0};
-+            #endif
++#endif
              is_prime_ = false;
          } else if ((value >> MOD_BIT_COUNT_MAX != 0) || (value == 1)) {
              throw invalid_argument("value can be at most 61-bit and cannot be 1");
@@ -1648,7 +1682,7 @@ index 5dfe64a..7cf3a20 100644
              // We store also the remainder
              const_ratio_[2] = numerator[0];
  
-+            #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +            // Compute Barrett ratios for 52-bit words (barrett_reduce_128)
 +            numerator[0] = 0;
 +            numerator[1] = 1ull << 40;
@@ -1663,7 +1697,7 @@ index 5dfe64a..7cf3a20 100644
 +
 +            const_ratio_fp64_[0] = quotient[0] & 0xFFFFFFFFFFFFull;
 +            const_ratio_fp64_[1] = (quotient[1] << 12) | (quotient[0] >> 52);
-+            #endif
++#endif
 +
              uint64_count_ = 1;
  
@@ -1938,7 +1972,7 @@ index 1b268af..fdb29a8 100644
   * @param[in] operand Operand1
   * @param[in] scalar Operand2
 diff --git a/src/rns.cu b/src/rns.cu
-index ab9de3a..e4a3886 100644
+index ab9de3a..d6157e2 100644
 --- a/src/rns.cu
 +++ b/src/rns.cu
 @@ -1,6 +1,8 @@
@@ -1954,11 +1988,11 @@ index ab9de3a..e4a3886 100644
                      base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
  
              uint64_t obase_value = obase[out_prime_idx].value();
-+            #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +            uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
-+            #else
++#else
              uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
-+            #endif
++#endif
              auto &scale = inv_prod_q_mod_Bsk[out_prime_idx];
              auto &scale_shoup = inv_prod_q_mod_Bsk_shoup[out_prime_idx];
              uint64_t out1, out2;
@@ -1975,11 +2009,11 @@ index ab9de3a..e4a3886 100644
                      base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
  
              uint64_t obase_value = obase.value();
-+            #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +            uint64_t obase_ratio[2] = {obase.const_ratio_fp64()[0], obase.const_ratio_fp64()[1]};
-+            #else
++#else
              uint64_t obase_ratio[2] = {obase.const_ratio()[0], obase.const_ratio()[1]};
-+            #endif
++#endif
              auto &scale = inv_prod_q_mod_Bsk;
              auto &scale_shoup = inv_prod_q_mod_Bsk_shoup;
              uint64_t out1, out2;
@@ -1996,11 +2030,11 @@ index ab9de3a..e4a3886 100644
              for (size_t j = 0; j < size_Rl; j++) {
                  uint128_t curValue = {0, 0};
                  auto rj = base_Rl[j].value();
-+                #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +                auto rj_ratio = base_Rl[j].const_ratio_fp64();
-+                #else
++#else
                  auto rj_ratio = base_Rl[j].const_ratio();
-+                #endif
++#endif
                  auto t_R_SHatInv_mod_s_div_s_mod_rj = t_R_SHatInv_mod_s_div_s_mod_r + j * (size_Ql + 1);
  
                  for (size_t i = 0; i < size_Ql; i++) {
@@ -2017,10 +2051,10 @@ index ab9de3a..e4a3886 100644
  
 -                uint64_t curNativeValue = barrett_reduce_uint128_uint64(curValue, rj, rj_ratio);
 -                alpha = barrett_reduce_uint64_uint64(alpha, rj, rj_ratio[1]);
-+                #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +                curValue = adjust_accum_int64_to_fp64(curValue);
 +                // curValue = adjust_accum_fp64_to_int64(curValue);
-+                #endif
++#endif
 +                uint64_t curNativeValue = barrett_reduce_uint128_uint64_fp64(curValue, rj, rj_ratio);
 +                alpha = barrett_reduce_uint64_uint64_fp64(alpha, rj, rj_ratio[1]);
                  dst[j * n + tid] = add_uint64_uint64_mod(curNativeValue, alpha, rj);
@@ -2040,18 +2074,18 @@ index ab9de3a..e4a3886 100644
 +                uint128_t temp = multiply_uint64_uint64_fp64(xi, tQlSlHatInvModsDivsModqi[size_Rl]);
                  add_uint128_uint128(temp, curValue, curValue);
  
-+                #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +                curValue = adjust_accum_int64_to_fp64(curValue);
 +                // curValue = adjust_accum_fp64_to_int64(curValue);
-+                #endif
++#endif
                  auto qi = base_Ql[i].value();
-+                #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +                auto qi_ratio = base_Ql[i].const_ratio_fp64();
-+                #else
++#else
                  auto qi_ratio = base_Ql[i].const_ratio();
 -                uint64_t curNativeValue = barrett_reduce_uint128_uint64(curValue, qi, qi_ratio);
 -                alpha = barrett_reduce_uint64_uint64(alpha, qi, qi_ratio[1]);
-+                #endif
++#endif
 +                uint64_t curNativeValue = barrett_reduce_uint128_uint64_fp64(curValue, qi, qi_ratio);
 +                alpha = barrett_reduce_uint64_uint64_fp64(alpha, qi, qi_ratio[1]);
                  dst[i * n + tid] = add_uint64_uint64_mod(curNativeValue, alpha, qi);
@@ -2101,7 +2135,7 @@ index ab9de3a..e4a3886 100644
                                                           const uint64_t *QlDropModq_shoup, const DModulus *base_Ql,
                                                           size_t size_Ql, uint64_t n) {
 diff --git a/src/rns_base.cu b/src/rns_base.cu
-index 05d25e9..9123e28 100644
+index 05d25e9..3b005d0 100644
 --- a/src/rns_base.cu
 +++ b/src/rns_base.cu
 @@ -1,7 +1,7 @@
@@ -2117,20 +2151,20 @@ index 05d25e9..9123e28 100644
      base_ = phantom::util::make_cuda_auto_ptr<DModulus>(size_, stream);
      for (size_t idx = 0; idx < size_; idx++) {
          auto temp_modulus = *(cpu_rns_base.base() + idx);
-+        #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +        DModulus temp(
 +            temp_modulus.value(),
 +            temp_modulus.const_ratio().at(0), temp_modulus.const_ratio().at(1),
 +            temp_modulus.const_ratio_fp64().at(0), temp_modulus.const_ratio_fp64().at(1)
 +        );
-+        #else
++#else
          DModulus temp(temp_modulus.value(), temp_modulus.const_ratio().at(0), temp_modulus.const_ratio().at(1));
-+        #endif
++#endif
          cudaMemcpyAsync(base() + idx, &temp, sizeof(DModulus),
                          cudaMemcpyHostToDevice, stream);
      }
 diff --git a/src/rns_bconv.cu b/src/rns_bconv.cu
-index edab41a..a25baac 100644
+index edab41a..2906061 100644
 --- a/src/rns_bconv.cu
 +++ b/src/rns_bconv.cu
 @@ -1,8 +1,9 @@
@@ -2148,11 +2182,11 @@ index edab41a..a25baac 100644
                  base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_QHatModp, out_prime_idx, n, ibase_size, degree_idx);
  
          uint64_t obase_value = obase[out_prime_idx].value();
-+        #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
-+        #else
++#else
          uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
-+        #endif
++#endif
  
 -        uint64_t out = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
 -        uint64_t out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
@@ -2165,14 +2199,14 @@ index edab41a..a25baac 100644
          double_t2 accum_frac = base_convert_acc_frac_unroll2(xi_qiHatInv_mod_qi, qiInv, n, ibase_size, degree_idx);
  
          uint64_t obase_value = obase[out_prime_idx].value();
-+        #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
-+        #else
++#else
          uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
 -
 -        uint64_t out = barrett_reduce_uint128_uint64(accum.x, obase_value, obase_ratio);
 -        uint64_t out2 = barrett_reduce_uint128_uint64(accum.y, obase_value, obase_ratio);
-+        #endif
++#endif
 +        uint64_t out = barrett_reduce_uint128_uint64_fp64(accum.x, obase_value, obase_ratio);
 +        uint64_t out2 = barrett_reduce_uint128_uint64_fp64(accum.y, obase_value, obase_ratio);
 +        
@@ -2183,11 +2217,11 @@ index edab41a..a25baac 100644
                  base_convert_acc_unroll2(xi_qiHatInv_mod_qi, s_qiHat_mod_pj, out_prime_idx, n, ibase_size, degree_idx);
  
          uint64_t obase_value = obase[out_prime_idx].value();
-+        #ifdef FP64_MM_ARITH
++#ifdef FP64_MM_ARITH
 +        uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio_fp64()[0], obase[out_prime_idx].const_ratio_fp64()[1]};
-+        #else
++#else
          uint64_t obase_ratio[2] = {obase[out_prime_idx].const_ratio()[0], obase[out_prime_idx].const_ratio()[1]};
-+        #endif
++#endif
  
          // Leap over the overlapped region.
          const size_t padded_out_prime_idx = out_prime_idx + ((out_prime_idx >= startPartIdx) ? size_PartQl : 0);
