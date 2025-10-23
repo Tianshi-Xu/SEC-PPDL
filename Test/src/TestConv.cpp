@@ -1,6 +1,5 @@
-// #include <LinearLayer/Conv.h>
-#include <Model/ResNet.h>
-#include <torch/script.h>
+#include <LinearLayer/Conv.h>
+// #include <Model/ResNet.h>
 #include <fstream>
 #include <iostream>
 

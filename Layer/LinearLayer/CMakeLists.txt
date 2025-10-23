@@ -1,6 +1,6 @@
 project(LinearLayer_test)
 
-find_package(HEXL 1.2.5 REQUIRED PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../../Extern/hexl/hexl_build" NO_DEFAULT_PATH)
+find_package(HEXL 1.2.6 REQUIRED PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../../Extern/hexl/hexl_build" NO_DEFAULT_PATH)
 message(STATUS "HEXL_FOUND: ${HEXL_FOUND}")
 
 

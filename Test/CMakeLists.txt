@@ -11,10 +11,10 @@ target_link_libraries(test_HE PUBLIC Model)
 if(USE_HE_GPU)
     add_executable(testHEGPU ${CMAKE_CURRENT_LIST_DIR}/src/TestHEGPU.cpp)
     target_link_libraries(testHEGPU PUBLIC HE Datatype)
+    add_executable(testFFN ${CMAKE_CURRENT_LIST_DIR}/src/TestFFN.cpp)
+    target_link_libraries(testFFN PUBLIC HE Datatype)
 endif()
 
-add_executable(testFFN ${CMAKE_CURRENT_LIST_DIR}/src/TestFFN.cpp)
-target_link_libraries(testFFN PUBLIC HE Datatype)
 
 add_executable(test_linear_operator ${CMAKE_CURRENT_LIST_DIR}/src/TestLinearOperator.cpp)
 target_link_libraries(test_linear_operator PUBLIC LinearOperator Utils)
@@ -34,8 +34,8 @@ target_link_libraries(test_Conv PUBLIC Model)
 add_executable(test_fixpoint ${CMAKE_CURRENT_LIST_DIR}/src/TestFixPoint.cpp)
 target_link_libraries(test_fixpoint PUBLIC NonlinearOperator)
 
-# add_executable(test_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestResNet.cpp)
-# target_link_libraries(test_resnet PUBLIC Model)
+add_executable(test_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestResNet.cpp)
+target_link_libraries(test_resnet PUBLIC Model)
 
 # add_executable(test_pool ${CMAKE_CURRENT_LIST_DIR}/src/test_Pool.cpp)
 # target_link_libraries(test_pool PUBLIC NonlinearLayer)
