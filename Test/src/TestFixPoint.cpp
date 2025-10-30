@@ -1,5 +1,4 @@
 #include <NonlinearOperator/FixPoint.h>
-#include <fstream>
 #include <iostream>
 using namespace std;
 using namespace NonlinearOperator;
@@ -56,6 +55,63 @@ void test_ring_field(){
   input.print();
 }
 
+void test_secure_round(){
+  /************ Generate Test Data ************/
+  /********************************************/
+  Tensor<T> input({2,4});
+  int32_t s_fix = 4;    // 定点小数位数
+  int32_t bw_fix = 16;  // 定点数位宽
+  int32_t bw_acc = 12;  // 结果位宽
+  
+  if (party == ALICE) {
+    // 测试数据: 一些接近舍入边界的值
+    // 例如: 15 = 0...01111, 16 = 0...10000, 17 = 0...10001
+    // 在s_fix=4时，threshold = 2^3 = 8
+    input(0) = 7;   // < 8, 舍入下降
+    input(1) = 8;   // = 8, 舍入上升
+    input(2) = 15;  // 接近边界
+    input(3) = 23;  // > 16
+    input(4) = 16;  // = 16
+    input(5) = 24;  // 恰好是16+8
+    input(6) = 32;  // 2*16
+    input(7) = 40;  // 2*16+8
+  } else {
+    // BOB的shares为0
+    for (int i = 0; i < input.size(); i++) {
+      input(i) = 0;
+    }
+  }
+  
+  cout << "Before secure_round:" << endl;
+  input.print();
+  
+  fixpoint->secure_round(input, s_fix, bw_fix, bw_acc);
+  
+  cout << "After secure_round:" << endl;
+  input.print();
+  
+  /************** Result Verification ****************/
+  /***************************************************/
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
+  } else { // party == BOB
+    T *input0 = new T[input.size()];
+    ioArr[0]->recv_data(input0, input.size() * sizeof(T));
+    
+    // 创建 Tensor 来存储重建的结果
+    Tensor<T> reconstructed(input.shape());
+    for (int i = 0; i < input.size(); i++) {
+      reconstructed(i) = (input(i) + input0[i]) & ((1ULL << bw_acc) - 1);
+    }
+    
+    cout << "\n=== Reconstruction of secure_round results ===" << endl;
+    cout << "Reconstructed values:" << endl;
+    reconstructed.print();
+    
+    delete[] input0;
+  }
+}
+
 int main(int argc, char **argv) {
   /************* Argument Parsing  ************/
   /********************************************/
@@ -85,7 +141,8 @@ int main(int argc, char **argv) {
   }
   
   // test_comapre();
-  test_ring_field();
+  // test_ring_field();
+  test_secure_round();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {

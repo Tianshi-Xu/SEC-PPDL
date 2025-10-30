@@ -215,6 +215,27 @@ class FixPoint {
             uint64_t d1 = x.shape()[1];
             result.reshape({d0, d1});
         }
+
+        // Secure rounding protocol
+        void secure_round(Tensor<T> &x, int32_t s_fix, int32_t bw_fix, int32_t bw_acc) {
+            auto shape = x.shape();
+            int dim = x.size();
+            x.flatten();
+            T* x_flatten = x.data().data();
+            
+            std::thread round_threads[num_threads];
+            int chunk_size = dim / num_threads;
+            for (int i = 0; i < num_threads; i++) {
+                int offset = i * chunk_size;
+                round_threads[i] = std::thread(secure_round_thread, aux[i], 
+                                                x_flatten + offset, x_flatten + offset, 
+                                                chunk_size, s_fix, bw_fix, bw_acc, party);
+            }
+            for (int i = 0; i < num_threads; i++) {
+                round_threads[i].join();
+            }
+            x.reshape(shape);
+        }
     private:
         TruncationProtocol **truncationProtocol = nullptr;
         OTProtocol::AuxProtocols **aux = nullptr;
@@ -259,6 +280,120 @@ class FixPoint {
 
         void static mux_thread(AuxProtocols *aux, uint8_t* b, T* input, T* result, int32_t lnum_ops, int32_t bwA, int32_t bwB){
             aux->multiplexer<T>(b, input, result, lnum_ops, bwA, bwB);
+        }
+
+        // input b_fix-bit fixed-point value X_fix with scale 2^{s_fix}, output b_acc-bit integer X_q
+        void static secure_round_thread(AuxProtocols *aux, T* input, T* result, 
+                                        int lnum_ops, int32_t s_fix, int32_t bw_fix, 
+                                        int32_t bw_acc, int party) {
+            // Step 1: Compute b_1 = 1{X_fix >= 2^{s_fix-1}}
+            // 这等价于比较 X_fix 与 2^{s_fix-1}
+            // 通过计算 MSB(X_fix - 2^{s_fix-1})，如果MSB=1表示负数，即X_fix < 2^{s_fix-1}
+            // 所以 b_1 = NOT(MSB(X_fix - 2^{s_fix-1}))
+            uint64_t threshold = (1ULL << (s_fix - 1));
+            uint8_t *b_1 = new uint8_t[lnum_ops];
+            
+            uint64_t *tmp_x = new uint64_t[lnum_ops];
+            uint64_t mask_fix = (bw_fix == 64 ? -1ULL : ((1ULL << bw_fix) - 1));
+            
+            if (party == ALICE) {
+                for (int i = 0; i < lnum_ops; i++) {
+                    tmp_x[i] = (input[i] - threshold) & mask_fix;
+                }
+            } else { // BOB
+                for (int i = 0; i < lnum_ops; i++) {
+                    tmp_x[i] = input[i];
+                }
+            }
+            
+            // MSB(tmp_x) gives us 1{X_fix < 2^{s_fix-1}}
+            // So b_1 = NOT(MSB(tmp_x))
+            aux->MSB<uint64_t>(tmp_x, b_1, lnum_ops, bw_fix);
+            
+            // 取反得到 b_1
+            for (int i = 0; i < lnum_ops; i++) {
+                if (party == ALICE) {
+                    b_1[i] = b_1[i] ^ 1;
+                }
+                // BOB的share不变
+            }
+            
+            // Step 2: Compute b_2 via 1-out-of-4 OT
+            uint8_t *b_2 = new uint8_t[lnum_ops];
+            
+            // 提取 m_0 和 m_1 (第 s_fix 位)
+            uint8_t *m_local = new uint8_t[lnum_ops];
+            for (int i = 0; i < lnum_ops; i++) {
+                m_local[i] = (input[i] >> s_fix) & 1;
+            }
+            
+            if (party == ALICE) {
+                // ALICE 准备查找表（4个消息）
+                PRG128 prg;
+                prg.random_bool((bool *)b_2, lnum_ops);  // 生成随机 r 作为 b_2_1
+                
+                uint8_t **spec = new uint8_t*[lnum_ops];
+                for (int i = 0; i < lnum_ops; i++) {
+                    spec[i] = new uint8_t[4];
+                    uint8_t b_1_1 = b_1[i];      // ALICE的b_1 share
+                    uint8_t m_1 = m_local[i];    // ALICE的m bit
+                    uint8_t r = b_2[i];          // 随机掩码，也是b_2_1
+                    
+                    // 对于BOB的4种可能选择 (b_1_0, m_0) = (j0, j1)
+                    // j的低位是b_1_0，高位是m_0
+                    for (int j = 0; j < 4; j++) {
+                        uint8_t j0 = j & 1;        // b_1_0
+                        uint8_t j1 = (j >> 1) & 1; // m_0
+                        
+                        // 根据公式 b_2 = ((1 ⊕ b_1) ∧ (m_0 ⊕ m_1)) ⊕ (m_0 ∧ m_1)
+                        // 将 b_1 = b_1_0 ⊕ b_1_1, 代入并整理得到ALICE的消息
+                        uint8_t term1 = ((1 ^ j0 ^ b_1_1) & (j1 ^ m_1));
+                        uint8_t term2 = (j1 & m_1);
+                        spec[i][j] = (term1 ^ term2 ^ r) & 1;
+                    }
+                }
+                
+                // 调用 lookup_table (1-out-of-4 OT)
+                aux->lookup_table<uint8_t>(spec, nullptr, nullptr, lnum_ops, 2, 1);
+                
+                for (int i = 0; i < lnum_ops; i++) delete[] spec[i];
+                delete[] spec;
+                
+            } else { // BOB
+                // BOB 提供选择输入 (b_1_0, m_0)
+                uint8_t *lut_in = new uint8_t[lnum_ops];
+                for (int i = 0; i < lnum_ops; i++) {
+                    uint8_t b_1_0 = b_1[i];      // BOB的b_1 share
+                    uint8_t m_0 = m_local[i];    // BOB的m bit
+                    lut_in[i] = (m_0 << 1) | b_1_0;  // 组合成2位选择
+                }
+                
+                // 调用 lookup_table 接收结果
+                aux->lookup_table<uint8_t>(nullptr, lut_in, b_2, lnum_ops, 2, 1);
+                
+                delete[] lut_in;
+            }
+            
+            // Step 3: B2A conversion
+            uint64_t *b_1_arith = new uint64_t[lnum_ops];
+            uint64_t *b_2_arith = new uint64_t[lnum_ops];
+            aux->B2A(b_1, b_1_arith, lnum_ops, bw_acc);
+            aux->B2A(b_2, b_2_arith, lnum_ops, bw_acc);
+            
+            // Step 4: 本地计算 X_q = X_fix / 2^{s_fix} + b_1 + b_2
+            uint64_t mask_acc = (bw_acc == 64 ? -1ULL : ((1ULL << bw_acc) - 1));
+            for (int i = 0; i < lnum_ops; i++) {
+                uint64_t shifted = input[i] >> s_fix;
+                result[i] = (shifted + b_1_arith[i] + b_2_arith[i]) & mask_acc;
+            }
+            
+            // 清理
+            delete[] b_1;
+            delete[] b_2;
+            delete[] m_local;
+            delete[] tmp_x;
+            delete[] b_1_arith;
+            delete[] b_2_arith;
         }
 };
 

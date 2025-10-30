@@ -1,0 +1,42 @@
+\subsection{Secure Rounding Protocol}\label{subsec:rounding}
+
+We propose a novel secure rounding protocol that requires only an extra 1-out-of-4 OT to perform the rounding operation. Given a $b_{fix}$-bit fixed-point value: $X_{fix} = X_q \cdot \frac{s}{s'} \cdot 2^{s_{fix}}$, the goal is to get $b_{acc}$-bit integer $X'_q=\lfloor X_{fix}/2^{fix}\rceil$.
+This operation must be performed under secret sharing. A na\"ive approach would be to invoke the $\operatorname{truncate-and-reduce}$ protocol~\cite{rathee2021sirnn} to securely shift $X_{fix}$ right by $s_{fix}$ bits, followed by a secure comparison to compute a rounding bit $\ashare{b_1}^B=\mbm{1}\{X_{fix} >= 2^{s_{fix}-1}\}$, and then add $\ashare{b_1}^B$ back.
+However, we observe that the truncate-and-reduce protocol involves $\Pi_{\text{cmp}}$ to compute a comparison bit $\ashare{b_2}^B = \mbm{1}\{\ashare{X_{fix}}_0(0:s_{fix}-1) + \ashare{X_{fix}}_1(0:s_{fix}-1) \geq 2^{s_{fix}}\}$, where $(0:s_{fix}-1)$ denotes the lower $s_{fix}$ bits.
+This comparison bit can be directly derived from $\ashare{b_1}^B$, making the invocation of the comparison protocol unnecessary.
+Specifically, $b_2=((1\oplus b_1)\wedge (m_0 \oplus m_1))\oplus (m_0\wedge m_1)$, where $m_0,m_1$ are the $s_{fix}$-th least significant bits of $\ashare{X_{fix}}_0$ and $\ashare{X_{fix}}_1$, respectively. $m_0$ and $m_1$ can be obtained locally by $P_0$ and $P_1$. Since both $m_0$ and $\ashare{b_1}_0$ are 1-bit values, $b_2$ can be obtained using a 1-out-of-4 OT, where $P_0$ uses the pair $(\ashare{b_1}_0, m_0)$ as the selection input, and both parties finally obtain $\ashare{b_2}$~\cite{rathee2021sirnn}. A 1-out-of-4 OT requires only $2\lambda+4$ bits of communication and 2 rounds, whereas a single comparison costs at least $\lambda s_{fix} + 14s_{fix}$ bits and $\log s_{fix}$ rounds~\cite{rathee2021sirnn}. The complete secure rounding protocol is provided in Appendix~\ref{app:round}.
+
+
+
+\subsection{Secure Rounding Protocol}\label{app:round}
+The core idea of our secure rounding protocol is to derive $b_2$ from $b_1$ in a lightweight manner, without requiring an additional comparison. Specifically, 
+\begin{equation}\label{eq:round}
+    b_2 = \big((1 \oplus \ashare{b_1}_0 \oplus \ashare{b_1}_1) \wedge (m_0 \oplus m_1)\big) \oplus (m_0 \wedge m_1)
+\end{equation}
+where $m_0$ and $m_1$ denote the $s_{fix}$-th least significant bits of $\ashare{X_{fix}}_0$ and $\ashare{X_{fix}}_1$, respectively. Both $m_0$ and $m_1$ can be computed locally by $P_0$ and $P_1$.  
+
+Since $m_0, m_1$ and $\ashare{b_1}^B$ are all 1-bit values, $b_2$ can be obtained using a single 1-out-of-4 OT. Concretely, the sender $P_0$ prepares four choices corresponding to: $(\ashare{b_1}_0=0, m_0=0),\ (\ashare{b_1}_0=0, m_0=1),\ (\ashare{b_1}_0=1, m_0=0),\ (\ashare{b_1}_0=1, m_0=1),$. Then we substitute them into Equation~\ref{eq:round} to generate the four messages for the receiver $P_1$. 
+\begin{equation*}
+    \begin{aligned}
+        x_1&=\left[(1\oplus\ashare{b_1}_1)\wedge m_1\right]\oplus r\\
+        x_2&=\left[[(1\oplus \ashare{b_1}_1)\wedge (1\oplus m_1)]\oplus m_1\right]\oplus r\\
+        x_3&=\left[\ashare{b_1}_1\wedge  m_1\right]\oplus r\\
+        x_4&=\left[[\ashare{b_1}_1\wedge (1\oplus m_1)]\oplus m_1\right]\oplus r\\
+    \end{aligned}
+\end{equation*}
+Here, $r \in \{0,1\}$ is a uniformly sampled random bit used to mask $P_1$’s information. Then, $b_2$ is obtained via a 1-out-of-4 OT, where $P_0$ uses the pair $(\ashare{b_1}_0, m_0)$ as the selection input and receives $\ashare{b_2}_0 = x_i$, while $P_1$ sets $\ashare{b_2}_1 = r$. The complete protocol is given in Algorithm~\ref{alg:sec_round}, where the $\Pi_{\text{B2A}}$ subprotocol is adopted from Section~III.E of SiRNN~\cite{rathee2021sirnn} and requires only $\lambda + b_{\text{acc}}$ bits of communication.
+\begin{algorithm}[!tb]
+    \small
+    \KwIn{$P_0\ \&\ P_1$ hold $b_{fix}$-bit $\ashare{X_{fix}}$ with fixed-point scale $2^{s_{fix}}$.}
+    \KwOut{$P_0\ \&\ P_1$ get $b_{acc}$-bit $\ashare{X_{q}}$ where $X_q=\lfloor X_{fix}/2^{s_{fix}}\rceil$}
+    \caption{Secure Rounding, $\Pi_{\text{round}}$}
+    \label{alg:sec_round}
+  
+    $P_0$ and $P_1$ invoke comparison protocol $\Pi_{\text{cmp}}$~\cite{rathee2021sirnn} and obtain the rounding bit $\ashare{b_1}^B$ where $b_1=\mbm{1}\{X_{fix} >= 2^{s_{fix}-1}\}$.
+  
+    $P_0$ and $P_1$ invoke a 1-out-of-4 OT and obtain $\ashare{b_2}^B$.
+
+    $P_0$ and $P_1$ invoke the bool-to-arithmetic protocol $\Pi_{\text{B2A}}$ to obtain $\ashare{b_1}^{2^{b_{acc}}}=\Pi_{\text{B2A}} (\ashare{b_1}^B),\ashare{b_2}^{2^{b_{acc}}}=\Pi_{\text{B2A}} (\ashare{b_2}^B)$.
+
+    $\forall i\in \{0,1\}, P_i$ locally compute $\ashare{X_q}_i=\ashare{X_{fix}}_i/2^{s_{fix}}+\ashare{b_1}^{2^{b_{acc}}}_i+\ashare{b_2}^{2^{b_{acc}}}_i$.
+\end{algorithm}
