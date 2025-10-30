@@ -10,17 +10,24 @@ Conv2DNest::Conv2DNest(uint64_t in_feature_size, uint64_t stride, uint64_t paddi
     : Conv2D(in_feature_size, stride, padding, weight, bias, HE)
 {
     // assert(padded_feature_size * padded_feature_size > HE->polyModulusDegree / 2 && "Input feature map is too big, please use Cheetah instead.");
-    
+
+    // Pad the feature size to PO2.
     int tmp_size = in_feature_size + 2 * padding - 1;
     for (int i = 0; i < 5; i++) {
         tmp_size |= tmp_size >> (1 << i);
     }
     padded_feature_size = tmp_size + 1;
+
+    /* 
+    The number of slots are divided into two identical parts in BFV, 
+    so we process out_channels in parallel, or more concretely, we turn Ci*Co/N into Ci*(Co/2)/(N/2).
+    */
     tile_size = HE->polyModulusDegree / (2 * padded_feature_size * padded_feature_size);
     out_channels /= 2;
-    tiled_in_channels = in_channels / tile_size + (in_channels % tile_size != 0);
+    
+    tiled_in_channels = in_channels / tile_size + (in_channels % tile_size != 0); // ceiling
     tiled_out_channels = out_channels / tile_size + (out_channels % tile_size != 0);
-    input_rot = std::sqrt(tile_size);  // to be checked
+    input_rot = std::sqrt(tile_size);
     if (HE->server) {
         weight_pt = PackWeight();
     }
@@ -71,13 +78,28 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
         for (uint64_t j = 0; j < tiled_out_channels; j++) {
             for (uint64_t k = 0; k < tile_size; k++) {
+                /*
+                Each ciphertext/plaintext executes tile_size convolutions in a SIMD manner.
+                The remaining dimensions are tiled_in_channels, tiled_out_channels and tile_size.
+                */
                 std::vector<uint64_t> tmp_vec(HE->polyModulusDegree, 0);
                 for (uint64_t l = 0; l < tile_size; l++) {
+                    /*
+                    We compute the indices of convolution kernels here.
+                    We encode along anti-diagonals, but encoding along diagonals is also feasible.
+                    The indices involve three parts: the indices of block i, j, the index in the
+                    anti-diagonal l, and the preprocessed input rotation k.
+                    */
                     uint64_t in_channel_idx = i * tile_size + (l + (input_rot - k % input_rot - 1)) % tile_size;
                     uint64_t out_channel_idx = j * tile_size + (3 * tile_size - l - k - (input_rot - k % input_rot)) % tile_size;
                     if (in_channel_idx < in_channels && out_channel_idx < out_channels) {
                         for (uint64_t m = 0; m < kernel_size; m++) {
                             for (uint64_t n = 0; n < kernel_size; n++) {
+                                /*
+                                We fill the weights into polynomials here. 
+                                This is almost equivalent to the case of SISO convolution, where the offset guarantees that
+                                the weights start from the 0th index.
+                                */
                                 uint64_t poly_idx = l * padded_feature_size * padded_feature_size + offset - m * padded_feature_size - n;
                                 tmp_vec[poly_idx] = weight({out_channel_idx, in_channel_idx, m, n});
                                 tmp_vec[poly_idx + HE->polyModulusDegree / 2] = weight({out_channel_idx + out_channels, in_channel_idx, m, n});
@@ -85,7 +107,8 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         }
                     }
                 }
-                
+
+                // We perform NTT independently for each block in the ciphertext. 
                 for (uint64_t l = 0; l < 2 * tile_size; l++) {
                     std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
                     for (uint64_t m = 0; m < padded_feature_size * padded_feature_size; m++) {
@@ -96,13 +119,14 @@ Tensor<UnifiedPlaintext> Conv2DNest::PackWeight() {
                         tmp_vec[l * padded_feature_size * padded_feature_size + m] = tmp_ntt[m];
                     }
                 }
-                
+
+                // We set unused slots to non-zero values to avoid transparent ciphertext error.
                 bool zero_flag = 1;
                 for (uint64_t l = 0; l < HE->polyModulusDegree; l++) {
                     zero_flag = zero_flag && (tmp_vec[l] == 0);
                 }
                 if (zero_flag) {
-                    tmp_vec[HE->polyModulusDegree - 1] = 1; // set unused slots to non-zero values to avoid transparent ciphertext error
+                    tmp_vec[HE->polyModulusDegree - 1] = 1; 
                 }
                 HE->encoder->encode(tmp_vec, weight_pt({i, j, k}));
             }
@@ -117,6 +141,10 @@ Tensor<uint64_t> Conv2DNest::PackActivation(Tensor<uint64_t> &x) {
     Tensor<uint64_t> ac_msg({tiled_in_channels, HE->polyModulusDegree});
 
     for (uint64_t i = 0; i < tiled_in_channels; i++) {
+        /*
+        Similarly, we initialize ciphertexts along the remaining dimension, tiled_in_channels.
+        The encoding for the activation is straightforward. We just flatten the original tensor.
+        */
         for (uint64_t j = 0; j < tile_size; j++) {
             if (i * tile_size + j < in_channels) {
                 for (uint64_t k = 0; k < padded_feature_size; k++) {
@@ -160,7 +188,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
         Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size}, HE->GenerateZeroCiphertext(target));
         UnifiedGaloisKeys* keys = HE->galoisKeys;
 
-        // First complete the input rotation
+        // First, complete the input rotation.
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_in_channels; j++) {
                 if (i) {
@@ -173,7 +201,7 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
                 }
             }
         }
-        // Complete all the multiplication, and reduce along the input channel dimension
+        // Then, complete all the multiplication, and reduce along the input channel dimension.
         for (uint64_t i = 0; i < tiled_in_channels; i++) {
             for (uint64_t j = 0; j < tiled_out_channels; j++) {
                 for (uint64_t k = 0; k < tile_size; k++) {
@@ -189,14 +217,14 @@ Tensor<UnifiedCiphertext> Conv2DNest::HECompute(const Tensor<UnifiedPlaintext> &
             }
         }
         for (uint64_t i = 0; i < tiled_out_channels; i++) {
-            // Reduce along the input rotation dimension, since it has been completed
+            // Reduce along the input rotation dimension, since it has been completed.
             for (uint64_t j = 0; j < tile_size; j++) {
                 if (j % input_rot) {
                     HE->evaluator->add_inplace(int_ct({i, j - j % input_rot}), int_ct({i, j}));
                 }
             }
             out_ct(i) = int_ct({i, 0});
-            // Complete output rotation to reduce along this dimension
+            // Complete output rotation to reduce along this dimension.
             for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
                 // cout << "rot2:" << padded_feature_size * padded_feature_size * input_rot << endl;
                 HE->evaluator->rotate_rows(out_ct(i), padded_feature_size * padded_feature_size * input_rot, *keys, out_ct(i));
@@ -214,6 +242,7 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
     Tensor<uint64_t> y({out_channels, out_feature_size, out_feature_size});
     intel::hexl::NTT ntt(padded_feature_size * padded_feature_size, HE->plain_mod);
 
+    // iNTT needs to be executed before depacking.
     for (uint64_t i = 0; i < tiled_out_channels; i++) {
         std::vector<uint64_t> tmp_ntt(padded_feature_size * padded_feature_size, 0);
         for (uint64_t j = 0; j < 2 * tile_size; j++) {
@@ -227,6 +256,10 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
         }
     }
 
+    /*
+    Depacking the results is almost the inverse of flattening, except considering the stride and 
+    the weight offset. Also, since we use anti-diagonal, the blocks here are in the inversed order. 
+    */
     for (uint64_t i = 0; i < out_channels; i++) {
         for (uint64_t j = 0; j < out_feature_size; j++) {
             for (uint64_t k = 0; k < out_feature_size; k++) {
