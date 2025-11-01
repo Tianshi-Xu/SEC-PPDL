@@ -236,6 +236,32 @@ class FixPoint {
             }
             x.reshape(shape);
         }
+
+        // Secure requantization protocol
+        // Algorithm 1: from b_acc to b_acc with scale change (s to s')
+        // Algorithm 2: from b_acc to b_fix with scale s to scale 2^{s_fix}
+        // Algorithm 3: from b_fix to b_acc with scale change
+        void secure_requant(Tensor<T> &x, double scale_in, double scale_out, 
+                           int32_t bw_in, int32_t bw_out, int32_t s_fix) {
+            auto shape = x.shape();
+            int dim = x.size();
+            x.flatten();
+            T* x_flatten = x.data().data();
+            
+            std::thread requant_threads[num_threads];
+            int chunk_size = dim / num_threads;
+            for (int i = 0; i < num_threads; i++) {
+                int offset = i * chunk_size;
+                requant_threads[i] = std::thread(secure_requant_thread, aux[i],
+                                                  x_flatten + offset, x_flatten + offset,
+                                                  chunk_size, scale_in, scale_out,
+                                                  bw_in, bw_out, s_fix, party);
+            }
+            for (int i = 0; i < num_threads; i++) {
+                requant_threads[i].join();
+            }
+            x.reshape(shape);
+        }
     private:
         TruncationProtocol **truncationProtocol = nullptr;
         OTProtocol::AuxProtocols **aux = nullptr;
@@ -394,6 +420,69 @@ class FixPoint {
             delete[] tmp_x;
             delete[] b_1_arith;
             delete[] b_2_arith;
+        }
+
+        // Secure requantization thread
+        // Implements 3 algorithms from protocol.tex:
+        // 1. From b_acc to b_acc with scale change (s to s')
+        // 2. From b_acc to b_fix with scale s to scale 2^{s_fix}
+        // 3. From b_fix to b_acc with scale change
+        void static secure_requant_thread(AuxProtocols *aux, T* input, T* result,
+                                          int lnum_ops, double scale_in, double scale_out,
+                                          int32_t bw_in, int32_t bw_out, int32_t s_fix, int party) {
+            
+            // Determine the type of requantization based on bitwidths
+            bool is_acc_to_fix = (bw_in < bw_out);  // Algorithm 2: b_acc -> b_fix
+            bool is_fix_to_acc = (bw_in > bw_out);  // Algorithm 3: b_fix -> b_acc
+            bool is_acc_to_acc = (bw_in == bw_out); // Algorithm 1: b_acc -> b_acc
+            
+            if (is_acc_to_acc) {
+                // Algorithm 1: From b_acc to b_acc with scale change (s to s')
+                // Step 1: Extend from b_acc to b_fix
+                aux->z_extend(lnum_ops, input, result, bw_in, s_fix * 2, nullptr);
+                
+                // Step 2: Locally compute X_fix = X_q * (s/s') * 2^{s_fix}
+                // Convert scale ratio to integer as late as possible
+                double scale_ratio = scale_in / scale_out;
+                uint64_t scale_factor = (uint64_t)(scale_ratio * (1ULL << s_fix));
+                uint64_t mask_fix = (s_fix * 2 == 64 ? -1ULL : ((1ULL << (s_fix * 2)) - 1));
+                for (int i = 0; i < lnum_ops; i++) {
+                    result[i] = (result[i] * scale_factor) & mask_fix;
+                }
+                
+                // Step 3: Secure rounding to get X'_q
+                secure_round_thread(aux, result, result, lnum_ops, s_fix, s_fix * 2, bw_out, party);
+                
+            } else if (is_acc_to_fix) {
+                // Algorithm 2: From b_acc to b_fix with scale s to scale 2^{s_fix}
+                // Step 1: Extend from b_acc to b_fix
+                aux->z_extend(lnum_ops, input, result, bw_in, bw_out, nullptr);
+                
+                // Step 2: Locally compute X_f = X_q * s * 2^{s_fix}
+                // Convert scale to integer as late as possible
+                uint64_t scale_factor = (uint64_t)(scale_in * (1ULL << s_fix));
+                uint64_t mask_out = (bw_out == 64 ? -1ULL : ((1ULL << bw_out) - 1));
+                for (int i = 0; i < lnum_ops; i++) {
+                    result[i] = (result[i] * scale_factor) & mask_out;
+                }
+                
+            } else if (is_fix_to_acc) {
+                // Algorithm 3: From b_fix to b_acc with scale change
+                // Step 1: Extend from b_fix to 2*b_fix
+                aux->z_extend(lnum_ops, input, result, bw_in, 2 * bw_in, nullptr);
+                
+                // Step 2: Locally compute X_f * (1/s') * 2^{s_fix}
+                // Convert scale to integer as late as possible
+                uint64_t scale_factor = (uint64_t)((1ULL << s_fix) / scale_out);
+                uint64_t mask_inter = (2 * bw_in == 64 ? -1ULL : ((1ULL << (2 * bw_in)) - 1));
+                for (int i = 0; i < lnum_ops; i++) {
+                    result[i] = (result[i] * scale_factor) & mask_inter;
+                }
+                
+                // Step 3: Secure rounding to get X'_q
+                // We use s_fix as the rounding shift
+                secure_round_thread(aux, result, result, lnum_ops, s_fix, 2 * bw_in, bw_out, party);
+            }
         }
 };
 

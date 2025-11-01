@@ -112,6 +112,70 @@ void test_secure_round(){
   }
 }
 
+void test_secure_requant(){
+  /************ Generate Test Data ************/
+  /********************************************/
+  Tensor<T> input({2,4});
+  
+  // Algorithm 2: From b_acc to b_fix with scale s to scale 2^{s_fix}
+  // Using realistic scales < 1.0 in the range (0, 1)
+  double scale_in = 0.25;   // scale s = 0.25
+  double scale_out = 0.1;   // s' = 0.1 for demonstration
+  int32_t bw_in = 12;       // b_acc = 12
+  int32_t bw_out = 16;      // b_fix = 16
+  int32_t s_fix = 4;        // s_fix = 4
+  
+  if (party == ALICE) {
+    // 测试数据: 整数输入值
+    // Algorithm computes: X_f = X_q * s * 2^{s_fix}
+    //                    = X_q * 0.25 * 16 = X_q * 4
+    input(0) = 10;   // Expected: 10 * 4 = 40
+    input(1) = 20;   // Expected: 20 * 4 = 80
+    input(2) = 100;  // Expected: 100 * 4 = 400
+    input(3) = 500;  // Expected: 500 * 4 = 2000
+    input(4) = 1000; // Expected: 1000 * 4 = 4000
+    input(5) = 2000; // Expected: 2000 * 4 = 8000
+    input(6) = 3000; // Expected: 3000 * 4 = 12000
+    input(7) = 4095; // Expected: 4095 * 4 = 16380
+  } else {
+    // BOB的shares为0
+    for (int i = 0; i < input.size(); i++) {
+      input(i) = 0;
+    }
+  }
+  
+  cout << "\n=== Testing secure_requant: b_acc to b_fix ===" << endl;
+  cout << "Input (b_acc=12 bits, scale=" << scale_in << "):" << endl;
+  input.print();
+  
+  fixpoint->secure_requant(input, scale_in, scale_out, bw_in, bw_out, s_fix);
+  
+  cout << "Output (b_fix=16 bits, scale=2^" << s_fix << "):" << endl;
+  input.print();
+  
+  /************** Result Verification ****************/
+  /***************************************************/
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
+  } else { // party == BOB
+    T *input0 = new T[input.size()];
+    ioArr[0]->recv_data(input0, input.size() * sizeof(T));
+    
+    // 创建 Tensor 来存储重建的结果
+    Tensor<T> reconstructed(input.shape());
+    uint64_t mask_out = (bw_out == 64 ? -1ULL : ((1ULL << bw_out) - 1));
+    for (int i = 0; i < input.size(); i++) {
+      reconstructed(i) = (input(i) + input0[i]) & mask_out;
+    }
+    
+    cout << "\n=== Reconstruction of secure_requant results ===" << endl;
+    cout << "Reconstructed values:" << endl;
+    reconstructed.print();
+    
+    delete[] input0;
+  }
+}
+
 int main(int argc, char **argv) {
   /************* Argument Parsing  ************/
   /********************************************/
@@ -142,7 +206,8 @@ int main(int argc, char **argv) {
   
   // test_comapre();
   // test_ring_field();
-  test_secure_round();
+  // test_secure_round();
+  test_secure_requant();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {
