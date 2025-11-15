@@ -85,5 +85,42 @@ std::vector<Complex128> CKKSInverseFFT(std::vector<Complex128> values, std::size
     return values;
 }
 
+std::vector<Complex128> CKKSForwardFFT(std::vector<Complex128> values, std::size_t degree, int fft_scale) {
+    using Scalar128 = int128_t;
+    using Arithmetic128 = seal::util::Arithmetic<Complex128, Complex128, Scalar128>;
+    using FFTHandler128 = seal::util::DWTHandler<Complex128, Complex128, Scalar128>;
+
+    if (degree == 0) {
+        throw std::invalid_argument("degree must be greater than zero in CKKSForwardFFT");
+    }
+    if (values.size() != degree) {
+        throw std::invalid_argument("values size must match degree in CKKSForwardFFT");
+    }
+    if ((degree & (degree - 1)) != 0) {
+        throw std::invalid_argument("degree must be a power of two in CKKSForwardFFT");
+    }
+    if (degree <= 1) {
+        return values;
+    }
+
+    Arithmetic128 arithmetic(fft_scale);
+    FFTHandler128 handler(arithmetic);
+
+    std::vector<Complex128> root_powers_2n_scaled(degree, Complex128(0, 0));
+    const int logn = static_cast<int>(seal::util::get_power_of_two(degree));
+    seal::util::ComplexRoots complex_roots(static_cast<std::size_t>(degree) << 1, seal::MemoryManager::GetPool());
+
+    for (std::size_t i = 1; i < degree; ++i) {
+        const auto reversed_index = seal::util::reverse_bits(i, logn);
+        const auto root = complex_roots.get_root(reversed_index);
+        root_powers_2n_scaled[i] = Complex128(
+            ScaleToFixed<Scalar128>(static_cast<long double>(root.real()), fft_scale),
+            ScaleToFixed<Scalar128>(static_cast<long double>(root.imag()), fft_scale));
+    }
+
+    handler.transform_to_rev(values.data(), logn, root_powers_2n_scaled.data(), nullptr);
+
+    return values;
+}
 
 } // namespace LinearOperator

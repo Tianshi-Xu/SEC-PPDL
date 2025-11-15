@@ -2,6 +2,7 @@
 #include <OTPrimitive/ot_primitive.h>
 #include <Utils/emp-tool.h>
 #include <Datatype/Tensor.h>
+#include <seal/util/common.h>
 #include <cmath>
 #pragma once
 #define MILL_PARAM 4
@@ -32,7 +33,7 @@ public:
 
   void configure(int bitlength, int radix_base = MILL_PARAM) {
     assert(radix_base <= 8);
-    assert(bitlength <= 64);
+    assert(bitlength <= 128);
     this->l = bitlength;
     this->beta = radix_base;
 
@@ -54,14 +55,16 @@ public:
   ~MillionaireProtocol() { delete triple_gen; }
 
   // default output 1{x_1<x_2}, note that x_1, x_2 are the secret shares of the input
-  void compare(uint8_t *res, uint64_t *data, int num_cmps, int bitlength,
+  // Supports both uint64_t and int128_t
+  template <typename T>
+  void compare(uint8_t *res, T *data, int num_cmps, int bitlength,
                bool greater_than = true,
                int radix_base = MILL_PARAM) {
     configure(bitlength, radix_base);
     // printf("bitlength: %d, beta:%d\n", bitlength,beta);
     if (bitlength <= beta) {
       uint8_t N = 1 << bitlength;
-      uint8_t mask = N - 1;
+      T mask = (bitlength == 128) ? static_cast<T>(-1) : ((static_cast<T>(1) << bitlength) - 1);
       if (party == ALICE) {
         Utils::PRG128 prg;
         prg.random_data(res, num_cmps * sizeof(uint8_t));
@@ -70,10 +73,12 @@ public:
           res[i] &= 1;
           leaf_messages[i] = new uint8_t[N];
           for (int j = 0; j < N; j++) {
+            T masked_val = data[i] & mask;
+            uint8_t val_uint8 = static_cast<uint8_t>(masked_val);
             if (greater_than) {
-              leaf_messages[i][j] = ((uint8_t(data[i] & mask) > j) ^ res[i]);
+              leaf_messages[i][j] = ((val_uint8 > j) ^ res[i]);
             } else {
-              leaf_messages[i][j] = ((uint8_t(data[i] & mask) < j) ^ res[i]);
+              leaf_messages[i][j] = ((val_uint8 < j) ^ res[i]);
             }
           }
         }
@@ -91,7 +96,8 @@ public:
       } else { // party == BOB
         uint8_t *choice = new uint8_t[num_cmps];
         for (int i = 0; i < num_cmps; i++) {
-          choice[i] = data[i] & mask;
+          T masked_val = data[i] & mask;
+          choice[i] = static_cast<uint8_t>(masked_val);
         }
         if (bitlength > 1) {
           otpack->kkot[bitlength - 1]->recv(res, choice, num_cmps, 1);
@@ -109,14 +115,14 @@ public:
     // num_cmps should be a multiple of 8
     num_cmps = ceil(num_cmps / 8.0) * 8;
 
-    uint64_t *data_ext;
+    T *data_ext;
     if (old_num_cmps == num_cmps)
       data_ext = data;
     else {
-      data_ext = new uint64_t[num_cmps];
-      memcpy(data_ext, data, old_num_cmps * sizeof(uint64_t));
+      data_ext = new T[num_cmps];
+      memcpy(data_ext, data, old_num_cmps * sizeof(T));
       memset(data_ext + old_num_cmps, 0,
-             (num_cmps - old_num_cmps) * sizeof(uint64_t));
+             (num_cmps - old_num_cmps) * sizeof(T));
     }
 
     uint8_t *digits;       // num_digits * num_cmps
@@ -128,14 +134,16 @@ public:
     leaf_res_eq = new uint8_t[num_digits * num_cmps];
 
     // Extract radix-digits from data
-    for (int i = 0; i < num_digits; i++) // Stored from LSB to MSB
-      for (int j = 0; j < num_cmps; j++)
+    for (int i = 0; i < num_digits; i++) { // Stored from LSB to MSB
+      int shift_amount = i * beta;
+      for (int j = 0; j < num_cmps; j++) {
+        T shifted_val = (shift_amount < 128) ? (data_ext[j] >> shift_amount) : static_cast<T>(0);
         if ((i == num_digits - 1) && (r != 0))
-          digits[i * num_cmps + j] =
-              (uint8_t)(data_ext[j] >> i * beta) & mask_r;
+          digits[i * num_cmps + j] = static_cast<uint8_t>(shifted_val) & mask_r;
         else
-          digits[i * num_cmps + j] =
-              (uint8_t)(data_ext[j] >> i * beta) & mask_beta;
+          digits[i * num_cmps + j] = static_cast<uint8_t>(shifted_val) & mask_beta;
+      }
+    }
 
 
     if (party == ALICE) {

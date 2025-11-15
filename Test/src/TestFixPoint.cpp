@@ -1,9 +1,11 @@
 #include <NonlinearOperator/FixPoint.h>
+#include <seal/util/common.h>
 #include <iostream>
 using namespace std;
 using namespace NonlinearOperator;
 #define MAX_THREADS 4
 typedef uint64_t T;
+typedef int128_t T128;
 
 int party, port = 8000;
 int num_threads = 1;
@@ -14,6 +16,7 @@ int32_t kScale = 12;
 Utils::NetIO *ioArr[MAX_THREADS];
 OTPrimitive::OTPack<Utils::NetIO> *otpackArr[MAX_THREADS];
 NonlinearOperator::FixPoint<T> *fixpoint;
+NonlinearOperator::FixPoint<T128> *fixpoint128;
 
 uint64_t comm_threads[MAX_THREADS];
 
@@ -176,6 +179,97 @@ void test_secure_requant(){
   }
 }
 
+void test_extend_128bit() {
+  std::cout << "\n=== Testing 128-bit Extend ===" << std::endl;
+  
+  Tensor<T128> input({4});
+  Tensor<T128> result({4});
+  
+  int32_t bwA = 40;  // Original bitwidth
+  int32_t bwB = 72;  // Extended bitwidth
+  
+  if (party == ALICE) {
+    // Initialize with values that require 128-bit representation
+    int128_t base = int128_t(1) << 35;  // Large base value
+    input(0) = base * 1;
+    input(1) = base * 2;
+    input(2) = base * 3;
+    input(3) = base * 4;
+  } else {
+    // BOB's shares are zero
+    for (int i = 0; i < input.size(); i++) {
+      input(i) = 0;
+    }
+  }
+  
+  std::cout << "Before extend (bwA=" << bwA << " -> bwB=" << bwB << "):" << std::endl;
+  // Note: Tensor<T128>::print() doesn't support int128_t directly, so we print manually
+  std::cout << "Input values: ";
+  for (int i = 0; i < input.size(); i++) {
+    std::cout << static_cast<long long>(input(i)) << " ";
+  }
+  std::cout << std::endl;
+  
+  // Test zero extension
+  result = input;
+  fixpoint128->extend(result, bwA, bwB, false);
+  
+  std::cout << "After z_extend:" << std::endl;
+  std::cout << "Result values: ";
+  for (int i = 0; i < result.size(); i++) {
+    std::cout << static_cast<long long>(result(i)) << " ";
+  }
+  std::cout << std::endl;
+  
+  // Test signed extension
+  result = input;
+  fixpoint128->extend(result, bwA, bwB, true);
+  
+  std::cout << "After s_extend:" << std::endl;
+  std::cout << "Result values: ";
+  for (int i = 0; i < result.size(); i++) {
+    std::cout << static_cast<long long>(result(i)) << " ";
+  }
+  std::cout << std::endl;
+  
+  // Verify results by reconstructing
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T128));
+    ioArr[0]->send_data(result.data().data(), result.size() * sizeof(T128));
+  } else {
+    T128 *input0 = new T128[input.size()];
+    T128 *result0 = new T128[result.size()];
+    ioArr[0]->recv_data(input0, input.size() * sizeof(T128));
+    ioArr[0]->recv_data(result0, result.size() * sizeof(T128));
+    
+    int128_t mask_bwA = (bwA == 128 ? -1 : ((int128_t(1) << bwA) - 1));
+    int128_t mask_bwB = (bwB == 128 ? -1 : ((int128_t(1) << bwB) - 1));
+    
+    std::cout << "Verification (reconstructed values):" << std::endl;
+    for (int i = 0; i < input.size(); i++) {
+      int128_t orig_sum = (input(i) + input0[i]) & mask_bwA;
+      int128_t result_sum = (result(i) + result0[i]) & mask_bwB;
+      // Convert to string for output (int128_t doesn't have direct ostream support)
+      auto to_string = [](int128_t val) -> std::string {
+        if (val == 0) return "0";
+        bool neg = val < 0;
+        int128_t abs_val = neg ? -val : val;
+        std::string s;
+        while (abs_val > 0) {
+          s = std::to_string(static_cast<int>(abs_val % 10)) + s;
+          abs_val /= 10;
+        }
+        return neg ? "-" + s : s;
+      };
+      std::cout << "  [" << i << "] orig=" << to_string(orig_sum)
+                << ", extended=" << to_string(result_sum) << std::endl;
+    }
+    
+    delete[] input0;
+    delete[] result0;
+  }
+}
+
 int main(int argc, char **argv) {
   /************* Argument Parsing  ************/
   /********************************************/
@@ -196,6 +290,7 @@ int main(int argc, char **argv) {
     otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
   }
   fixpoint = new NonlinearOperator::FixPoint<T>(party, otpackArr, num_threads);
+  fixpoint128 = new NonlinearOperator::FixPoint<T128>(party, otpackArr, num_threads);
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
   for (int i = 0; i < num_threads; i++) {
     auto temp = ioArr[i]->counter;
@@ -207,7 +302,8 @@ int main(int argc, char **argv) {
   // test_comapre();
   // test_ring_field();
   // test_secure_round();
-  test_secure_requant();
+  // test_secure_requant();
+  test_extend_128bit();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {

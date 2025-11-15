@@ -1,6 +1,7 @@
 #include "millionaire.h"
 #include "millionaire_with_equality.h"
 #include <OTPrimitive/ot_primitive.h>
+#include <seal/util/common.h>
 #pragma once
 
 using namespace OTPrimitive;
@@ -22,6 +23,17 @@ public:
   void wrap_computation(
       // input vector
       uint64_t *x,
+      // wrap-bit of shares of x
+      uint8_t *y,
+      // size of input vector
+      int32_t size,
+      // bitwidth of x
+      int32_t bw_x);
+
+  // 128-bit version
+  void wrap_computation(
+      // input vector
+      int128_t *x,
       // wrap-bit of shares of x
       uint8_t *y,
       // size of input vector
@@ -203,6 +215,13 @@ public:
                           int32_t bwA, int32_t bwB, uint8_t *msbA);
 
   void s_extend(int32_t dim, uint64_t *inA, uint64_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA);
+
+  // 128-bit versions
+  void z_extend(int32_t dim, int128_t *inA, int128_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA);
+
+  void s_extend(int32_t dim, int128_t *inA, int128_t *outB,
                           int32_t bwA, int32_t bwB, uint8_t *msbA);
 
 //   void digit_decomposition(int32_t dim, uint64_t *x, uint64_t *x_digits,

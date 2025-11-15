@@ -11,4 +11,5 @@ namespace LinearOperator {
     using Complex128 = std::complex<int128_t>;
 
     std::vector<Complex128> CKKSInverseFFT(std::vector<Complex128> values, std::size_t degree, int fft_scale);
+    std::vector<Complex128> CKKSForwardFFT(std::vector<Complex128> values, std::size_t degree, int fft_scale);
 } // namespace LinearOperator

@@ -39,6 +39,24 @@ void AuxProtocols::wrap_computation(uint64_t *x, uint8_t *y, int32_t size,
   delete[] tmp_x;
 }
 
+// 128-bit version
+void AuxProtocols::wrap_computation(int128_t *x, uint8_t *y, int32_t size,
+                                    int32_t bw_x) {
+  assert(bw_x <= 128);
+  int128_t mask = (bw_x == 128 ? -1 : ((int128_t(1) << bw_x) - 1));
+
+  int128_t *tmp_x = new int128_t[size];
+  for (int i = 0; i < size; i++) {
+    if (party == ALICE)
+      tmp_x[i] = x[i] & mask;
+    else
+      tmp_x[i] = (mask - x[i]) & mask;  // 2^{bw_x} - 1 - x[i]
+  }
+  mill->compare(y, tmp_x, size, bw_x, true);  // computing greater_than
+
+  delete[] tmp_x;
+}
+
 void AuxProtocols::wrap_computation_prime(uint64_t *x, uint8_t *y, int32_t size,
                                     int32_t bw_x, uint64_t Q) {
   assert(bw_x <= 64);
@@ -228,6 +246,109 @@ void AuxProtocols::s_extend(int32_t dim, uint64_t *inA, uint64_t *outB,
   if (party ==ALICE) {
     for (int i = 0; i < dim; i++) {
       outB[i] = (mapped_outB[i] - (1ULL << (bwA - 1))) & mask_bwB;
+    }
+  } else { // BOB
+    for (int i = 0; i < dim; i++) {
+      outB[i] = (mapped_outB[i]) & mask_bwB;
+    }
+  }
+  delete[] mapped_inA;
+  delete[] mapped_outB;
+}
+
+// 128-bit versions of z_extend and s_extend
+void AuxProtocols::z_extend(int32_t dim, int128_t *inA, int128_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA) {
+  if (bwA == bwB) {
+    std::cout << "warning: z_extend with same bitwidth is not allowed" << std::endl;
+    memcpy(outB, inA, sizeof(int128_t) * dim);
+    return;
+  }
+  assert(bwB > bwA && "Extended bitwidth should be > original");
+  assert(bwA <= 128 && bwB <= 128 && "Bitwidth must be <= 128");
+  
+  int128_t mask_bwA = (bwA == 128 ? -1 : ((int128_t(1) << bwA) - 1));
+  int128_t mask_bwB = (bwB == 128 ? -1 : ((int128_t(1) << bwB) - 1));
+  uint8_t *wrap = new uint8_t[dim];
+
+  if (bwA <= 64) {
+    // For bwA <= 64, we can use the existing 64-bit wrap_computation
+    uint64_t *inA_64 = new uint64_t[dim];
+    for (int i = 0; i < dim; i++) {
+      inA_64[i] = static_cast<uint64_t>(inA[i] & mask_bwA);
+    }
+    
+    if (msbA != nullptr) {
+      uint8_t *msbA_64 = new uint8_t[dim];
+      for (int i = 0; i < dim; i++) {
+        msbA_64[i] = msbA[i];
+      }
+      this->MSB_to_Wrap(inA_64, msbA_64, wrap, dim, bwA);
+      delete[] msbA_64;
+    } else {
+      this->wrap_computation(inA_64, wrap, dim, bwA);
+    }
+    delete[] inA_64;
+  } else {
+    // For bwA > 64, use 128-bit wrap_computation
+    this->wrap_computation(inA, wrap, dim, bwA);
+  }
+
+  uint64_t *arith_wrap = new uint64_t[dim];
+  int32_t extend_bits = bwB - bwA;
+  this->B2A(wrap, arith_wrap, dim, std::min(64, extend_bits));
+
+  int128_t shift_val = (int128_t(1) << bwA);
+  for (int i = 0; i < dim; i++) {
+    int128_t wrapped_part = shift_val * static_cast<int128_t>(arith_wrap[i]);
+    outB[i] = ((inA[i] & mask_bwA) - wrapped_part) & mask_bwB;
+  }
+
+  delete[] wrap;
+  delete[] arith_wrap;
+}
+
+void AuxProtocols::s_extend(int32_t dim, int128_t *inA, int128_t *outB,
+                          int32_t bwA, int32_t bwB, uint8_t *msbA) {
+  if (bwA == bwB) {
+    memcpy(outB, inA, sizeof(int128_t) * dim);
+    return;
+  }
+  assert(bwB > bwA && "Extended bitwidth should be > original");
+  assert(bwA <= 128 && bwB <= 128 && "Bitwidth must be <= 128");
+  
+  int128_t mask_bwA = (bwA == 128 ? -1 : ((int128_t(1) << bwA) - 1));
+  int128_t mask_bwB = (bwB == 128 ? -1 : ((int128_t(1) << bwB) - 1));
+
+  int128_t *mapped_inA = new int128_t[dim];
+  int128_t *mapped_outB = new int128_t[dim];
+  
+  int128_t offset = (int128_t(1) << (bwA - 1));
+  if (party == ALICE) {
+    for (int i = 0; i < dim; i++) {
+      mapped_inA[i] = (inA[i] + offset) & mask_bwA;
+    }
+  } else { // BOB
+    for (int i = 0; i < dim; i++) {
+      mapped_inA[i] = inA[i];
+    }
+  }
+
+  uint8_t *tmp_msbA = nullptr;
+  if (msbA != nullptr) {
+    tmp_msbA = new uint8_t[dim];
+    for (int i = 0; i < dim; i++) {
+      tmp_msbA[i] = (party == ALICE ? msbA[i] ^ 1 : msbA[i]);
+    }
+  }
+  this->z_extend(dim, mapped_inA, mapped_outB, bwA, bwB, tmp_msbA);
+  if (tmp_msbA != nullptr) {
+    delete[] tmp_msbA;
+  }
+
+  if (party == ALICE) {
+    for (int i = 0; i < dim; i++) {
+      outB[i] = (mapped_outB[i] - offset) & mask_bwB;
     }
   } else { // BOB
     for (int i = 0; i < dim; i++) {

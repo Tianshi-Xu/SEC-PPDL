@@ -1,5 +1,7 @@
 #include <OTProtocol/millionaire.h>
 #include <OTProtocol/truncation.h>
+#include <seal/util/common.h>
+#include <type_traits>
 #pragma once
 namespace NonlinearOperator {
 
@@ -279,10 +281,20 @@ class FixPoint {
         }
 
         void static extend_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
-            if (signed_arithmetic){
-                aux->s_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+            if constexpr (std::is_same_v<T, int128_t> || std::is_same_v<T, __int128>) {
+                // 128-bit version
+                if (signed_arithmetic){
+                    aux->s_extend(lnum_ops, reinterpret_cast<int128_t*>(input), reinterpret_cast<int128_t*>(result), bwA, bwB, msb_x);
+                } else {
+                    aux->z_extend(lnum_ops, reinterpret_cast<int128_t*>(input), reinterpret_cast<int128_t*>(result), bwA, bwB, msb_x);
+                }
             } else {
-                aux->z_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+                // 64-bit version (uint64_t)
+                if (signed_arithmetic){
+                    aux->s_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+                } else {
+                    aux->z_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+                }
             }
         }
 

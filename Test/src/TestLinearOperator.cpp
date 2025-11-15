@@ -96,6 +96,73 @@ void test_ckks_inverse_fft() {
     std::cout << "Expected first coefficient (average * base): "
               << Int128ToString(average_scaled) << std::endl;
 }
+
+void test_ckks_fft_roundtrip() {
+    const std::size_t degree = 8;
+    const int fft_scale = 40;
+    const int extra_shift = 32;
+    const int128_t scale = static_cast<int128_t>(1) << fft_scale;
+    const int128_t payload_shift = static_cast<int128_t>(1) << extra_shift;
+    const int128_t base = scale * payload_shift;
+
+    std::vector<LinearOperator::Complex128> original(degree);
+    std::cout << "\n=== CKKS FFT Roundtrip Test ===" << std::endl;
+    std::cout << "Original inputs (fixed-point, scale=2^" << fft_scale
+              << ", payload shift=2^" << extra_shift << "): ";
+    for (std::size_t i = 0; i < degree; ++i) {
+        int128_t magnitude = static_cast<int128_t>(static_cast<long long>(i + 1)) * base;
+        original[i] = LinearOperator::Complex128(magnitude, static_cast<int128_t>(0));
+        std::cout << Int128ToString(original[i].real());
+        if (i + 1 != degree) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << std::endl;
+
+    auto after_ifft = LinearOperator::CKKSInverseFFT(original, degree, fft_scale);
+    std::cout << "After IFFT (real parts): ";
+    for (std::size_t i = 0; i < after_ifft.size(); ++i) {
+        std::cout << Int128ToString(after_ifft[i].real());
+        if (i + 1 != after_ifft.size()) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << std::endl;
+
+    auto after_fft = LinearOperator::CKKSForwardFFT(after_ifft, degree, fft_scale);
+    std::cout << "After FFT (real parts): ";
+    for (std::size_t i = 0; i < after_fft.size(); ++i) {
+        std::cout << Int128ToString(after_fft[i].real());
+        if (i + 1 != after_fft.size()) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << std::endl;
+
+    std::cout << "Comparison (original vs roundtrip):" << std::endl;
+    bool all_match = true;
+    const double relative_tolerance = 0.01;
+    for (std::size_t i = 0; i < degree; ++i) {
+        int128_t original_val = original[i].real();
+        int128_t roundtrip_val = after_fft[i].real();
+        int128_t diff = original_val - roundtrip_val;
+        if (diff < 0) diff = -diff;
+        
+        int128_t abs_original = original_val < 0 ? -original_val : original_val;
+        double relative_error = abs_original > 0 
+            ? static_cast<double>(diff) / static_cast<double>(abs_original)
+            : (diff == 0 ? 0.0 : 1.0);
+        
+        bool match = relative_error <= relative_tolerance;
+        if (!match) all_match = false;
+        
+        std::cout << "  [" << i << "] diff=" << Int128ToString(diff)
+                  << ", relative_error=" << std::scientific << relative_error << std::fixed
+                  << " (" << (relative_error * 100.0) << "%)"
+                  << (match ? " ✓" : " ✗") << std::endl;
+    }
+    std::cout << (all_match ? "✓ Roundtrip test PASSED" : "✗ Roundtrip test FAILED") << std::endl;
+}
 } // namespace
 
 int main(int argc, char **argv){
@@ -112,6 +179,7 @@ int main(int argc, char **argv){
     
     // test_poly(he);
     test_ckks_inverse_fft();
+    test_ckks_fft_roundtrip();
 
     return 0;
 }
