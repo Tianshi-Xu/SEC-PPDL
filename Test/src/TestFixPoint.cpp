@@ -1,6 +1,8 @@
 #include <NonlinearOperator/FixPoint.h>
 #include <seal/util/common.h>
 #include <iostream>
+#include <limits>
+#include <string>
 using namespace std;
 using namespace NonlinearOperator;
 #define MAX_THREADS 4
@@ -47,15 +49,73 @@ void test_comapre(){
 
 void test_ring_field(){
   Tensor<T> input({2,4});
-  Tensor<T> result({2,4});
+  Tensor<T128> input128({2,4});
+  Tensor<T128> result128({2,4});
+  constexpr int ring_bw = 10;
+  constexpr int ring_bw_128 = 60;
+  constexpr int ring2field_ext_bits = 40;
+
+  auto reconstruct_u64 = [&](Tensor<T> &tensor, int stage_bw, const std::string &label) {
+    if (party == ALICE) {
+      ioArr[0]->send_data(tensor.data().data(), tensor.size() * sizeof(T));
+    } else {
+      Tensor<T> peer(tensor.shape());
+      ioArr[0]->recv_data(peer.data().data(), tensor.size() * sizeof(T));
+      Tensor<T> combined(tensor.shape());
+      uint64_t mask = stage_bw >= 64 ? std::numeric_limits<uint64_t>::max()
+                                     : ((uint64_t(1) << stage_bw) - 1);
+      for (int i = 0; i < tensor.size(); i++) {
+        combined(i) = (tensor(i) + peer(i)) & mask;
+      }
+      std::cout << label << std::endl;
+      combined.print();
+    }
+  };
+
+  auto reconstruct_i128 = [&](Tensor<T128> &tensor, int stage_bw, const std::string &label) {
+    if (party == ALICE) {
+      ioArr[0]->send_data(tensor.data().data(), tensor.size() * sizeof(T128));
+    } else {
+      Tensor<T128> peer(tensor.shape());
+      ioArr[0]->recv_data(peer.data().data(), tensor.size() * sizeof(T128));
+      Tensor<T128> combined(tensor.shape());
+      int128_t mask = (stage_bw == 128) ? int128_t(-1)
+                                         : ((int128_t(1) << stage_bw) - 1);
+      for (int i = 0; i < tensor.size(); i++) {
+        combined(i) = (tensor(i) + peer(i)) & mask;
+      }
+      std::cout << label << std::endl;
+      combined.print();
+    }
+  };
   if (party == ALICE) {
     input.randomize(1ULL<<4);
     input(0) = 716;
+    input128.randomize(1ULL<<4);
+    input128(0) = static_cast<T128>(1) << 45;
   }
   input.print();
-  // fixpoint->Field2Ring(input, 5, 4);
-  fixpoint->Ring2Field(input, 1099511480321, 10);
+  input128.print();
+  const uint64_t Q64 = 1099511480321ULL;
+  const int128_t Q128 = (int128_t(1) << 80);  // allow values up to 2^80 in tests
+  fixpoint->Ring2Field(input, Q64, ring_bw);
+  fixpoint128->Ring2Field(input128, Q128, ring_bw_128);
   input.print();
+  input128.print();
+  
+  // Ring2Field reconstructions should match ALICE's plaintext reduced mod Q with the extra 40 guard bits.
+  // e.g. the first uint64_t slot should read 716, int128_t slot ~2^45=35184372088832 after reconstruction.
+  reconstruct_u64(input, ring_bw + ring2field_ext_bits, "[Ring2Field] uint64_t reconstruction");
+  reconstruct_i128(input128, ring_bw_128 + ring2field_ext_bits, "[Ring2Field] int128_t reconstruction");
+
+  fixpoint->Field2Ring(input, Q64, ring_bw);
+  fixpoint128->Field2Ring(input128, Q128, ring_bw_128);
+  input.print();
+  input128.print();
+  // Field2Ring reconstructions should return to the original ALICE shares (mod 2^{bitwidth}).
+  // So the first entries should again be 716 (uint64) and 2^45 (int128) respectively.
+  reconstruct_u64(input, ring_bw, "[Field2Ring] uint64_t reconstruction");
+  reconstruct_i128(input128, ring_bw_128, "[Field2Ring] int128_t reconstruction");
 }
 
 void test_secure_round(){
@@ -154,6 +214,7 @@ void test_secure_requant(){
   fixpoint->secure_requant(input, scale_in, scale_out, bw_in, bw_out, s_fix);
   
   cout << "Output (b_fix=16 bits, scale=2^" << s_fix << "):" << endl;
+  // Expected reconstruction (ALICE plaintext × 4): [40, 80, 400, 2000, 4000, 8000, 12000, 16380]
   input.print();
   
   /************** Result Verification ****************/
@@ -300,10 +361,10 @@ int main(int argc, char **argv) {
   }
   
   // test_comapre();
-  // test_ring_field();
+  test_ring_field();
   // test_secure_round();
   // test_secure_requant();
-  test_extend_128bit();
+  // test_extend_128bit();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {

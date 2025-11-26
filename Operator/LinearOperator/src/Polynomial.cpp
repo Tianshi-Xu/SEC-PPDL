@@ -2,6 +2,7 @@
 #include <LinearOperator/Conversion.h>
 #include <seal/ckks.h>
 #include <seal/memorymanager.h>
+#include <seal/util/common.h>
 #include <seal/util/numth.h>
 #include <cmath>
 #include <stdexcept>
@@ -43,6 +44,35 @@ Scalar ScaleToFixed(long double value, int scale_bits) {
     const long double scaled = std::ldexp(value, scale_bits);
     const long double rounded = (scaled >= 0.0L) ? std::floor(scaled + 0.5L) : std::ceil(scaled - 0.5L);
     return static_cast<Scalar>(rounded);
+}
+
+std::vector<std::size_t> BuildMatrixRepsIndexMap(std::size_t degree) {
+    if (degree == 0) {
+        throw std::invalid_argument("degree must be greater than zero in BuildMatrixRepsIndexMap");
+    }
+    if ((degree & (degree - 1)) != 0) {
+        throw std::invalid_argument("degree must be a power of two in BuildMatrixRepsIndexMap");
+    }
+
+    const std::size_t slots = degree >> 1;
+    std::vector<std::size_t> matrix_map(degree, 0);
+    const std::size_t logn = seal::util::get_power_of_two(degree);
+    const std::uint64_t m = static_cast<std::uint64_t>(degree) << 1;
+    const std::uint64_t gen = 3;
+    std::uint64_t pos = 1;
+
+    for (std::size_t i = 0; i < slots; ++i) {
+        const std::uint64_t index1 = (pos - 1) >> 1;
+        const std::uint64_t index2 = (m - pos - 1) >> 1;
+
+        matrix_map[i] = seal::util::safe_cast<std::size_t>(seal::util::reverse_bits(index1, logn));
+        matrix_map[slots | i] = seal::util::safe_cast<std::size_t>(seal::util::reverse_bits(index2, logn));
+
+        pos *= gen;
+        pos &= (m - 1);
+    }
+
+    return matrix_map;
 }
 } // namespace
 
@@ -121,6 +151,64 @@ std::vector<Complex128> CKKSForwardFFT(std::vector<Complex128> values, std::size
     handler.transform_to_rev(values.data(), logn, root_powers_2n_scaled.data(), nullptr);
 
     return values;
+}
+
+Tensor<int128_t> CKKSDecode(const Tensor<Complex128> &values, std::size_t degree, int fft_scale) {
+    if (degree == 0) {
+        throw std::invalid_argument("degree must be greater than zero in CKKSDecode");
+    }
+    if ((degree & (degree - 1)) != 0) {
+        throw std::invalid_argument("degree must be a power of two in CKKSDecode");
+    }
+    if (values.size() != degree) {
+        throw std::invalid_argument("values size must match degree in CKKSDecode");
+    }
+
+    std::vector<Complex128> frequency(values.data().begin(), values.data().end());
+    frequency = CKKSForwardFFT(std::move(frequency), degree, fft_scale);
+    const auto matrix_map = BuildMatrixRepsIndexMap(degree);
+
+    Tensor<int128_t> decoded({degree >> 1});
+    auto &decoded_data = decoded.data();
+    for (std::size_t i = 0; i < (degree >> 1); ++i) {
+        decoded_data[i] = frequency[matrix_map[i]].real();
+    }
+
+    return decoded;
+}
+
+Tensor<int128_t> CKKSEncode(const Tensor<int128_t> &slots, std::size_t slot_count, int fft_scale) {
+    if (slot_count == 0) {
+        throw std::invalid_argument("slot_count must be greater than zero in CKKSEncode");
+    }
+    if (slot_count != slots.size()) {
+        throw std::invalid_argument("slot tensor size must match slot_count in CKKSEncode");
+    }
+
+    const std::size_t degree = slot_count << 1;
+    if ((degree & (degree - 1)) != 0) {
+        throw std::invalid_argument("twice slot_count must be a power of two in CKKSEncode");
+    }
+
+    auto matrix_map = BuildMatrixRepsIndexMap(degree);
+
+    std::vector<Complex128> freq(degree, Complex128(0, 0));
+    const auto &slot_data = slots.data();
+    for (std::size_t i = 0; i < slot_count; ++i) {
+        const Complex128 value(slot_data[i], 0);
+        freq[matrix_map[i]] = value;
+        freq[matrix_map[i + slot_count]] = std::conj(value);
+    }
+
+    auto time_domain = CKKSInverseFFT(std::move(freq), degree, fft_scale);
+
+    Tensor<int128_t> encoded({degree});
+    auto &encoded_data = encoded.data();
+    for (std::size_t i = 0; i < degree; ++i) {
+        encoded_data[i] = time_domain[i].real();
+    }
+
+    return encoded;
 }
 
 } // namespace LinearOperator

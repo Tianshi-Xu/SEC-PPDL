@@ -72,6 +72,24 @@ void AuxProtocols::wrap_computation_prime(uint64_t *x, uint8_t *y, int32_t size,
   delete[] tmp_x;
 }
 
+void AuxProtocols::wrap_computation_prime(int128_t *x, uint8_t *y, int32_t size,
+                                    int32_t bw_x, int128_t Q) {
+  assert(bw_x <= 128);
+  int128_t *tmp_x = new int128_t[size];
+  for (int i = 0; i < size; i++) {
+    if (party == ALICE) {
+      int128_t val = x[i] % Q;
+      tmp_x[i] = (val < 0) ? val + Q : val;
+    } else {
+      int128_t val = (Q - 1 - x[i]) % Q;
+      tmp_x[i] = (val < 0) ? val + Q : val;
+    }
+  }
+  mill->compare(y, tmp_x, size, bw_x, true);
+
+  delete[] tmp_x;
+}
+
 
 void AuxProtocols::B2A(uint8_t *x, uint64_t *y, int32_t size, int32_t bw_y) {
   assert(bw_y <= 64 && bw_y >= 1);

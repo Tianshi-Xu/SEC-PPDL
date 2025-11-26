@@ -7,6 +7,8 @@
 #include <functional>
 #include <initializer_list>
 #include <type_traits>
+#include <string>
+#include <algorithm>
 #include "Datatype/UnifiedType.h"
 
 namespace Datatype {
@@ -204,8 +206,12 @@ public:
         std::cout << "]\nData: [";
         size_t size = std::min(this->size(), num_print);
         for (size_t i = 0; i < size; ++i) {
-            if (std::is_same<T, uint8_t>::value || std::is_same<T, int8_t>::value) {
-                std::cout << (int)data_[i];
+            if constexpr (std::is_same_v<T, uint8_t> || std::is_same_v<T, int8_t>) {
+                std::cout << static_cast<int>(data_[i]);
+            } else if constexpr (std::is_same_v<T, __int128> || std::is_same_v<T, __int128_t>) {
+                std::cout << to_string_int128(static_cast<__int128>(data_[i]));
+            } else if constexpr (std::is_same_v<T, __uint128_t>) {
+                std::cout << to_string_uint128(static_cast<__uint128_t>(data_[i]));
             } else {
                 std::cout << data_[i];
             }
@@ -244,6 +250,35 @@ public:
     }
 
 private:
+    static std::string to_string_uint128(__uint128_t value) {
+        if (value == 0) {
+            return "0";
+        }
+        std::string digits;
+        while (value > 0) {
+            uint8_t digit = static_cast<uint8_t>(value % 10);
+            digits.push_back(static_cast<char>('0' + digit));
+            value /= 10;
+        }
+        std::reverse(digits.begin(), digits.end());
+        return digits;
+    }
+
+    static std::string to_string_int128(__int128 value) {
+        if (value == 0) {
+            return "0";
+        }
+        bool negative = value < 0;
+        __uint128_t magnitude = negative
+            ? static_cast<__uint128_t>(-(value + 1)) + 1
+            : static_cast<__uint128_t>(value);
+        std::string digits = to_string_uint128(magnitude);
+        if (negative) {
+            return "-" + digits;
+        }
+        return digits;
+    }
+
     std::vector<size_t> shape_;
     std::vector<size_t> strides_;
     std::vector<T> data_;

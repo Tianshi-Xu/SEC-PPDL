@@ -144,42 +144,71 @@ class FixPoint {
             }
         }
 
+        // Helper traits to keep modulo arithmetic in a wide accumulator
+        template <typename FieldT = T>
+        struct FieldTraits {
+            using Wide = __uint128_t;
+            static inline Wide widen(FieldT value) { return static_cast<Wide>(value); }
+            static inline Wide mod_reduce(Wide value, Wide Q) { return value % Q; }
+            static inline FieldT narrow(Wide value) { return static_cast<FieldT>(value); }
+        };
+
+        using ModulusType = std::conditional_t<std::is_same_v<T, int128_t>, int128_t, uint64_t>;
+
         // Conversion from ring to field
-        void Ring2Field(Tensor<T> &x, uint64_t Q, int bitwidth = 0, bool signed_arithmetic=false){
+        void Ring2Field(Tensor<T> &x, ModulusType Q, int bitwidth = 0, bool signed_arithmetic=false){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
             // cout << "bitwidth: " << bitwidth << endl;
-            int ext_bit = 15;
+            int ext_bit = 40;
             extend(x, bitwidth, bitwidth+ext_bit, signed_arithmetic);
+            using Wide = typename FieldTraits<T>::Wide;
+            Wide modulus = static_cast<Wide>(Q);
             if (party == ALICE){
                 for (int i = 0; i < x.size(); i++){
-                    x(i) = x(i) % Q;
+                    Wide reduced = FieldTraits<T>::mod_reduce(FieldTraits<T>::widen(x(i)), modulus);
+                    x(i) = FieldTraits<T>::narrow(reduced);
                 }
             }
             else{
-                __uint128_t neg_2k = 1ULL<<(bitwidth+ext_bit);
-                neg_2k = ((__uint128_t)neg_2k*(__uint128_t)(Q-1)) % Q;
+                Wide neg_2k = static_cast<Wide>(1);
+                neg_2k <<= (bitwidth + ext_bit);
+                Wide modulus_minus_one = modulus - static_cast<Wide>(1);
+                neg_2k = FieldTraits<T>::mod_reduce(neg_2k * modulus_minus_one, modulus);
                 for (int i = 0; i < x.size(); i++){
-                    x(i) = (x(i) + neg_2k)% Q; // can not use -1ULL<<bitwidth, because it is negative, no modulo operation. It may go wrong when it exceeds uint64_t
+                    Wide value = FieldTraits<T>::widen(x(i)) + neg_2k;
+                    x(i) = FieldTraits<T>::narrow(FieldTraits<T>::mod_reduce(value, modulus)); // can not use -1ULL<<bitwidth, because it is negative, no modulo operation. It may go wrong when it exceeds uint64_t
                 }
             }
         }
 
         // Conversion from Q to bitwidth, if ceil(log2(Q)) > bitwidth, first extend to ceil(log2(Q)), then truncate to bitwidth
-        void Field2Ring(Tensor<T> &x, uint64_t Q, int bitwidth = 0){
+        void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
             // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
-            std::thread field2ring_threads[num_threads];
-            int chunk_size = x.size() / num_threads;
-            for (int i = 0; i < num_threads; i++) {
-                int offset = i * chunk_size;
-                field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
-            }
-            for (int i = 0; i < num_threads; i++) {
-                field2ring_threads[i].join();
+            if constexpr (std::is_same_v<T, uint64_t>) {
+                std::thread field2ring_threads[num_threads];
+                int chunk_size = x.size() / num_threads;
+                for (int i = 0; i < num_threads; i++) {
+                    int offset = i * chunk_size;
+                    field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
+                }
+                for (int i = 0; i < num_threads; i++) {
+                    field2ring_threads[i].join();
+                }
+            } else if constexpr (std::is_same_v<T, int128_t>) {
+                auto chunk_size = x.size() / num_threads;
+                std::thread field2ring_threads[num_threads];
+                for (int i = 0; i < num_threads; i++) {
+                    int offset = i * chunk_size;
+                    field2ring_threads[i] = std::thread(field2ring_thread_128, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
+                }
+                for (int i = 0; i < num_threads; i++) {
+                    field2ring_threads[i].join();
+                }
             }
         }
         
@@ -298,11 +327,12 @@ class FixPoint {
             }
         }
 
-        void static field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q){
-            uint64_t mask_bw = (bw == 64 ? -1 : ((1ULL << bw) - 1));
+        static void field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q){
+            uint64_t mask_bw = (bw == 64 ? static_cast<uint64_t>(-1) : ((1ULL << bw) - 1));
             uint8_t *wrap_x = new uint8_t[lnum_ops];
-            if (bw < ceil(std::log2(Q))){
-                aux->wrap_computation_prime(input, wrap_x, lnum_ops, ceil(std::log2(Q)), Q);
+            int32_t logQ = static_cast<int32_t>(ceil(std::log2(Q)));
+            if (bw < logQ){
+                aux->wrap_computation_prime(input, wrap_x, lnum_ops, logQ, Q);
             }
             else{
                 aux->wrap_computation_prime(input, wrap_x, lnum_ops, bw, Q);
@@ -311,6 +341,25 @@ class FixPoint {
             aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
             for (int i = 0; i < lnum_ops; i++){
                 result[i] = ((input[i]%Q) - Q * arith_wrap[i]) & mask_bw;
+            }
+            delete[] wrap_x;
+            delete[] arith_wrap;
+        }
+
+        static void field2ring_thread_128(AuxProtocols *aux, int128_t *input, int128_t *result, int lnum_ops, int32_t bw, int128_t Q) {
+            int128_t mask_bw = (bw == 128 ? int128_t(-1) : ((int128_t(1) << bw) - 1));
+            uint8_t *wrap_x = new uint8_t[lnum_ops];
+            long double q_ld = static_cast<long double>(Q);
+            int32_t logQ = static_cast<int32_t>(ceil(std::log2(q_ld)));
+            int32_t wrap_bw = (bw < logQ) ? logQ : bw;
+            aux->wrap_computation_prime(input, wrap_x, lnum_ops, wrap_bw, static_cast<int128_t>(Q));
+            uint64_t *arith_wrap = new uint64_t[lnum_ops];
+            aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
+            for (int i = 0; i < lnum_ops; i++) {
+                __int128_t value = static_cast<__int128_t>(input[i]) % static_cast<__int128_t>(Q);
+                __int128_t wrap = static_cast<__int128_t>(arith_wrap[i]);
+                __int128_t corrected = value - static_cast<__int128_t>(Q) * wrap;
+                result[i] = corrected & mask_bw;
             }
             delete[] wrap_x;
             delete[] arith_wrap;

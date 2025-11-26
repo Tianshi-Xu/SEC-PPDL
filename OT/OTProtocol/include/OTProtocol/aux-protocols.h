@@ -44,6 +44,9 @@ public:
   void wrap_computation_prime(uint64_t *x, uint8_t *y, int32_t size,
                                     int32_t bw_x, uint64_t Q);
 
+    void wrap_computation_prime(int128_t *x, uint8_t *y, int32_t size,
+                                                                        int32_t bw_x, int128_t Q);
+
   // y = sel * x
   template <typename T>
   void multiplexer(
