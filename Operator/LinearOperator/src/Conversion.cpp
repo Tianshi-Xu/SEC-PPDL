@@ -12,7 +12,7 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     std::vector<uint64_t> tmp_vec(poly_degree,0ULL);
     // encoding
     Tensor<UnifiedPlaintext> ac_pt(poly_shape, HE->server ? HE->Backend() : HOST);
-    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HOST /* Communication can be only done on HOST */);
+    Tensor<UnifiedCiphertext> ac_ct(poly_shape,HE->GenerateZeroCiphertext(HE->Backend()));
     HE->encoder->encode(tmp_vec, ac_pt(0));
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
@@ -37,6 +37,8 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
             HE->encryptor->encrypt(ac_pt(i), ac_ct(i));
         }
         HE->SendEncVec(ac_ct);
+        Tensor<UnifiedCiphertext> zero_ct(poly_shape,HE->GenerateZeroCiphertext(HE->Backend()));
+        return zero_ct;
     }
     return ac_ct;
 };
@@ -67,7 +69,7 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
             UnifiedPlaintext tmp_neg(HOST);
             HE->encoder->encode(pos_mask, tmp_pos);
             HE->encoder->encode(neg_mask, tmp_neg);
-            // HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
+            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
             out_share(i) = tmp_pos;
         }
         out_ct.apply([HE](UnifiedCiphertext &ct){

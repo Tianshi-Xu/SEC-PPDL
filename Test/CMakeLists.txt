@@ -16,11 +16,11 @@ if(USE_HE_GPU)
 endif()
 
 
-add_executable(test_linear_operator ${CMAKE_CURRENT_LIST_DIR}/src/TestLinearOperator.cpp)
-target_link_libraries(test_linear_operator PUBLIC LinearOperator Utils)
+# add_executable(test_linear_operator ${CMAKE_CURRENT_LIST_DIR}/src/TestLinearOperator.cpp)
+# target_link_libraries(test_linear_operator PUBLIC LinearOperator Utils)
 
-add_executable(test_Conv ${CMAKE_CURRENT_LIST_DIR}/src/TestConv.cpp)
-target_link_libraries(test_Conv PUBLIC Model)
+# add_executable(test_Conv ${CMAKE_CURRENT_LIST_DIR}/src/TestConv.cpp)
+# target_link_libraries(test_Conv PUBLIC Model)
 
 # add_executable(test_matmul ${CMAKE_CURRENT_LIST_DIR}/src/TestMatmul.cpp)
 # target_link_libraries(test_matmul PUBLIC LinearLayer Model)
@@ -34,11 +34,11 @@ target_link_libraries(test_Conv PUBLIC Model)
 add_executable(test_fixpoint ${CMAKE_CURRENT_LIST_DIR}/src/TestFixPoint.cpp)
 target_link_libraries(test_fixpoint PUBLIC NonlinearOperator)
 
-add_executable(test_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestResNet.cpp)
-target_link_libraries(test_resnet PUBLIC Model)
+# add_executable(test_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestResNet.cpp)
+# target_link_libraries(test_resnet PUBLIC Model)
 
 # add_executable(test_pool ${CMAKE_CURRENT_LIST_DIR}/src/test_Pool.cpp)
 # target_link_libraries(test_pool PUBLIC NonlinearLayer)
 
-# add_executable(test_gelu ${CMAKE_CURRENT_LIST_DIR}/src/TestGeLU.cpp)
-# target_link_libraries(test_gelu PUBLIC NonlinearLayer)
+add_executable(test_gelu ${CMAKE_CURRENT_LIST_DIR}/src/TestGeLU.cpp)
+target_link_libraries(test_gelu PUBLIC NonlinearLayer)

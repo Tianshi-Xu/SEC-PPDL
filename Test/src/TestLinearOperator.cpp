@@ -1,4 +1,5 @@
 #include <LinearOperator/Polynomial.h>
+#include <LinearOperator/Conversion.h>
 #include <Utils/ArgMapping/ArgMapping.h>
 #include <seal/util/common.h>
 #include <seal/util/numth.h>
@@ -6,7 +7,7 @@
 #include <stdexcept>
 
 int party, port = 32000;
-int num_threads = 2;
+int num_threads = 1;
 std::string address = "127.0.0.1";
 
 Utils::NetIO* netio;
@@ -15,7 +16,6 @@ using namespace std;
 using namespace LinearOperator;
 using namespace HE;
 
-namespace {
 std::vector<std::size_t> BuildMatrixMapForTest(std::size_t degree) {
     if (degree == 0) {
         throw std::invalid_argument("degree must be greater than zero");
@@ -50,8 +50,11 @@ void test_poly(HE::HEEvaluator* he){;
             y(i) = i;
         }
     }
+    printf("x:");
     x.print(10);
+    printf("y:");
     y.print(10);
+    cout << "he->plain_mod = " << he->plain_mod << endl;
     z = LinearOperator::ElementWiseMul(x, x, he);
     if (party == ALICE){
         netio->send_tensor(z);
@@ -62,6 +65,7 @@ void test_poly(HE::HEEvaluator* he){;
         for(uint32_t i = 0; i < 8192; i++){
             z_result(i) = z_result(i) % he->plain_mod;
         }
+        printf("he result:");
         z_result.print(10);
     }
 }
@@ -302,24 +306,142 @@ void test_ckks_tensor_encode_decode() {
         std::cout << "\u2717 Encode/Decode tensor test FAILED" << std::endl;
     }
 }
-} // namespace
+
+void test_sstohe_conversion(HE::HEEvaluator* he) {
+    const size_t degree = he->polyModulusDegree;
+    Tensor<uint64_t> share({1, degree});
+
+    auto share_value = [plain = he->plain_mod](bool is_server, size_t idx) -> uint64_t {
+        const uint64_t base = static_cast<uint64_t>(idx % plain);
+        return is_server ? (base + 1) % plain : (2 * base + 3) % plain;
+    };
+
+    for (size_t j = 0; j < degree; ++j) {
+        share(j) = share_value(he->server, j);
+    }
+
+    auto ct = Operator::SSToHE(share, he);
+
+    if (he->server) {
+        he->SendEncVec(ct);
+        std::cout << "[SSToHE] server sent ciphertext for verification" << std::endl;
+    } else {
+        Tensor<HE::unified::UnifiedCiphertext> combined(ct.shape(), Datatype::HOST);
+        he->ReceiveEncVec(combined);
+
+        Plaintext pt;
+        he->decryptor->decrypt(combined(0), pt);
+
+        std::vector<uint64_t> decoded(degree);
+        he->encoder->decode(pt, decoded);
+
+        const size_t sample = 8;
+        size_t mismatches = 0;
+        for (size_t j = 0; j < degree; ++j) {
+            const uint64_t expected = (share_value(true, j) + share_value(false, j)) % he->plain_mod;
+            if (decoded[j] != expected) {
+                ++mismatches;
+                if (mismatches <= sample) {
+                    std::cout << "[SSToHE] mismatch at " << j << ": decoded=" << decoded[j]
+                              << ", expected=" << expected << std::endl;
+                }
+            }
+        }
+
+        std::cout << "[SSToHE] decoded first " << sample << " values (decoded/expected): ";
+        for (size_t j = 0; j < sample && j < degree; ++j) {
+            const uint64_t expected = (share_value(true, j) + share_value(false, j)) % he->plain_mod;
+            std::cout << decoded[j] << "/" << expected;
+            if (j + 1 != sample && j + 1 != degree) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << std::endl;
+        std::cout << "[SSToHE] " << (mismatches == 0 ? "PASS" : "FAIL")
+                  << " (" << mismatches << " mismatches)" << std::endl;
+    }
+}
+
+void test_hetoss_roundtrip(HE::HEEvaluator* he) {
+    const size_t degree = he->polyModulusDegree;
+    Tensor<uint64_t> share({1, degree});
+    const size_t sample = std::min<size_t>(8, degree);
+
+    auto share_value = [plain = he->plain_mod](bool is_server, size_t idx) -> uint64_t {
+        const uint64_t base = static_cast<uint64_t>(idx % plain);
+        return is_server ? (base + 5) % plain : (3 * base + 7) % plain;
+    };
+
+    for (size_t j = 0; j < degree; ++j) {
+        share(j) = share_value(he->server, j);
+    }
+
+    std::cout << "[HEToSS] input share (" << (he->server ? "server" : "client")
+              << ") first " << sample << ": ";
+    for (size_t j = 0; j < sample; ++j) {
+        std::cout << share(j);
+        if (j + 1 != sample) std::cout << ", ";
+    }
+    std::cout << std::endl;
+
+    auto ct = Operator::SSToHE(share, he);
+    auto ss = Operator::HEToSS(ct, he);
+
+    std::cout << "[HEToSS] output share (" << (he->server ? "server" : "client")
+              << ") first " << sample << ": ";
+    for (size_t j = 0; j < sample; ++j) {
+        std::cout << ss(j);
+        if (j + 1 != sample) std::cout << ", ";
+    }
+    std::cout << std::endl;
+
+    if (he->server) {  // ALICE
+        Tensor<uint64_t> client_share({1, degree});
+        netio->recv_tensor(client_share);
+
+        Tensor<uint64_t> combined = ss + client_share;
+        for (size_t j = 0; j < degree; ++j) {
+            combined(j) %= he->plain_mod;
+        }
+
+        std::cout << "[HEToSS] reconstructed share first " << sample << ": ";
+        for (size_t j = 0; j < sample; ++j) {
+            std::cout << combined(j);
+            if (j + 1 != sample) std::cout << ", ";
+        }
+        std::cout << std::endl;
+
+        size_t mismatches = 0;
+        for (size_t j = 0; j < degree; ++j) {
+            const uint64_t expected = (share_value(true, j) + share_value(false, j)) % he->plain_mod;
+            if (combined(j) != expected) {
+                ++mismatches;
+            }
+        }
+
+        std::cout << "[HEToSS] " << (mismatches == 0 ? "PASS" : "FAIL")
+                  << " (" << mismatches << " mismatches)" << std::endl;
+    } else {
+        netio->send_tensor(ss);
+    }
+}
 
 int main(int argc, char **argv){
-    // ArgMapping amap;
-    // amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
-    // amap.arg("p", port, "Port Number");
-    // amap.arg("ip", address, "IP Address of server (ALICE)");
-    // amap.parse(argc, argv);
+    ArgMapping amap;
+    amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2"); // 1 is server, 2 is client
+    amap.arg("p", port, "Port Number");
+    amap.arg("ip", address, "IP Address of server (ALICE)");
+    amap.parse(argc, argv);
     
-    // netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
-    // std::cout << "netio generated" << std::endl;
-    // he = new HE::HEEvaluator(netio, party, 8192,32,Datatype::HOST);
-    // he->GenerateNewKey();
-    
-    // test_poly(he);
+    netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
+    he = new HE::HEEvaluator(netio, party, 8192,32,Datatype::HOST,{40,40});
+    he->GenerateNewKey();
+    // test_sstohe_conversion(he);
+    // test_hetoss_roundtrip(he);
+    test_poly(he);
     // test_ckks_inverse_fft();
     // test_ckks_fft_roundtrip();
-    test_ckks_tensor_encode_decode();
+    // test_ckks_tensor_encode_decode();
 
     return 0;
 }

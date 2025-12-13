@@ -161,7 +161,7 @@ class FixPoint {
                 bitwidth = x.bitwidth;
             }
             // cout << "bitwidth: " << bitwidth << endl;
-            int ext_bit = 40;
+            int ext_bit = 20;
             extend(x, bitwidth, bitwidth+ext_bit, signed_arithmetic);
             using Wide = typename FieldTraits<T>::Wide;
             Wide modulus = static_cast<Wide>(Q);

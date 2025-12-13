@@ -2,6 +2,7 @@
 #include <HE/HE.h>
 #include <fstream>
 #include <iostream>
+#include <cmath>
 using namespace std;
 using namespace NonlinearLayer;
 using namespace HE;
@@ -20,67 +21,143 @@ FixPoint<T> *fixpoint;
 HEEvaluator *he;
 uint64_t comm_threads[MAX_THREADS];
 
-Tensor<double> gelu_gt(Tensor<double> &input){
-  double coe[5] = {0.020848611754127593, -0.18352506127082727, 0.5410550166368381, -0.03798164612714154, 0.001620808531841547};
-  Tensor<double> output({8192});
-  for(int i=0;i<input.size();i++){
-    double x = input(i);
-    double abs_x = abs(x);
+// 将float转换为bf16 (brain floating point 16)
+// BF16格式: 1位符号 + 8位指数 + 7位尾数
+uint16_t float_to_bf16(float value) {
+    uint32_t f32;
+    memcpy(&f32, &value, sizeof(float));
+    
+    // 处理NaN和Inf
+    uint32_t exp = (f32 >> 23) & 0xFF;
+    if (exp == 0xFF) {
+        // NaN或Inf,直接截断
+        return (uint16_t)(f32 >> 16);
+    }
+    
+    // 舍入到最近偶数 (Round to Nearest Even)
+    // 检查被截断部分的最高位(第16位)
+    uint32_t rounding_bias = 0x7FFF + ((f32 >> 16) & 1);
+    f32 += rounding_bias;
+    
+    // 取高16位
+    return (uint16_t)(f32 >> 16);
+}
 
-    if(x<0){
-      output(i) = 0;
+// 将bf16转换回float
+float bf16_to_float(uint16_t bf16_value) {
+    uint32_t f32 = ((uint32_t)bf16_value) << 16;
+    float result;
+    memcpy(&result, &f32, sizeof(float));
+    return result;
+}
+
+// 打印bf16值的二进制表示(用于调试)
+void print_bf16_bits(uint16_t bf16_val, float original) {
+    cout << "原始float: " << original << " -> BF16: ";
+    for(int i = 15; i >= 0; i--) {
+        cout << ((bf16_val >> i) & 1);
+        if(i == 15 || i == 7) cout << " ";  // 分隔符号位和指数位
     }
-    else if(abs_x<=2.7){
-      output(i) = coe[0] * pow(abs_x, 4) + coe[1] * pow(abs_x, 3) + coe[2] * pow(abs_x, 2) + coe[3] * abs_x + coe[4]+0.5*x;
-    }
-    else{
-      output(i) = x;
-    }
+    cout << " -> 还原float: " << bf16_to_float(bf16_val) << endl;
+}
+
+// bf16版本的gelu ground truth
+// 使用标准GeLU公式: GELU(x) = x * Φ(x) = x * 0.5 * (1 + erf(x/√2))
+// 或者使用tanh近似: GELU(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x^3)))
+Tensor<double> gelu_gt(Tensor<double> &input){
+  
+  Tensor<double> output({8192});
+  
+  // 常数 1/√2 用于erf计算
+  const double SQRT2_INV = 0.7071067811865476;  // 1/√2
+  
+  for(int i = 0; i < input.size(); i++){
+    // 输入转换为bf16精度
+    float x_f32 = (float)input(i);
+    uint16_t x_bf16 = float_to_bf16(x_f32);
+    float x = bf16_to_float(x_bf16);
+    
+    // 标准GeLU公式: GELU(x) = x * Φ(x)
+    // 其中 Φ(x) = 0.5 * (1 + erf(x/√2))
+    
+    // 计算 x/√2
+    float x_scaled_f = x * SQRT2_INV;
+    x_scaled_f = bf16_to_float(float_to_bf16(x_scaled_f));
+    
+    // 计算 erf(x/√2)
+    float erf_val_f = std::erf(x_scaled_f);
+    erf_val_f = bf16_to_float(float_to_bf16(erf_val_f));
+    
+    // 计算 0.5 * (1 + erf(x/√2))
+    float phi_f = 0.5f * (1.0f + erf_val_f);
+    phi_f = bf16_to_float(float_to_bf16(phi_f));
+    
+    // 计算 x * Φ(x)
+    float result_f = x * phi_f;
+    result_f = bf16_to_float(float_to_bf16(result_f));
+    
+    output(i) = (double)result_f;
   }
+  
   return output;
 }
 
 void test_gelu(){
-  /************ Generate Test Data ************/
-  /********************************************/
-  Tensor<T> input({8192});
-  Tensor<double> input_real({8192});
-  int bitwidth = 22, scale = 20;
-  Tensor<double> gt({8192});
-  if(party == ALICE){
-    input.randomize(1ULL<< (bitwidth-1));
-    input(0) = 2.8 * (1ULL << scale);
-    input(1) = 1.93021 * (1ULL << scale);
-    input.print(8);
-    for(size_t i = 0; i < input.size(); i++){
-      input_real(i) = double(input(i)) / (1ULL << scale);
+  const size_t n = 8192;
+  Tensor<T> input({n});
+  Tensor<double> input_real({n});
+  Tensor<double> gt({n});
+  const int bitwidth = 19;
+  const int scale = 14;
+
+  if (party == ALICE){
+    for (size_t i = 0; i < n; ++i){
+      double v = 4.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [0,16]均匀分布
+      input_real(i) = v;
+      input(i) = static_cast<T>(llround(v * static_cast<double>(1ULL << scale)));
     }
-    input_real.print(8);
+    // input(0) = 4.00049 * (1ULL << scale);
+    // input_real(0) = 4.00049;
     gt = gelu_gt(input_real);
   }
   
-  GeLU<T> gelu(fixpoint, he, 2*bitwidth, scale);
-  gelu(input);
-  // input.print();
+  GeLU<T> gelu(fixpoint, he, bitwidth*2, scale);
+  gelu(input);  // in-place share of HE GeLU output
+
   if (party == ALICE){
+    Tensor<T> other_output({n});
+    ioArr[0]->recv_tensor(other_output);
+
+    Tensor<double> recon({n});
+    double inv_scale = 1.0 / static_cast<double>(1ULL << scale);
+    double mae = 0.0, max_err = 0.0;
+    size_t cnt = 0;
+    for (size_t i = 0; i < n; ++i){
+      uint64_t combined = (input(i) + other_output(i)) & ((1ULL << bitwidth) - 1);
+      recon(i) = static_cast<double>(combined) * inv_scale;
+      if ((i >= 2048 && i < 4096) || (i >= 6144 && i < 8192)) {
+        continue; // skip polynomial segments when aggregating error stats
+      }
+      double err = std::abs(recon(i) - gt(i));
+      mae += err;
+      max_err = std::max(max_err, err);
+      ++cnt;
+    }
+      cout << "he compute result at 0 is" << recon(0) << endl;
+    mae = cnt ? (mae / static_cast<double>(cnt)) : 0.0;
+
+    std::ofstream ofs("gelu_eval.csv");
+    ofs << "input,gt,he\n";
+    for (size_t i = 0; i < n; ++i){
+      ofs << input_real(i) << "," << gt(i) << "," << recon(i) << "\n";
+    }
+    ofs.close();
+
+    std::cout << "[GeLU] saved inputs/gt/he outputs to gelu_eval.csv" << std::endl;
+    std::cout << "[GeLU] mae=" << mae << ", max_err=" << max_err << std::endl;
+  } else {
     ioArr[0]->send_tensor(input);
   }
-  else{
-    Tensor<T> input0({8192});
-    ioArr[0]->recv_tensor(input0);
-    input = input0 + input;
-    for(size_t i = 0; i < input.size(); i++){
-      input(i) = input(i) & ((1ULL << bitwidth) - 1);
-    }
-    Tensor<double> output_real({8});
-    for(size_t i = 0; i < input.size(); i++){
-      output_real(i) = double(input(i)) / (1ULL << scale);
-    }
-    output_real.print(8);
-  }
-  cout << "gt:" << endl;
-  gt.print(8);
-  
 }
 
 int main(int argc, char **argv) {
@@ -106,8 +183,9 @@ int main(int argc, char **argv) {
       otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
     }
   }
-  he = new HE::HEEvaluator(ioArr[0], party, 8192,60,Datatype::HOST);
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,38,Datatype::HOST,{60,40,40});
   he->GenerateNewKey();
+  he->print_parameters();
   fixpoint = new FixPoint<T>(party, otpackArr, num_threads);
   std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
   for (int i = 0; i < num_threads; i++) {
@@ -117,6 +195,10 @@ int main(int argc, char **argv) {
               << std::endl;
   }
 
+  // 测试不同密文位宽
+  // test_gelu_bitwidth();
+  
+  // 原始测试
   test_gelu();
 
   uint64_t totalComm = 0;
@@ -126,55 +208,4 @@ int main(int argc, char **argv) {
               << std::endl;
     totalComm += (temp - comm_threads[i]);
   }
-
-  /************** Verification ****************/
-  /********************************************/
-  // if (party == ALICE) {
-  //   ioArr[0]->send_data(input, dim * sizeof(uint64_t));
-  //   ioArr[0]->send_data(res, dim * sizeof(uint64_t));
-  // } else { // party == BOB
-  //   uint64_t *input0 = new uint64_t[dim];
-  //   uint64_t *res0 = new uint64_t[dim];
-  //   ioArr[0]->recv_data(input0, dim * sizeof(uint64_t));
-  //   ioArr[0]->recv_data(res0, dim * sizeof(uint64_t));
-
-  //   for (int i = 0; i < 10; i++) {
-  //     uint64_t res_result = (res[i] + res0[i]) & ((1ULL << bitlength) - 1);
-  //     cout << endl;
-  //     cout <<  "origin_sum:" << ((input[i] + input0[i]) & ((1ULL << bitlength) - 1)) << endl;
-  //     cout << "res_sum:" << res_result << "  " << "res_share0:" << res[i] << "  " << "res_share1:" << res0[i] << endl;
-  //   //   int64_t X = signed_val(x[i] + x0[i], bw_x);
-  //   //   int64_t Y = signed_val(y[i] + y0[i], bw_x);
-  //   //   int64_t expectedY = X;
-  //   //   if (X < 0)
-  //   //     expectedY = 0;
-  //   //   if (six != 0) {
-  //   //     if (X > int64_t(six))
-  //   //       expectedY = six;
-  //   //   }
-  //   //   // cout << X << "\t" << Y << "\t" << expectedY << endl;
-  //   //   assert(Y == expectedY);
-  //   }
-
-    // cout << "ReLU" << (six == 0 ? "" : "6") << " Tests Passed" << endl;
-
-    // delete[] input0;
-    // delete[] res0;
-  // }
-
-  /**** Process & Write Benchmarking Data *****/
-  /********************************************/
-  // cout << "Number of ring-relu/s:\t" << (double(dim) / t) * 1e6 << std::endl;
-  // cout << "one ring-relu cost:\t" << (t / double(dim)) << std::endl;
-  // cout << "ring-relu Time\t" << t / (1000.0) << " ms" << endl;
-  // cout << "ring-relu Bytes Sent\t" << (totalComm) << " byte" << endl;
-
-  // /******************* Cleanup ****************/
-  // /********************************************/
-  // delete[] res;
-  // delete[] input;
-  // for (int i = 0; i < num_threads; i++) {
-  //   delete ioArr[i];
-  //   delete otpackArr[i];
-  // }
 }

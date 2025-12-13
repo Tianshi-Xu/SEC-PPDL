@@ -13,9 +13,6 @@ extern int32_t kScale;
 #define OFF_PLACE
 
 namespace NonlinearLayer{
-
-
-
 template <typename T, typename IO=Utils::NetIO>
 class GeLU : public Module{
     public:
@@ -55,44 +52,44 @@ class GeLU : public Module{
       void operator()(Tensor<T> &x){
         cout << "bitwidth, scale, plain_mod:" << bitwidth << " " << scale << " " << HE->plain_mod << endl;
         Tensor<T> x_ring = x;
+        // check_share(x, 1ULL << (bitwidth), "x_ring before");
         fixPoint->Ring2Field(x, HE->plain_mod, bitwidth);
-        check_share(x, HE->plain_mod, "x_field");
+        // check_share(x, HE->plain_mod, "x_field");
         auto x_2 = ElementWiseMul(x, x, HE);
 
-        check_share(x_2, HE->plain_mod, "x_2_field");
+        // check_share(x_2, HE->plain_mod, "x_2_field");
 
         fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale);
 
-        check_share(x_2, 1ULL << (bitwidth+scale), "x_2_ring");
+        // check_share(x_2, 1ULL << (bitwidth+scale), "x_2_ring");
 
 
         fixPoint->truncate_reduce(x_2,scale,bitwidth+scale);
-        check_share(x_2, 1ULL << (bitwidth), "x_2 after truncate");
+        // check_share(x_2, 1ULL << (bitwidth), "x_2 after truncate");
         // cout << "OK4" << endl;
         Tensor<T> x_2_ring = x_2;
         fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth);
-        check_share(x_2, HE->plain_mod, "x_2_field");
+        // check_share(x_2, HE->plain_mod, "x_2_field after truncate");
 
-        check_share(x, HE->plain_mod, "x_field");
         auto x_3 = ElementWiseMul(x_2, x, HE);
-        check_share(x_3, HE->plain_mod, "x_3");
+        // check_share(x_3, HE->plain_mod, "x_3");
         fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale);
-        check_share(x_3, 1ULL << (bitwidth+scale), "x_3_ring");
+        // check_share(x_3, 1ULL << (bitwidth+scale), "x_3_ring");
         fixPoint->truncate_reduce(x_3,scale,bitwidth+scale);
-        check_share(x_3, 1ULL << (bitwidth), "x_3 after truncate");
+        // check_share(x_3, 1ULL << (bitwidth), "x_3 after truncate");
         auto x_4 = ElementWiseMul(x_2, x_2, HE);
-        check_share(x_4, HE->plain_mod, "x_4");
+        // check_share(x_4, HE->plain_mod, "x_4");
         fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale);
-        check_share(x_4, 1ULL << (bitwidth+scale), "x_4_ring");
+        // check_share(x_4, 1ULL << (bitwidth+scale), "x_4_ring");
         fixPoint->truncate_reduce(x_4,scale,bitwidth+scale);
-        check_share(x_4, 1ULL << (bitwidth), "x_4 after truncate");
+        // check_share(x_4, 1ULL << (bitwidth), "x_4 after truncate");
         Tensor<T> F0(x.shape());
         Tensor<T> F1(x.shape());
         for(size_t i = 0; i < x.size(); i++){
           F0(i) = x_4(i)*coe_fix[0]-x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))-coe_fix[3])+coe_fix[4];
           F1(i) = x_4(i)*coe_fix[0]+x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))+coe_fix[3])+coe_fix[4];
         }
-        check_share(F1, 1ULL << (bitwidth), "F1");
+        // check_share(F1, 1ULL << (bitwidth), "F1");
         fixPoint->truncate(F0,scale,bitwidth);
         fixPoint->truncate(F1,scale,bitwidth);
         // cout << "OK12" << endl;
@@ -110,13 +107,13 @@ class GeLU : public Module{
         fixPoint->mux(z0, F0, F0, bitwidth, bitwidth);
         fixPoint->mux(z1, F1, F1, bitwidth, bitwidth);
         fixPoint->mux(z2, x_ring, x_ring, bitwidth, bitwidth);
-        check_share(F0, 1ULL << (bitwidth), "F0 after truncate");
-        check_share(F1, 1ULL << (bitwidth), "F1 after truncate");
-        check_share(x_ring, 1ULL << (bitwidth), "x_ring");
+        // check_share(F0, 1ULL << (bitwidth), "F0 after truncate");
+        // check_share(F1, 1ULL << (bitwidth), "F1 after truncate");
+        // check_share(x_ring, 1ULL << (bitwidth), "x_ring");
         for(size_t i = 0; i < x.size(); i++){
           x(i) = F0(i) + F1(i) + x_ring(i);
         }
-        check_share(x, 1ULL << (bitwidth), "final result");
+        // check_share(x, 1ULL << (bitwidth), "final result");
       }
       
     private:

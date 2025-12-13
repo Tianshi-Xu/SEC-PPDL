@@ -24,6 +24,7 @@ Tensor<uint64_t> ElementWiseMul(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HE
         // cout << "x==y" << endl;
         for(size_t i = 0; i < x_ct.size(); i++){
             HE->evaluator->square(x_ct(i), z(i));
+            // z(i) = x_ct(i);
         }
     }else{
         y.reshape({y.size()/HE->polyModulusDegree, HE->polyModulusDegree});

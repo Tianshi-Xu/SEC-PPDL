@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Datatype/UnifiedType.h>
+#include <cstdint>
 #include <seal/context.h>
 
 #ifdef USE_HE_GPU
@@ -18,7 +19,7 @@ namespace HE
         class UnifiedContext
         {
         public:
-            UnifiedContext(uint64_t poly_modulus_degree, int bit_size, bool batch = true, LOCATION backend = HOST)
+            UnifiedContext(uint64_t poly_modulus_degree, int bit_size, vector<int> ct_modulus_bits = {}, bool batch = true, LOCATION backend = HOST)
                 : is_gpu_enable_(backend == DEVICE)
             {
 #ifndef USE_HE_GPU
@@ -34,7 +35,11 @@ namespace HE
 #endif
                 seal::EncryptionParameters parms(seal::scheme_type::bfv);
                 parms.set_poly_modulus_degree(poly_modulus_degree);
-                parms.set_coeff_modulus(seal::CoeffModulus::BFVDefault(poly_modulus_degree));
+                if (ct_modulus_bits.size() > 0) {
+                    parms.set_coeff_modulus(seal::CoeffModulus::Create(poly_modulus_degree, ct_modulus_bits));
+                } else {
+                    parms.set_coeff_modulus(seal::CoeffModulus::BFVDefault(poly_modulus_degree));
+                }
                 parms.set_plain_modulus(
                     batch ? seal::PlainModulus::Batching(poly_modulus_degree, bit_size) : 1 << bit_size);
                 seal_context_ = std::make_unique<seal::SEALContext>(parms);
