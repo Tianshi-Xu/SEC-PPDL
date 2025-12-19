@@ -3,10 +3,28 @@
 #include <seal/util/common.h>
 #include <complex>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 namespace LinearOperator {
-    Tensor<uint64_t> ElementWiseMul(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HEEvaluator* HE);
+    Tensor<uint64_t> ElementWiseMulUnsigned(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HEEvaluator* HE);
+    Tensor<int64_t> ElementWiseMulSigned(Tensor<int64_t> &x, Tensor<int64_t> &y, HE::HEEvaluator* HE);
+
+    namespace detail {
+        template <typename T>
+        struct DependentFalse : std::false_type {};
+    }
+
+    template <typename T>
+    Tensor<T> ElementWiseMul(Tensor<T> &x, Tensor<T> &y, HE::HEEvaluator* HE) {
+        if constexpr (std::is_same_v<T, uint64_t>) {
+            return ElementWiseMulUnsigned(x, y, HE);
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            return ElementWiseMulSigned(x, y, HE);
+        } else {
+            static_assert(detail::DependentFalse<T>::value, "ElementWiseMul only supports uint64_t or int64_t tensors");
+        }
+    }
 
     using Complex128 = std::complex<int128_t>;
 

@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <string>
 #include <algorithm>
+#include <cmath>
 #include "Datatype/UnifiedType.h"
 
 namespace Datatype {
@@ -154,6 +155,43 @@ public:
         for (auto& element : data_) {
             func(element);
         }
+    }
+
+    template <typename FloatT = double>
+    static Tensor<T> FromFloatTensorToFixed(const Tensor<FloatT>& src, int32_t scale_bits) {
+        static_assert(std::is_floating_point_v<FloatT>, "FromFloatTensorToFixed expects floating-point tensor input");
+        static_assert(std::is_integral_v<T>, "FromFloatTensorToFixed only supports integral tensor types");
+        Tensor<T> dst(src.shape(), static_cast<int32_t>(sizeof(T) * 8), scale_bits);
+        const long double scale_factor = std::ldexp(1.0L, scale_bits);
+        for (size_t i = 0; i < dst.size(); ++i) {
+            const long double scaled = static_cast<long double>(src(i)) * scale_factor;
+            dst(i) = static_cast<T>(std::llround(scaled));
+        }
+        return dst;
+    }
+
+    template <typename FloatT = double>
+    Tensor<FloatT> FromFixedTensorToFloat(int32_t scale_bits, int32_t value_bitwidth = 0) const {
+        static_assert(std::is_floating_point_v<FloatT>, "FromFixedTensorToFloat expects floating-point destination tensor");
+        Tensor<FloatT> dst(shape_);
+        dst.bitwidth = value_bitwidth > 0 ? value_bitwidth : bitwidth;
+        dst.scale = scale_bits;
+        const int32_t bw = value_bitwidth > 0 ? value_bitwidth
+                         : (bitwidth > 0 ? bitwidth : static_cast<int32_t>(sizeof(T) * 8));
+        const long double factor = std::ldexp(1.0L, -scale_bits);
+        for (size_t i = 0; i < data_.size(); ++i) {
+            long double signed_val_ld;
+            if constexpr (std::is_integral_v<T>) {
+                using UnsignedT = std::make_unsigned_t<T>;
+                const uint64_t raw = static_cast<uint64_t>(static_cast<UnsignedT>(data_[i]));
+                const int64_t signed_val = interpret_unsigned_as_signed(raw, bw);
+                signed_val_ld = static_cast<long double>(signed_val);
+            } else {
+                signed_val_ld = static_cast<long double>(data_[i]);
+            }
+            dst(i) = static_cast<FloatT>(signed_val_ld * factor);
+        }
+        return dst;
     }
 
     // 加法

@@ -3,8 +3,12 @@
 #include <Utils/ArgMapping/ArgMapping.h>
 #include <seal/util/common.h>
 #include <seal/util/numth.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 int party, port = 32000;
 int num_threads = 1;
@@ -40,34 +44,109 @@ std::vector<std::size_t> BuildMatrixMapForTest(std::size_t degree) {
     return map;
 }
 
-void test_poly(HE::HEEvaluator* he){;
-    Tensor<uint64_t> x({8192});
-    Tensor<uint64_t> y({8192});
-    Tensor<uint64_t> z({8192});
-    if(party == ALICE){
-        for(uint32_t i = 0; i < 8192; i++){
-            x(i) = i;
-            y(i) = i;
+void test_poly(HE::HEEvaluator* he){
+    const size_t slot_count = he->polyModulusDegree;
+    constexpr double kMin = -5.0;
+    constexpr double kMax = 5.0;
+    constexpr int kScaleBits = 12;
+
+    auto lerp = [&](size_t idx, size_t span) -> double {
+        if (span <= 1) {
+            return kMin;
         }
-    }
-    printf("x:");
-    x.print(10);
-    printf("y:");
-    y.print(10);
-    cout << "he->plain_mod = " << he->plain_mod << endl;
-    z = LinearOperator::ElementWiseMul(x, x, he);
-    if (party == ALICE){
-        netio->send_tensor(z);
-    }else{
-        Tensor<uint64_t> z0({8192});
-        netio->recv_tensor(z0);
-        auto z_result = z + z0;
-        for(uint32_t i = 0; i < 8192; i++){
-            z_result(i) = z_result(i) % he->plain_mod;
+        double t = static_cast<double>(idx % span) / static_cast<double>(span - 1);
+        return kMin + (kMax - kMin) * t;
+    };
+    auto primary_value = [&](size_t idx) -> double {
+        return lerp(idx, slot_count);
+    };
+    auto secondary_value = [&](size_t idx) -> double {
+        const size_t permuted = (idx * 7 + 3) % slot_count;
+        return lerp(permuted, slot_count);
+    };
+    auto wrap_to_plain = [&]( __int128 value) -> uint64_t {
+        const __int128 modulus = static_cast<__int128>(he->plain_mod);
+        __int128 residue = value % modulus;
+        if (residue < 0) {
+            residue += modulus;
         }
-        printf("he result:");
-        z_result.print(10);
+        return static_cast<uint64_t>(residue);
+    };
+    auto encode_fixed = [&](double value) -> int64_t {
+        const long double scaled = static_cast<long double>(value) * std::ldexp(1.0L, kScaleBits);
+        return static_cast<int64_t>(std::llround(scaled));
+    };
+
+    auto expected_residue = [&](size_t idx, bool square_case) -> uint64_t {
+        const int64_t xv = encode_fixed(primary_value(idx));
+        const int64_t yv = square_case ? xv : encode_fixed(secondary_value(idx));
+        return wrap_to_plain(static_cast<__int128>(xv) * static_cast<__int128>(yv));
+    };
+
+    Tensor<int64_t> x({slot_count}, static_cast<int32_t>(sizeof(int64_t) * 8), kScaleBits);
+    Tensor<int64_t> y({slot_count}, static_cast<int32_t>(sizeof(int64_t) * 8), kScaleBits);
+    if (party == ALICE) {
+        Tensor<double> x_plain({slot_count});
+        Tensor<double> y_plain({slot_count});
+        for (size_t i = 0; i < slot_count; ++i) {
+            x_plain(i) = primary_value(i);
+            y_plain(i) = secondary_value(i);
+        }
+        x = Tensor<int64_t>::FromFloatTensorToFixed(x_plain, kScaleBits);
+        y = Tensor<int64_t>::FromFloatTensorToFixed(y_plain, kScaleBits);
     }
+
+    auto run_case = [&](const char* label, bool square_case) {
+        Tensor<int64_t> lhs = x;
+        Tensor<int64_t> rhs = y;
+        Tensor<int64_t> result = square_case
+            ? LinearOperator::ElementWiseMul(lhs, lhs, he)
+            : LinearOperator::ElementWiseMul(lhs, rhs, he);
+
+        if (party == ALICE) {
+            netio->send_tensor(result);
+        } else {
+            Tensor<int64_t> peer_share(result.shape());
+            netio->recv_tensor(peer_share);
+
+            size_t mismatches = 0;
+            const size_t sample = 8;
+            std::vector<size_t> mismatch_indices;
+            mismatch_indices.reserve(sample);
+
+            for (size_t i = 0; i < slot_count; ++i) {
+                const uint64_t combined = wrap_to_plain(static_cast<__int128>(result(i)) + peer_share(i));
+                const uint64_t expected = expected_residue(i, square_case);
+                if (combined != expected) {
+                    if (mismatch_indices.size() < sample) {
+                        mismatch_indices.push_back(i);
+                    }
+                    ++mismatches;
+                }
+                if (i < sample) {
+                    std::cout << "[test_poly - " << label << "] slot " << i
+                              << ": recon=" << combined << ", expect=" << expected << std::endl;
+                }
+            }
+
+            if (mismatches == 0) {
+                std::cout << "[test_poly - " << label << "] PASS: all " << slot_count
+                          << " slots match signed inputs in [-5,5]" << std::endl;
+            } else {
+                std::cout << "[test_poly - " << label << "] FAIL: " << mismatches
+                          << " mismatches detected" << std::endl;
+                for (size_t idx : mismatch_indices) {
+                    const uint64_t combined = wrap_to_plain(static_cast<__int128>(result(idx)) + peer_share(idx));
+                    const uint64_t expected = expected_residue(idx, square_case);
+                    std::cout << "  slot " << idx << ": recon=" << combined
+                              << ", expect=" << expected << std::endl;
+                }
+            }
+        }
+    };
+
+    run_case("x^2", true);
+    run_case("x*y", false);
 }
 
 std::string Int128ToString(int128_t value) {
@@ -434,7 +513,7 @@ int main(int argc, char **argv){
     amap.parse(argc, argv);
     
     netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
-    he = new HE::HEEvaluator(netio, party, 8192,32,Datatype::HOST,{40,40});
+    he = new HE::HEEvaluator(netio, party, 8192,32,Datatype::HOST,{});
     he->GenerateNewKey();
     // test_sstohe_conversion(he);
     // test_hetoss_roundtrip(he);

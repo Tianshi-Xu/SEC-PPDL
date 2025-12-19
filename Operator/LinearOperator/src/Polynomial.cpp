@@ -9,9 +9,44 @@
 
 namespace LinearOperator {
 
+namespace {
+Tensor<uint64_t> CopySignedToUnsignedTensor(const Tensor<int64_t> &src) {
+    Tensor<uint64_t> dst(src.shape());
+    dst.bitwidth = src.bitwidth;
+    dst.scale = src.scale;
+    auto &dst_data = dst.data();
+    const auto &src_data = src.data();
+    for (size_t i = 0; i < src_data.size(); ++i) {
+        dst_data[i] = static_cast<uint64_t>(src_data[i]);
+    }
+    return dst;
+}
+
+int64_t DecodeSignedRingValue(uint64_t value) {
+    constexpr uint64_t kSignBit = 1ULL << 63;
+    if ((value & kSignBit) == 0) {
+        return static_cast<int64_t>(value);
+    }
+    const __int128 adjusted = static_cast<__int128>(value) - (static_cast<__int128>(1) << 64);
+    return static_cast<int64_t>(adjusted);
+}
+
+Tensor<int64_t> CopyUnsignedToSignedTensor(const Tensor<uint64_t> &src) {
+    Tensor<int64_t> dst(src.shape());
+    dst.bitwidth = src.bitwidth;
+    dst.scale = src.scale;
+    auto &dst_data = dst.data();
+    const auto &src_data = src.data();
+    for (size_t i = 0; i < src_data.size(); ++i) {
+        dst_data[i] = DecodeSignedRingValue(src_data[i]);
+    }
+    return dst;
+}
+} // namespace
+
 // input and output are both secret shares, also supports square when x==y, the input can be any shape
 // TODO: support x.size() % HE->polyModulusDegree != 0
-Tensor<uint64_t> ElementWiseMul(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HEEvaluator* HE){
+Tensor<uint64_t> ElementWiseMulUnsigned(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HEEvaluator* HE){
     if (x.size() != y.size()) {
         throw std::invalid_argument("x and y must have the same size in ElementWiseMul");
     }
@@ -37,6 +72,21 @@ Tensor<uint64_t> ElementWiseMul(Tensor<uint64_t> &x, Tensor<uint64_t> &y, HE::HE
     Tensor<uint64_t> z_ss = Operator::HEToSS(z, HE);
     z_ss.reshape(shape);
     return z_ss;
+}
+
+Tensor<int64_t> ElementWiseMulSigned(Tensor<int64_t> &x, Tensor<int64_t> &y, HE::HEEvaluator* HE){
+    Tensor<uint64_t> x_unsigned = CopySignedToUnsignedTensor(x);
+    Tensor<uint64_t> y_unsigned_storage;
+    Tensor<uint64_t> *y_unsigned_ptr = nullptr;
+    if (&x == &y) {
+        y_unsigned_ptr = &x_unsigned;
+    } else {
+        y_unsigned_storage = CopySignedToUnsignedTensor(y);
+        y_unsigned_ptr = &y_unsigned_storage;
+    }
+
+    Tensor<uint64_t> z_unsigned = ElementWiseMulUnsigned(x_unsigned, *y_unsigned_ptr, HE);
+    return CopyUnsignedToSignedTensor(z_unsigned);
 }
 
 namespace {

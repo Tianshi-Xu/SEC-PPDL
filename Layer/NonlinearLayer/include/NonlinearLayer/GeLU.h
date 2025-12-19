@@ -19,14 +19,16 @@ class GeLU : public Module{
       int bitwidth;
       int scale;
       int party;
+      bool signed_arithmetic;
       double coe[5] = {0.020848611754127593, -0.18352506127082727, 0.5410550166368381, -0.03798164612714154, 0.001620808531841547};
       int64_t coe_fix[5];
-      GeLU(FixPoint<T> *fixPoint,HE::HEEvaluator* HE, int bitwidth, int scale){
+      GeLU(FixPoint<T> *fixPoint,HE::HEEvaluator* HE, int bitwidth, int scale, bool signed_arithmetic=true){
         this->fixPoint = fixPoint;
         this->bitwidth = bitwidth;
         this->scale = scale;
         this->HE = HE;
         this->party = fixPoint->party;
+        this->signed_arithmetic = signed_arithmetic;
         for(int i = 0; i < 5; i++){
           coe_fix[i] = (int64_t)round(coe[i] * (1ULL << scale));
         }
@@ -43,7 +45,9 @@ class GeLU : public Module{
             x0(i) = x0(i) % mod;
           }
           cout << "check " << name << ":" << endl;
-          x0.print(8);
+          for (size_t i = 2040; i < 2060; i++){
+            cout << x0(i) << " ";
+          }
         }
 
       }
@@ -53,13 +57,14 @@ class GeLU : public Module{
         cout << "bitwidth, scale, plain_mod:" << bitwidth << " " << scale << " " << HE->plain_mod << endl;
         Tensor<T> x_ring = x;
         // check_share(x, 1ULL << (bitwidth), "x_ring before");
-        fixPoint->Ring2Field(x, HE->plain_mod, bitwidth);
+        // cout << "bitwidth, scale, plain_mod:" << bitwidth << " " << scale << " " << HE->plain_mod << endl;
+        fixPoint->Ring2Field(x, HE->plain_mod, bitwidth, signed_arithmetic);
         // check_share(x, HE->plain_mod, "x_field");
         auto x_2 = ElementWiseMul(x, x, HE);
 
         // check_share(x_2, HE->plain_mod, "x_2_field");
 
-        fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale);
+        fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale, signed_arithmetic);
 
         // check_share(x_2, 1ULL << (bitwidth+scale), "x_2_ring");
 
@@ -68,18 +73,18 @@ class GeLU : public Module{
         // check_share(x_2, 1ULL << (bitwidth), "x_2 after truncate");
         // cout << "OK4" << endl;
         Tensor<T> x_2_ring = x_2;
-        fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth);
+        fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth, signed_arithmetic);
         // check_share(x_2, HE->plain_mod, "x_2_field after truncate");
 
         auto x_3 = ElementWiseMul(x_2, x, HE);
         // check_share(x_3, HE->plain_mod, "x_3");
-        fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale);
+        fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale, signed_arithmetic);
         // check_share(x_3, 1ULL << (bitwidth+scale), "x_3_ring");
         fixPoint->truncate_reduce(x_3,scale,bitwidth+scale);
         // check_share(x_3, 1ULL << (bitwidth), "x_3 after truncate");
         auto x_4 = ElementWiseMul(x_2, x_2, HE);
         // check_share(x_4, HE->plain_mod, "x_4");
-        fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale);
+        fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale, signed_arithmetic);
         // check_share(x_4, 1ULL << (bitwidth+scale), "x_4_ring");
         fixPoint->truncate_reduce(x_4,scale,bitwidth+scale);
         // check_share(x_4, 1ULL << (bitwidth), "x_4 after truncate");

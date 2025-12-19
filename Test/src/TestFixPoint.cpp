@@ -1,8 +1,11 @@
 #include <NonlinearOperator/FixPoint.h>
 #include <seal/util/common.h>
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <string>
+#include <vector>
 using namespace std;
 using namespace NonlinearOperator;
 #define MAX_THREADS 4
@@ -10,7 +13,7 @@ typedef uint64_t T;
 typedef int128_t T128;
 
 int party, port = 8000;
-int num_threads = 1;
+int num_threads = 4;
 string address = "127.0.0.1";
 
 int bitlength = 16;
@@ -48,74 +51,171 @@ void test_comapre(){
 }
 
 void test_ring_field(){
-  Tensor<T> input({2,4});
-  Tensor<T128> input128({2,4});
-  Tensor<T128> result128({2,4});
-  constexpr int ring_bw = 10;
-  constexpr int ring_bw_128 = 60;
-  constexpr int ring2field_ext_bits = 40;
+  constexpr size_t slot_count = 8192;
+  constexpr int ring_bw = 16;
+  constexpr int scale = 10;  // convert floats with 10 fractional bits
+  const uint64_t Q = 65537ULL;  // small prime > 2^16 to keep reductions simple
+  const uint64_t ring_mask = (ring_bw >= 64)
+                                 ? std::numeric_limits<uint64_t>::max()
+                                 : ((uint64_t(1) << ring_bw) - 1);
+  const double min_val = -5.0;
+  const double max_val = 5.0;
 
-  auto reconstruct_u64 = [&](Tensor<T> &tensor, int stage_bw, const std::string &label) {
-    if (party == ALICE) {
-      ioArr[0]->send_data(tensor.data().data(), tensor.size() * sizeof(T));
-    } else {
-      Tensor<T> peer(tensor.shape());
-      ioArr[0]->recv_data(peer.data().data(), tensor.size() * sizeof(T));
-      Tensor<T> combined(tensor.shape());
-      uint64_t mask = stage_bw >= 64 ? std::numeric_limits<uint64_t>::max()
-                                     : ((uint64_t(1) << stage_bw) - 1);
-      for (int i = 0; i < tensor.size(); i++) {
-        combined(i) = (tensor(i) + peer(i)) & mask;
-      }
-      std::cout << label << std::endl;
-      combined.print();
-    }
+  auto real_value = [&](size_t idx) -> double {
+    double t = static_cast<double>(idx) / static_cast<double>(slot_count - 1);
+    return min_val + (max_val - min_val) * t;
   };
 
-  auto reconstruct_i128 = [&](Tensor<T128> &tensor, int stage_bw, const std::string &label) {
-    if (party == ALICE) {
-      ioArr[0]->send_data(tensor.data().data(), tensor.size() * sizeof(T128));
-    } else {
-      Tensor<T128> peer(tensor.shape());
-      ioArr[0]->recv_data(peer.data().data(), tensor.size() * sizeof(T128));
-      Tensor<T128> combined(tensor.shape());
-      int128_t mask = (stage_bw == 128) ? int128_t(-1)
-                                         : ((int128_t(1) << stage_bw) - 1);
-      for (int i = 0; i < tensor.size(); i++) {
-        combined(i) = (tensor(i) + peer(i)) & mask;
-      }
-      std::cout << label << std::endl;
-      combined.print();
-    }
+  auto encode_fixed = [&](double val) -> uint64_t {
+    int64_t scaled = std::llround(val * static_cast<double>(int64_t(1) << scale));
+    return static_cast<uint64_t>(scaled) & ring_mask;
   };
+
+  auto decode_fixed = [&](uint64_t val) -> double {
+    int64_t signed_val = static_cast<int64_t>(val & ring_mask);
+    if (ring_bw < 64 && (val & (uint64_t(1) << (ring_bw - 1)))) {
+      signed_val -= (int64_t(1) << ring_bw);
+    }
+    return static_cast<double>(signed_val) / static_cast<double>(int64_t(1) << scale);
+  };
+
+  Tensor<T> input({slot_count});
   if (party == ALICE) {
-    input.randomize(1ULL<<4);
-    input(0) = 716;
-    input128.randomize(1ULL<<4);
-    input128(0) = static_cast<T128>(1) << 45;
+    for (size_t i = 0; i < slot_count; ++i) {
+      input(i) = encode_fixed(real_value(i));
+    }
+  } else {
+    for (size_t i = 0; i < slot_count; ++i) {
+      input(i) = 0;
+    }
   }
-  input.print();
-  input128.print();
-  const uint64_t Q64 = 1099511480321ULL;
-  const int128_t Q128 = (int128_t(1) << 80);  // allow values up to 2^80 in tests
-  fixpoint->Ring2Field(input, Q64, ring_bw);
-  fixpoint128->Ring2Field(input128, Q128, ring_bw_128);
-  input.print();
-  input128.print();
-  
-  // Ring2Field reconstructions should match ALICE's plaintext reduced mod Q with the extra 40 guard bits.
-  // e.g. the first uint64_t slot should read 716, int128_t slot ~2^45=35184372088832 after reconstruction.
-  reconstruct_u64(input, ring_bw + ring2field_ext_bits, "[Ring2Field] uint64_t reconstruction");
-  reconstruct_i128(input128, ring_bw_128 + ring2field_ext_bits, "[Ring2Field] int128_t reconstruction");
 
-  fixpoint->Field2Ring(input, Q64, ring_bw);
-  fixpoint128->Field2Ring(input128, Q128, ring_bw_128);
-  input.print();
-  input128.print();
-  // Field2Ring reconstructions should return to the original ALICE shares (mod 2^{bitwidth}).
-  // So the first entries should again be 716 (uint64) and 2^45 (int128) respectively.
-  reconstruct_u64(input, ring_bw, "[Field2Ring] uint64_t reconstruction");
-  reconstruct_i128(input128, ring_bw_128, "[Field2Ring] int128_t reconstruction");
+  fixpoint->Ring2Field(input, Q, ring_bw);
+
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
+  } else {
+    Tensor<T> peer(input.shape());
+    ioArr[0]->recv_data(peer.data().data(), input.size() * sizeof(T));
+
+    size_t mismatches = 0;
+    const size_t sample = 8;
+    std::vector<size_t> mismatch_indices;
+    mismatch_indices.reserve(sample);
+
+    for (size_t i = 0; i < slot_count; ++i) {
+      uint64_t combined = (input(i) + peer(i)) % Q;
+      uint64_t expected = encode_fixed(real_value(i)) % Q;
+      if (combined != expected) {
+        if (mismatch_indices.size() < sample) {
+          mismatch_indices.push_back(i);
+        }
+        ++mismatches;
+      }
+      if (i < sample) {
+        std::cout << "slot " << i << ": recon=" << decode_fixed(combined)
+                  << ", expect=" << real_value(i) << std::endl;
+      }
+    }
+
+    if (mismatches == 0) {
+      std::cout << "[test_ring_field] PASS: all " << slot_count
+                << " slots match fixed-point encodings in [-5,5]" << std::endl;
+    } else {
+      std::cout << "[test_ring_field] FAIL: " << mismatches
+                << " mismatches detected" << std::endl;
+      for (size_t idx : mismatch_indices) {
+        uint64_t combined = (input(idx) + peer(idx)) % Q;
+        std::cout << "  slot " << idx << ": recon=" << decode_fixed(combined)
+                  << ", expect=" << real_value(idx) << std::endl;
+      }
+    }
+  }
+}
+
+void test_field_ring(){
+  constexpr size_t slot_count = 8192;
+  constexpr int ring_bw = 16;
+  constexpr int scale = 10;
+  const uint64_t Q = 65537ULL;
+  const uint64_t ring_mask = (ring_bw >= 64)
+                                 ? std::numeric_limits<uint64_t>::max()
+                                 : ((uint64_t(1) << ring_bw) - 1);
+  const double min_val = -5.0;
+  const double max_val = 5.0;
+
+  auto real_value = [&](size_t idx) -> double {
+    double t = static_cast<double>(idx) / static_cast<double>(slot_count - 1);
+    return min_val + (max_val - min_val) * t;
+  };
+
+  auto encode_ring = [&](double val) -> uint64_t {
+    int64_t scaled = std::llround(val * static_cast<double>(int64_t(1) << scale));
+    return static_cast<uint64_t>(scaled) & ring_mask;
+  };
+
+  auto decode_ring = [&](uint64_t val) -> double {
+    int64_t signed_val = static_cast<int64_t>(val & ring_mask);
+    if (ring_bw < 64 && (val & (uint64_t(1) << (ring_bw - 1)))) {
+      signed_val -= (int64_t(1) << ring_bw);
+    }
+    return static_cast<double>(signed_val) / static_cast<double>(int64_t(1) << scale);
+  };
+
+  Tensor<T> field_input({slot_count});
+  if (party == ALICE) {
+    for (size_t i = 0; i < slot_count; ++i) {
+      field_input(i) = encode_ring(real_value(i)) % Q;
+    }
+  } else {
+    for (size_t i = 0; i < slot_count; ++i) {
+      field_input(i) = 0;
+    }
+  }
+
+  fixpoint->Field2Ring(field_input, Q, ring_bw);
+
+  if (party == ALICE) {
+    ioArr[0]->send_data(field_input.data().data(), field_input.size() * sizeof(T));
+  } else {
+    Tensor<T> peer(field_input.shape());
+    ioArr[0]->recv_data(peer.data().data(), field_input.size() * sizeof(T));
+
+    size_t mismatches = 0;
+    const size_t sample = 8;
+    std::vector<size_t> mismatch_indices;
+    mismatch_indices.reserve(sample);
+    const double tol = 1.0 / static_cast<double>(1ULL << scale);
+
+    for (size_t i = 0; i < slot_count; ++i) {
+      uint64_t combined = (field_input(i) + peer(i)) & ring_mask;
+      double recon = decode_ring(combined);
+      double expect = real_value(i);
+      if (std::fabs(recon - expect) > tol) {
+        if (mismatch_indices.size() < sample) {
+          mismatch_indices.push_back(i);
+        }
+        ++mismatches;
+      }
+      if (i < sample) {
+        std::cout << "slot " << i << ": recon=" << recon
+                  << ", expect=" << expect << std::endl;
+      }
+    }
+
+    if (mismatches == 0) {
+      std::cout << "[test_field_ring] PASS: all " << slot_count
+                << " slots reconstruct ring values in [-5,5]" << std::endl;
+    } else {
+      std::cout << "[test_field_ring] FAIL: " << mismatches
+                << " mismatches detected" << std::endl;
+      for (size_t idx : mismatch_indices) {
+        uint64_t combined = (field_input(idx) + peer(idx)) & ring_mask;
+        std::cout << "  slot " << idx << ": recon=" << decode_ring(combined)
+                  << ", expect=" << real_value(idx) << std::endl;
+      }
+    }
+  }
 }
 
 void test_secure_round(){
@@ -240,6 +340,62 @@ void test_secure_requant(){
   }
 }
 
+void test_extend_u64() {
+  constexpr size_t slot_count = 8192;
+  constexpr int32_t bwA = 38;
+  constexpr int32_t bwB = 60;
+  Tensor<T> input({slot_count});
+
+  if (party == ALICE) {
+    for (size_t i = 0; i < slot_count; ++i) {
+      input(i) = i;
+    }
+  } else {
+    for (size_t i = 0; i < slot_count; ++i) {
+      input(i) = 0;
+    }
+  }
+
+  fixpoint->extend(input, bwA, bwB, true, true);
+
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
+  } else {
+    Tensor<T> peer(input.shape());
+    ioArr[0]->recv_data(peer.data().data(), input.size() * sizeof(T));
+
+    const uint64_t maskA = (bwA == 64 ? std::numeric_limits<uint64_t>::max()
+                                      : ((uint64_t(1) << bwA) - 1));
+    const uint64_t maskB = (bwB == 64 ? std::numeric_limits<uint64_t>::max()
+                                      : ((uint64_t(1) << bwB) - 1));
+
+    size_t mismatches = 0;
+    for (size_t i = 0; i < slot_count; ++i) {
+      uint64_t combined = (input(i) + peer(i)) & maskB;
+      uint64_t expected = i & maskA;
+      if (combined != expected) {
+        ++mismatches;
+      }
+      if (i>=2040 && i<2060) {
+        std::cout << "slot " << i << ": got " << combined
+                  << ", expected " << expected << std::endl;
+      }
+      if (i>=4090 && i<4110) {
+        std::cout << "slot " << i << ": got " << combined
+                  << ", expected " << expected << std::endl;
+      }
+    }
+
+    if (mismatches == 0) {
+      std::cout << "[test_extend_u64] PASS: zero-extend preserved all "
+                << slot_count << " slots" << std::endl;
+    } else {
+      std::cout << "[test_extend_u64] FAIL: " << mismatches
+                << " mismatches detected" << std::endl;
+    }
+  }
+}
+
 void test_extend_128bit() {
   std::cout << "\n=== Testing 128-bit Extend ===" << std::endl;
   
@@ -361,7 +517,11 @@ int main(int argc, char **argv) {
   }
   
   // test_comapre();
-  test_ring_field();
+  // test_ring_field();
+  // test_ring_field();
+  // test_field_ring();
+  test_field_ring();
+  // test_extend_u64();
   // test_secure_round();
   // test_secure_requant();
   // test_extend_128bit();

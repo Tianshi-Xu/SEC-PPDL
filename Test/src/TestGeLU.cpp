@@ -112,7 +112,7 @@ void test_gelu(){
 
   if (party == ALICE){
     for (size_t i = 0; i < n; ++i){
-      double v = 4.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [0,16]均匀分布
+      double v = -4.0 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
       input_real(i) = v;
       input(i) = static_cast<T>(llround(v * static_cast<double>(1ULL << scale)));
     }
@@ -135,15 +135,15 @@ void test_gelu(){
     for (size_t i = 0; i < n; ++i){
       uint64_t combined = (input(i) + other_output(i)) & ((1ULL << bitwidth) - 1);
       recon(i) = static_cast<double>(combined) * inv_scale;
-      if ((i >= 2048 && i < 4096) || (i >= 6144 && i < 8192)) {
-        continue; // skip polynomial segments when aggregating error stats
-      }
+      // if ((i >= 2048 && i < 4096) || (i >= 6144 && i < 8192)) {
+      //   continue; // skip polynomial segments when aggregating error stats
+      // }
       double err = std::abs(recon(i) - gt(i));
       mae += err;
       max_err = std::max(max_err, err);
       ++cnt;
     }
-      cout << "he compute result at 0 is" << recon(0) << endl;
+    cout << "he compute result at 0 is" << recon(0) << endl;
     mae = cnt ? (mae / static_cast<double>(cnt)) : 0.0;
 
     std::ofstream ofs("gelu_eval.csv");
@@ -177,13 +177,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_threads; i++) {
     ioArr[i] =
         new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
-    if (i & 1) {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], 3 - party); 
-    } else {
-      otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
-    }
+    otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
   }
-  he = new HE::HEEvaluator(ioArr[0], party, 8192,38,Datatype::HOST,{60,40,40});
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,38,Datatype::HOST,{});
   he->GenerateNewKey();
   he->print_parameters();
   fixpoint = new FixPoint<T>(party, otpackArr, num_threads);

@@ -1,6 +1,9 @@
 #include <OTProtocol/millionaire.h>
 #include <OTProtocol/truncation.h>
 #include <seal/util/common.h>
+#include <algorithm>
+#include <iostream>
+#include <string>
 #include <type_traits>
 #pragma once
 namespace NonlinearOperator {
@@ -126,18 +129,13 @@ class FixPoint {
 
         // for now, T only support uint64_t
         void extend(Tensor<T> &x, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, bool msb_zero=false){
-            uint8_t *msb_x = nullptr;
-            if (msb_zero){
-                msb_x = new uint8_t[x.size()];
-                memset(msb_x, 0, x.size());
-            }
             int dim = x.size();
             T* x_flatten = x.data().data();
             std::thread extend_threads[num_threads];
             int chunk_size = dim / num_threads;
             for (int i = 0; i < num_threads; i++) {
                 int offset = i * chunk_size;
-                extend_threads[i] = std::thread(extend_thread, aux[i], x_flatten+offset, x_flatten+offset, chunk_size, bwA, bwB, signed_arithmetic, msb_x);
+                extend_threads[i] = std::thread(extend_thread, aux[i], x_flatten+offset, x_flatten+offset, chunk_size, bwA, bwB, signed_arithmetic, msb_zero);
             }
             for (int i = 0; i < num_threads; i++) {
                 extend_threads[i].join();
@@ -155,14 +153,56 @@ class FixPoint {
 
         using ModulusType = std::conditional_t<std::is_same_v<T, int128_t>, int128_t, uint64_t>;
 
+        void check_share(Tensor<T> &x, ModulusType mod, const std::string &name) {
+            if (mod == 0) {
+                if (party == BOB) {
+                    std::cout << "check " << name << ": skipped (mod=0)" << std::endl;
+                }
+                return;
+            }
+
+            if (party == ALICE) {
+                aux[0]->io->send_tensor(x);
+                return;
+            }
+
+            Tensor<T> reconstructed(x.shape());
+            aux[0]->io->recv_tensor(reconstructed);
+
+            using Wide = typename FieldTraits<T>::Wide;
+            Wide modulus = static_cast<Wide>(mod);
+            for (size_t i = 0; i < x.size(); i++) {
+                Wide sum = FieldTraits<T>::widen(reconstructed(i));
+                sum += FieldTraits<T>::widen(x(i));
+                reconstructed(i) = FieldTraits<T>::narrow(FieldTraits<T>::mod_reduce(sum, modulus));
+            }
+            cout << "check " << name << ": ";
+            for (int i=2040; i<2060; i++){
+                printf("reconstructed[%d]: %lu\n", i, reconstructed(i));
+            }
+            for (int i=4090; i<4110; i++){
+                printf("reconstructed[%d]: %lu\n", i, reconstructed(i));
+            }
+        }
         // Conversion from ring to field
         void Ring2Field(Tensor<T> &x, ModulusType Q, int bitwidth = 0, bool signed_arithmetic=false){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
             // cout << "bitwidth: " << bitwidth << endl;
-            int ext_bit = 20;
-            extend(x, bitwidth, bitwidth+ext_bit, signed_arithmetic);
+            int ext_bit = 60 - bitwidth;
+            // cout << "signed_arithmetic: " << signed_arithmetic << endl;
+            extend(x, bitwidth, bitwidth + ext_bit, signed_arithmetic);
+            int total_bw = bitwidth + ext_bit;
+            if (total_bw < 0) total_bw = 0;
+            if (total_bw >= static_cast<int>(sizeof(ModulusType) * 8)) {
+                total_bw = static_cast<int>(sizeof(ModulusType) * 8) - 1;
+            }
+            ModulusType debug_mod = ModulusType(1) << total_bw;
+            // check_share(x, debug_mod, "x after extend");
+            // for (int i=2040; i<2070; i++){
+            //     printf("x after extend[%d]: %lu\n", i, x(i));
+            // }
             using Wide = typename FieldTraits<T>::Wide;
             Wide modulus = static_cast<Wide>(Q);
             if (party == ALICE){
@@ -184,9 +224,12 @@ class FixPoint {
         }
 
         // Conversion from Q to bitwidth, if ceil(log2(Q)) > bitwidth, first extend to ceil(log2(Q)), then truncate to bitwidth
-        void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0){
+        void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0, bool signed_arithmetic=false){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
+            }
+            if (signed_arithmetic && std::is_unsigned_v<T>) {
+                throw std::invalid_argument("signed Field2Ring requires signed tensor type");
             }
             // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
             if constexpr (std::is_same_v<T, uint64_t>) {
@@ -194,7 +237,7 @@ class FixPoint {
                 int chunk_size = x.size() / num_threads;
                 for (int i = 0; i < num_threads; i++) {
                     int offset = i * chunk_size;
-                    field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
+                    field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q, signed_arithmetic);
                 }
                 for (int i = 0; i < num_threads; i++) {
                     field2ring_threads[i].join();
@@ -204,7 +247,7 @@ class FixPoint {
                 std::thread field2ring_threads[num_threads];
                 for (int i = 0; i < num_threads; i++) {
                     int offset = i * chunk_size;
-                    field2ring_threads[i] = std::thread(field2ring_thread_128, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q);
+                    field2ring_threads[i] = std::thread(field2ring_thread_128, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q, signed_arithmetic);
                 }
                 for (int i = 0; i < num_threads; i++) {
                     field2ring_threads[i].join();
@@ -309,7 +352,12 @@ class FixPoint {
             truncationProtocol->truncate_and_reduce(lnum_ops, input, result, shift, bw);
         }
 
-        void static extend_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
+        void static extend_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, bool msb_zero=false){
+            uint8_t *msb_x = nullptr;
+            if (msb_zero){
+                msb_x = new uint8_t[lnum_ops];
+                memset(msb_x, 0, lnum_ops);
+            }
             if constexpr (std::is_same_v<T, int128_t> || std::is_same_v<T, __int128>) {
                 // 128-bit version
                 if (signed_arithmetic){
@@ -325,9 +373,12 @@ class FixPoint {
                     aux->z_extend(lnum_ops, input, result, bwA, bwB, msb_x);
                 }
             }
+            if (msb_zero) {
+                delete[] msb_x;
+            }
         }
 
-        static void field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q){
+        static void field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q, bool signed_arithmetic){
             uint64_t mask_bw = (bw == 64 ? static_cast<uint64_t>(-1) : ((1ULL << bw) - 1));
             uint8_t *wrap_x = new uint8_t[lnum_ops];
             int32_t logQ = static_cast<int32_t>(ceil(std::log2(Q)));
@@ -339,14 +390,23 @@ class FixPoint {
             }
             uint64_t *arith_wrap = new uint64_t[lnum_ops];
             aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
+            const __int128 signed_threshold = (bw == 0 ? 0 : (__int128(1) << (bw - 1)));
+            const __int128 signed_modulus = (bw == 0 ? 0 : (__int128(1) << bw));
             for (int i = 0; i < lnum_ops; i++){
                 result[i] = ((input[i]%Q) - Q * arith_wrap[i]) & mask_bw;
+                if (signed_arithmetic && bw > 0) {
+                    __int128 candidate = static_cast<__int128>(result[i]);
+                    if (candidate >= signed_threshold) {
+                        candidate -= signed_modulus;
+                    }
+                    result[i] = static_cast<T>(candidate);
+                }
             }
             delete[] wrap_x;
             delete[] arith_wrap;
         }
 
-        static void field2ring_thread_128(AuxProtocols *aux, int128_t *input, int128_t *result, int lnum_ops, int32_t bw, int128_t Q) {
+        static void field2ring_thread_128(AuxProtocols *aux, int128_t *input, int128_t *result, int lnum_ops, int32_t bw, int128_t Q, bool signed_arithmetic) {
             int128_t mask_bw = (bw == 128 ? int128_t(-1) : ((int128_t(1) << bw) - 1));
             uint8_t *wrap_x = new uint8_t[lnum_ops];
             long double q_ld = static_cast<long double>(Q);
@@ -355,11 +415,17 @@ class FixPoint {
             aux->wrap_computation_prime(input, wrap_x, lnum_ops, wrap_bw, static_cast<int128_t>(Q));
             uint64_t *arith_wrap = new uint64_t[lnum_ops];
             aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
+            int128_t signed_threshold = (bw == 0 ? 0 : (int128_t(1) << (bw - 1)));
+            int128_t signed_modulus = (bw == 0 ? 0 : (int128_t(1) << bw));
             for (int i = 0; i < lnum_ops; i++) {
                 __int128_t value = static_cast<__int128_t>(input[i]) % static_cast<__int128_t>(Q);
                 __int128_t wrap = static_cast<__int128_t>(arith_wrap[i]);
                 __int128_t corrected = value - static_cast<__int128_t>(Q) * wrap;
-                result[i] = corrected & mask_bw;
+                corrected &= mask_bw;
+                if (signed_arithmetic && bw > 0 && corrected >= signed_threshold) {
+                    corrected -= signed_modulus;
+                }
+                result[i] = corrected;
             }
             delete[] wrap_x;
             delete[] arith_wrap;
