@@ -9,7 +9,7 @@
 using namespace std;
 using namespace NonlinearOperator;
 #define MAX_THREADS 4
-typedef uint64_t T;
+typedef int64_t T;
 typedef int128_t T128;
 
 int party, port = 8000;
@@ -61,28 +61,20 @@ void test_ring_field(){
   const double min_val = -5.0;
   const double max_val = 5.0;
 
-  auto real_value = [&](size_t idx) -> double {
-    double t = static_cast<double>(idx) / static_cast<double>(slot_count - 1);
-    return min_val + (max_val - min_val) * t;
-  };
+  // Create float tensor with test values
+  Tensor<double> float_input({slot_count});
+  for (size_t i = 0; i < slot_count; ++i) {
+    double t = static_cast<double>(i) / static_cast<double>(slot_count - 1);
+    float_input(i) = min_val + (max_val - min_val) * t;
+  }
 
-  auto encode_fixed = [&](double val) -> uint64_t {
-    int64_t scaled = std::llround(val * static_cast<double>(int64_t(1) << scale));
-    return static_cast<uint64_t>(scaled) & ring_mask;
-  };
-
-  auto decode_fixed = [&](uint64_t val) -> double {
-    int64_t signed_val = static_cast<int64_t>(val & ring_mask);
-    if (ring_bw < 64 && (val & (uint64_t(1) << (ring_bw - 1)))) {
-      signed_val -= (int64_t(1) << ring_bw);
-    }
-    return static_cast<double>(signed_val) / static_cast<double>(int64_t(1) << scale);
-  };
-
-  Tensor<T> input({slot_count});
+  // Convert to fixed-point using Tensor's built-in method
+  Tensor<T> input = Tensor<T>::FromFloatTensorToFixed(float_input, scale);
+  
+  // Apply ring mask to ensure values are in range
   if (party == ALICE) {
     for (size_t i = 0; i < slot_count; ++i) {
-      input(i) = encode_fixed(real_value(i));
+      input(i) = input(i) & ring_mask;
     }
   } else {
     for (size_t i = 0; i < slot_count; ++i) {
@@ -103,31 +95,46 @@ void test_ring_field(){
     std::vector<size_t> mismatch_indices;
     mismatch_indices.reserve(sample);
 
+    // Reconstruct original float values for comparison
+    Tensor<double> expected_floats({slot_count});
     for (size_t i = 0; i < slot_count; ++i) {
-      uint64_t combined = (input(i) + peer(i)) % Q;
-      uint64_t expected = encode_fixed(real_value(i)) % Q;
-      if (combined != expected) {
+      double t = static_cast<double>(i) / static_cast<double>(slot_count - 1);
+      expected_floats(i) = min_val + (max_val - min_val) * t;
+    }
+    Tensor<T> expected_ring = Tensor<T>::FromFloatTensorToFixed(expected_floats, scale);
+    
+    for (size_t i = 0; i < slot_count; ++i) {
+      // Reconstruct in field domain: (alice_share + bob_share) mod Q
+      uint64_t field_recon = (input(i) + peer(i)) % Q;
+      // Expected: original ring value mod Q
+      uint64_t ring_original = expected_ring(i) & ring_mask;
+      uint64_t expected_field = ring_original % Q;
+      
+      if (field_recon != expected_field) {
         if (mismatch_indices.size() < sample) {
           mismatch_indices.push_back(i);
         }
         ++mismatches;
       }
       if (i < sample) {
-        std::cout << "slot " << i << ": recon=" << decode_fixed(combined)
-                  << ", expect=" << real_value(i) << std::endl;
+        std::cout << "slot " << i << ": field_recon=" << field_recon
+                  << ", expected=" << expected_field
+                  << " (from " << expected_floats(i) << ")" << std::endl;
       }
     }
 
     if (mismatches == 0) {
       std::cout << "[test_ring_field] PASS: all " << slot_count
-                << " slots match fixed-point encodings in [-5,5]" << std::endl;
+                << " slots match after Ring2Field conversion" << std::endl;
     } else {
       std::cout << "[test_ring_field] FAIL: " << mismatches
                 << " mismatches detected" << std::endl;
       for (size_t idx : mismatch_indices) {
-        uint64_t combined = (input(idx) + peer(idx)) % Q;
-        std::cout << "  slot " << idx << ": recon=" << decode_fixed(combined)
-                  << ", expect=" << real_value(idx) << std::endl;
+        uint64_t field_recon = (input(idx) + peer(idx)) % Q;
+        uint64_t ring_original = expected_ring(idx) & ring_mask;
+        uint64_t expected_field = ring_original % Q;
+        std::cout << "  slot " << idx << ": field_recon=" << field_recon
+                  << ", expected=" << expected_field << std::endl;
       }
     }
   }
@@ -144,28 +151,26 @@ void test_field_ring(){
   const double min_val = -5.0;
   const double max_val = 5.0;
 
-  auto real_value = [&](size_t idx) -> double {
-    double t = static_cast<double>(idx) / static_cast<double>(slot_count - 1);
-    return min_val + (max_val - min_val) * t;
-  };
+  // Create float tensor with test values
+  Tensor<double> float_values({slot_count});
+  for (size_t i = 0; i < slot_count; ++i) {
+    double t = static_cast<double>(i) / static_cast<double>(slot_count - 1);
+    float_values(i) = min_val + (max_val - min_val) * t;
+  }
 
-  auto encode_ring = [&](double val) -> uint64_t {
-    int64_t scaled = std::llround(val * static_cast<double>(int64_t(1) << scale));
-    return static_cast<uint64_t>(scaled) & ring_mask;
-  };
-
-  auto decode_ring = [&](uint64_t val) -> double {
-    int64_t signed_val = static_cast<int64_t>(val & ring_mask);
-    if (ring_bw < 64 && (val & (uint64_t(1) << (ring_bw - 1)))) {
-      signed_val -= (int64_t(1) << ring_bw);
-    }
-    return static_cast<double>(signed_val) / static_cast<double>(int64_t(1) << scale);
-  };
-
+  // Convert to fixed-point using Tensor's built-in method
+  Tensor<T> original_ring = Tensor<T>::FromFloatTensorToFixed(float_values, scale);
+  
+  // Store original ring values for verification
+  std::vector<uint64_t> original_ring_values(slot_count);
+  
   Tensor<T> field_input({slot_count});
   if (party == ALICE) {
     for (size_t i = 0; i < slot_count; ++i) {
-      field_input(i) = encode_ring(real_value(i)) % Q;
+      // Encode as ring value, then take mod Q to simulate field input
+      uint64_t ring_val = original_ring(i) & ring_mask;
+      original_ring_values[i] = ring_val;
+      field_input(i) = ring_val % Q;
     }
   } else {
     for (size_t i = 0; i < slot_count; ++i) {
@@ -177,42 +182,50 @@ void test_field_ring(){
 
   if (party == ALICE) {
     ioArr[0]->send_data(field_input.data().data(), field_input.size() * sizeof(T));
+    // Send original values for verification
+    ioArr[0]->send_data(original_ring_values.data(), original_ring_values.size() * sizeof(uint64_t));
   } else {
     Tensor<T> peer(field_input.shape());
     ioArr[0]->recv_data(peer.data().data(), field_input.size() * sizeof(T));
+    
+    std::vector<uint64_t> original_from_alice(slot_count);
+    ioArr[0]->recv_data(original_from_alice.data(), original_from_alice.size() * sizeof(uint64_t));
 
     size_t mismatches = 0;
     const size_t sample = 8;
     std::vector<size_t> mismatch_indices;
     mismatch_indices.reserve(sample);
-    const double tol = 1.0 / static_cast<double>(1ULL << scale);
 
     for (size_t i = 0; i < slot_count; ++i) {
-      uint64_t combined = (field_input(i) + peer(i)) & ring_mask;
-      double recon = decode_ring(combined);
-      double expect = real_value(i);
-      if (std::fabs(recon - expect) > tol) {
+      // Reconstruct in ring domain
+      uint64_t ring_recon = (field_input(i) + peer(i)) & ring_mask;
+      // Expected: original ring value (mod ring_mask)
+      uint64_t expected_ring = original_from_alice[i] & ring_mask;
+      
+      if (ring_recon != expected_ring) {
         if (mismatch_indices.size() < sample) {
           mismatch_indices.push_back(i);
         }
         ++mismatches;
       }
       if (i < sample) {
-        std::cout << "slot " << i << ": recon=" << recon
-                  << ", expect=" << expect << std::endl;
+        std::cout << "slot " << i << ": ring_recon=" << ring_recon
+                  << ", expected=" << expected_ring
+                  << " (from " << float_values(i) << ")" << std::endl;
       }
     }
 
     if (mismatches == 0) {
       std::cout << "[test_field_ring] PASS: all " << slot_count
-                << " slots reconstruct ring values in [-5,5]" << std::endl;
+                << " slots match after Field2Ring conversion" << std::endl;
     } else {
       std::cout << "[test_field_ring] FAIL: " << mismatches
                 << " mismatches detected" << std::endl;
       for (size_t idx : mismatch_indices) {
-        uint64_t combined = (field_input(idx) + peer(idx)) & ring_mask;
-        std::cout << "  slot " << idx << ": recon=" << decode_ring(combined)
-                  << ", expect=" << real_value(idx) << std::endl;
+        uint64_t ring_recon = (field_input(idx) + peer(idx)) & ring_mask;
+        uint64_t expected_ring = original_from_alice[idx] & ring_mask;
+        std::cout << "  slot " << idx << ": ring_recon=" << ring_recon
+                  << ", expected=" << expected_ring << std::endl;
       }
     }
   }
@@ -356,7 +369,7 @@ void test_extend_u64() {
     }
   }
 
-  fixpoint->extend(input, bwA, bwB, true, true);
+  fixpoint->extend(input, bwA, bwB, true);
 
   if (party == ALICE) {
     ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
@@ -392,6 +405,211 @@ void test_extend_u64() {
     } else {
       std::cout << "[test_extend_u64] FAIL: " << mismatches
                 << " mismatches detected" << std::endl;
+    }
+  }
+}
+
+// Validate less_than_constant by reconstructing and comparing with cleartext predicate.
+void test_less_than_constant() {
+  constexpr int32_t bw = 16;
+  constexpr size_t n = 32;
+  const T constant = 3;
+
+  Tensor<T> input({n});
+  Tensor<uint8_t> result({n});
+
+  if (party == ALICE) {
+    input.randomize(1ULL << bw);
+  } else {
+    for (size_t i = 0; i < n; ++i) input(i) = 0;
+  }
+
+  fixpoint->less_than_constant(input, constant, result, bw);
+
+  if (party == ALICE) {
+    ioArr[0]->send_data(input.data().data(), input.size() * sizeof(T));
+    ioArr[0]->send_data(result.data().data(), result.size() * sizeof(uint8_t));
+  } else {
+    Tensor<T> other_input({n});
+    Tensor<uint8_t> other_result({n});
+    ioArr[0]->recv_data(other_input.data().data(), other_input.size() * sizeof(T));
+    ioArr[0]->recv_data(other_result.data().data(), other_result.size() * sizeof(uint8_t));
+
+    const uint64_t ring_mask = (bw == 64 ? std::numeric_limits<uint64_t>::max()
+                                       : ((1ULL << bw) - 1));
+    const uint64_t sign_bit = (bw == 64 ? (1ULL << 63) : (1ULL << (bw - 1)));
+    const uint64_t modulus = (bw == 64 ? 0ULL : (1ULL << bw));
+
+    size_t mismatches = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint64_t combined_u = (static_cast<uint64_t>(input(i)) + static_cast<uint64_t>(other_input(i))) & ring_mask;
+      int64_t combined_s;
+      if (bw == 64) {
+        combined_s = static_cast<int64_t>(combined_u);
+      } else if (combined_u >= sign_bit) {
+        combined_s = static_cast<int64_t>(combined_u) - static_cast<int64_t>(modulus);
+      } else {
+        combined_s = static_cast<int64_t>(combined_u);
+      }
+
+      uint8_t pred = result(i) ^ other_result(i);  // MSB output is XOR-shared
+      uint8_t expected = (combined_s < constant) ? 1 : 0;
+      if (pred != expected && mismatches < 8) {
+        std::cout << "[less_than_constant] mismatch idx=" << i
+                  << " x=" << combined_s
+                  << " const=" << constant
+                  << " pred=" << static_cast<int>(pred)
+                  << " expected=" << static_cast<int>(expected) << std::endl;
+      }
+      mismatches += (pred != expected);
+    }
+
+    if (mismatches == 0) {
+      std::cout << "[less_than_constant] all " << n << " cases matched." << std::endl;
+    } else {
+      std::cout << "[less_than_constant] mismatches=" << mismatches << " out of " << n << std::endl;
+    }
+  }
+}
+
+void test_truncate_and_truncate_reduce() {
+  constexpr size_t slot_count = 8192;
+  constexpr int32_t scale_bits = 12;
+  constexpr int32_t bitwidth = 32;  // Input bitwidth
+  constexpr int32_t shift = 6;      // Truncate shift amount
+  const double min_val = -5.0;
+  const double max_val = 5.0;
+
+  std::cout << "\n=== Testing truncate and truncate_reduce ===" << std::endl;
+  std::cout << "Input range: [" << min_val << ", " << max_val << "]" << std::endl;
+  std::cout << "scale_bits=" << scale_bits << ", bitwidth=" << bitwidth << ", shift=" << shift << std::endl;
+
+  // Create float tensor with test values in range [-5, 5]
+  Tensor<double> float_values({slot_count});
+  for (size_t i = 0; i < slot_count; ++i) {
+    double t = static_cast<double>(i) / static_cast<double>(slot_count - 1);
+    float_values(i) = min_val + (max_val - min_val) * t;
+  }
+
+  // Convert to fixed-point
+  Tensor<T> fixed_values = Tensor<T>::FromFloatTensorToFixed(float_values, scale_bits);
+  
+  // Create two copies for testing two operations
+  Tensor<T> input_truncate_reduce({slot_count});
+  Tensor<T> input_truncate({slot_count});
+  
+  if (party == ALICE) {
+    for (size_t i = 0; i < slot_count; ++i) {
+      input_truncate_reduce(i) = fixed_values(i);
+      input_truncate(i) = fixed_values(i);
+    }
+  } else {
+    for (size_t i = 0; i < slot_count; ++i) {
+      input_truncate_reduce(i) = 0;
+      input_truncate(i) = 0;
+    }
+  }
+
+  // Test 1: truncate_reduce - shift right AND reduce bitwidth by shift bits
+  std::cout << "\n--- Testing truncate_reduce ---" << std::endl;
+  std::cout << "Input bitwidth=" << bitwidth << ", Output bitwidth=" << (bitwidth - shift) << std::endl;
+  
+  fixpoint->truncate_reduce(input_truncate_reduce, shift, bitwidth);
+
+  // Test 2: truncate - shift right but keep same bitwidth
+  std::cout << "\n--- Testing truncate ---" << std::endl;
+  std::cout << "Shift=" << shift << ", bitwidth=" << bitwidth << " (unchanged)" << std::endl;
+  
+  fixpoint->truncate(input_truncate, shift, bitwidth);
+
+  // Verify both results
+  if (party == ALICE) {
+    ioArr[0]->send_data(input_truncate_reduce.data().data(), input_truncate_reduce.size() * sizeof(T));
+    ioArr[0]->send_data(input_truncate.data().data(), input_truncate.size() * sizeof(T));
+  } else {
+    Tensor<T> peer_truncate_reduce(input_truncate_reduce.shape());
+    Tensor<T> peer_truncate(input_truncate.shape());
+    ioArr[0]->recv_data(peer_truncate_reduce.data().data(), peer_truncate_reduce.size() * sizeof(T));
+    ioArr[0]->recv_data(peer_truncate.data().data(), peer_truncate.size() * sizeof(T));
+
+    const int32_t bitwidth_reduced = bitwidth - shift;  // truncate_reduce reduces bitwidth by shift
+    const uint64_t mask_reduced = (bitwidth_reduced == 64 ? std::numeric_limits<uint64_t>::max()
+                                                           : ((1ULL << bitwidth_reduced) - 1));
+    const uint64_t mask_original = (bitwidth == 64 ? std::numeric_limits<uint64_t>::max()
+                                                    : ((1ULL << bitwidth) - 1));
+
+    // Verify truncate_reduce
+    std::cout << "\n=== Verification of truncate_reduce ===" << std::endl;
+    std::cout << "Output bitwidth: " << bitwidth_reduced << " (reduced by " << shift << " bits)" << std::endl;
+    size_t mismatches_tr = 0;
+    for (size_t i = 0; i < slot_count; ++i) {
+      uint64_t reconstructed = (input_truncate_reduce(i) + peer_truncate_reduce(i)) & mask_reduced;
+      
+      // Expected: original value >> shift, masked to reduced bitwidth
+      double original_val = float_values(i);
+      int64_t original_fixed = static_cast<int64_t>(std::llround(original_val * (1LL << scale_bits)));
+      int64_t expected_fixed = original_fixed >> shift;
+      uint64_t expected = static_cast<uint64_t>(expected_fixed) & mask_reduced;
+      
+      if (reconstructed != expected) {
+        ++mismatches_tr;
+      }
+      
+      if (i < 8) {
+        int64_t signed_recon = static_cast<int64_t>(reconstructed & mask_reduced);
+        if (bitwidth_reduced < 64 && (reconstructed & (1ULL << (bitwidth_reduced - 1)))) {
+          signed_recon -= (1LL << bitwidth_reduced);
+        }
+        double recon_float = static_cast<double>(signed_recon) / (1LL << (scale_bits - shift));
+        
+        std::cout << "slot " << i << ": input=" << original_val 
+                  << ", reconstructed=" << recon_float
+                  << " (fixed: reconstructed=" << reconstructed << ", expected=" << expected << ")"
+                  << std::endl;
+      }
+    }
+
+    if (mismatches_tr == 0) {
+      std::cout << "[truncate_reduce] PASS: all " << slot_count << " values correct" << std::endl;
+    } else {
+      std::cout << "[truncate_reduce] FAIL: " << mismatches_tr << "/" << slot_count << " mismatches" << std::endl;
+    }
+
+    // Verify truncate
+    std::cout << "\n=== Verification of truncate ===" << std::endl;
+    std::cout << "Output bitwidth: " << bitwidth << " (unchanged)" << std::endl;
+    size_t mismatches_t = 0;
+    for (size_t i = 0; i < slot_count; ++i) {
+      uint64_t reconstructed = (input_truncate(i) + peer_truncate(i)) & mask_original;
+      
+      // Expected: original value >> shift, masked to original bitwidth
+      double original_val = float_values(i);
+      int64_t original_fixed = static_cast<int64_t>(std::llround(original_val * (1LL << scale_bits)));
+      int64_t expected_fixed = original_fixed >> shift;
+      uint64_t expected = static_cast<uint64_t>(expected_fixed) & mask_original;
+      
+      if (reconstructed != expected) {
+        ++mismatches_t;
+      }
+      
+      if (i < 8) {
+        int64_t signed_recon = static_cast<int64_t>(reconstructed & mask_original);
+        if (bitwidth < 64 && (reconstructed & (1ULL << (bitwidth - 1)))) {
+          signed_recon -= (1LL << bitwidth);
+        }
+        double recon_float = static_cast<double>(signed_recon) / (1LL << (scale_bits - shift));
+        
+        std::cout << "slot " << i << ": input=" << original_val 
+                  << ", reconstructed=" << recon_float
+                  << " (fixed: reconstructed=" << reconstructed << ", expected=" << expected << ")"
+                  << std::endl;
+      }
+    }
+
+    if (mismatches_t == 0) {
+      std::cout << "[truncate] PASS: all " << slot_count << " values correct" << std::endl;
+    } else {
+      std::cout << "[truncate] FAIL: " << mismatches_t << "/" << slot_count << " mismatches" << std::endl;
     }
   }
 }
@@ -518,13 +736,13 @@ int main(int argc, char **argv) {
   
   // test_comapre();
   // test_ring_field();
-  // test_ring_field();
   // test_field_ring();
-  test_field_ring();
   // test_extend_u64();
+  test_less_than_constant();
   // test_secure_round();
   // test_secure_requant();
   // test_extend_128bit();
+  // test_truncate_and_truncate_reduce();
 
   uint64_t totalComm = 0;
   for (int i = 0; i < num_threads; i++) {

@@ -3,11 +3,15 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#include <algorithm>
+#include <tuple>
+#include <vector>
+#include <limits>
 using namespace std;
 using namespace NonlinearLayer;
 using namespace HE;
 #define MAX_THREADS 4
-typedef uint64_t T;
+typedef int64_t T;
 int party, port = 8000;
 int num_threads = 4;
 string address = "127.0.0.1";
@@ -66,7 +70,7 @@ void print_bf16_bits(uint16_t bf16_val, float original) {
 // 或者使用tanh近似: GELU(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x^3)))
 Tensor<double> gelu_gt(Tensor<double> &input){
   
-  Tensor<double> output({8192});
+  Tensor<double> output(input.shape());
   
   // 常数 1/√2 用于erf计算
   const double SQRT2_INV = 0.7071067811865476;  // 1/√2
@@ -107,12 +111,13 @@ void test_gelu(){
   Tensor<T> input({n});
   Tensor<double> input_real({n});
   Tensor<double> gt({n});
-  const int bitwidth = 19;
-  const int scale = 14;
+  const int bitwidth = 20;
+  const int scale = 15;
 
   if (party == ALICE){
     for (size_t i = 0; i < n; ++i){
-      double v = -4.0 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
+      double v =  -4 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
+      // double v = 2;
       input_real(i) = v;
       input(i) = static_cast<T>(llround(v * static_cast<double>(1ULL << scale)));
     }
@@ -129,32 +134,50 @@ void test_gelu(){
     ioArr[0]->recv_tensor(other_output);
 
     Tensor<double> recon({n});
-    double inv_scale = 1.0 / static_cast<double>(1ULL << scale);
+    const uint64_t ring_mask = ((bitwidth >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << bitwidth) - 1));
+    const uint64_t sign_bit = (bitwidth >= 64) ? (1ULL << 63) : (1ULL << (bitwidth - 1));
+    const uint64_t modulus = (bitwidth >= 64) ? 0ULL : (1ULL << bitwidth);
+    const double inv_scale = 1.0 / static_cast<double>(1ULL << scale);
+
+    for (size_t i = 0; i < n; ++i) {
+      uint64_t combined_u = (static_cast<uint64_t>(input(i)) + static_cast<uint64_t>(other_output(i))) & ring_mask;
+      int64_t combined_s = (combined_u >= sign_bit && bitwidth < 64)
+                               ? static_cast<int64_t>(combined_u) - static_cast<int64_t>(modulus)
+                               : static_cast<int64_t>(combined_u);
+      recon(i) = static_cast<double>(combined_s) * inv_scale;
+    }
+
     double mae = 0.0, max_err = 0.0;
-    size_t cnt = 0;
-    for (size_t i = 0; i < n; ++i){
-      uint64_t combined = (input(i) + other_output(i)) & ((1ULL << bitwidth) - 1);
-      recon(i) = static_cast<double>(combined) * inv_scale;
-      // if ((i >= 2048 && i < 4096) || (i >= 6144 && i < 8192)) {
-      //   continue; // skip polynomial segments when aggregating error stats
-      // }
+    struct ErrSample { double err; size_t idx; double input; double gt; double recon; };
+    std::vector<ErrSample> err_rank;
+    err_rank.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
       double err = std::abs(recon(i) - gt(i));
       mae += err;
       max_err = std::max(max_err, err);
-      ++cnt;
+      err_rank.push_back({err, i, input_real(i), gt(i), recon(i)});
     }
-    cout << "he compute result at 0 is" << recon(0) << endl;
-    mae = cnt ? (mae / static_cast<double>(cnt)) : 0.0;
+    mae /= static_cast<double>(n);
 
+    std::sort(err_rank.begin(), err_rank.end(), [](const ErrSample &a, const ErrSample &b){
+      return a.err > b.err;
+    });
+
+    std::cout << "[GeLU] top mismatches (idx, in, gt, he, err):" << std::endl;
+    for (size_t i = 0; i < std::min<size_t>(8, err_rank.size()); ++i) {
+      const auto &s = err_rank[i];
+      std::cout << "  [" << s.idx << "] " << s.input << ", " << s.gt
+                << ", " << s.recon << ", err=" << s.err << std::endl;
+    }
+    std::cout << "[GeLU] sample recon[0]=" << recon(0) << std::endl;
+    std::cout << "[GeLU] mae=" << mae << ", max_err=" << max_err << std::endl;
     std::ofstream ofs("gelu_eval.csv");
     ofs << "input,gt,he\n";
     for (size_t i = 0; i < n; ++i){
       ofs << input_real(i) << "," << gt(i) << "," << recon(i) << "\n";
     }
     ofs.close();
-
     std::cout << "[GeLU] saved inputs/gt/he outputs to gelu_eval.csv" << std::endl;
-    std::cout << "[GeLU] mae=" << mae << ", max_err=" << max_err << std::endl;
   } else {
     ioArr[0]->send_tensor(input);
   }
@@ -179,7 +202,7 @@ int main(int argc, char **argv) {
         new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
     otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
   }
-  he = new HE::HEEvaluator(ioArr[0], party, 8192,38,Datatype::HOST,{});
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,40,Datatype::HOST,{});
   he->GenerateNewKey();
   he->print_parameters();
   fixpoint = new FixPoint<T>(party, otpackArr, num_threads);

@@ -19,19 +19,22 @@ class GeLU : public Module{
       int bitwidth;
       int scale;
       int party;
-      bool signed_arithmetic;
       double coe[5] = {0.020848611754127593, -0.18352506127082727, 0.5410550166368381, -0.03798164612714154, 0.001620808531841547};
       int64_t coe_fix[5];
-      GeLU(FixPoint<T> *fixPoint,HE::HEEvaluator* HE, int bitwidth, int scale, bool signed_arithmetic=true){
+      GeLU(FixPoint<T> *fixPoint,HE::HEEvaluator* HE, int bitwidth, int scale){
         this->fixPoint = fixPoint;
         this->bitwidth = bitwidth;
         this->scale = scale;
         this->HE = HE;
         this->party = fixPoint->party;
-        this->signed_arithmetic = signed_arithmetic;
         for(int i = 0; i < 5; i++){
           coe_fix[i] = (int64_t)round(coe[i] * (1ULL << scale));
         }
+        cout << "coe_fix: ";
+        for(int i = 0; i < 5; i++){
+          cout << coe_fix[i] << " ";
+        }
+        cout << endl;
       }
       void check_share(Tensor<uint64_t> &x, uint64_t mod, string name){
         if (party == ALICE){
@@ -49,6 +52,7 @@ class GeLU : public Module{
             cout << x0(i) << " ";
           }
         }
+        cout << "" << endl;
 
       }
       // only support ring
@@ -58,13 +62,13 @@ class GeLU : public Module{
         Tensor<T> x_ring = x;
         // check_share(x, 1ULL << (bitwidth), "x_ring before");
         // cout << "bitwidth, scale, plain_mod:" << bitwidth << " " << scale << " " << HE->plain_mod << endl;
-        fixPoint->Ring2Field(x, HE->plain_mod, bitwidth, signed_arithmetic);
+        fixPoint->Ring2Field(x, HE->plain_mod, bitwidth);
         // check_share(x, HE->plain_mod, "x_field");
         auto x_2 = ElementWiseMul(x, x, HE);
 
         // check_share(x_2, HE->plain_mod, "x_2_field");
 
-        fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale, signed_arithmetic);
+        fixPoint->Field2Ring(x_2, HE->plain_mod, bitwidth+scale);
 
         // check_share(x_2, 1ULL << (bitwidth+scale), "x_2_ring");
 
@@ -73,18 +77,18 @@ class GeLU : public Module{
         // check_share(x_2, 1ULL << (bitwidth), "x_2 after truncate");
         // cout << "OK4" << endl;
         Tensor<T> x_2_ring = x_2;
-        fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth, signed_arithmetic);
+        fixPoint->Ring2Field(x_2, HE->plain_mod, bitwidth);
         // check_share(x_2, HE->plain_mod, "x_2_field after truncate");
 
         auto x_3 = ElementWiseMul(x_2, x, HE);
         // check_share(x_3, HE->plain_mod, "x_3");
-        fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale, signed_arithmetic);
+        fixPoint->Field2Ring(x_3, HE->plain_mod, bitwidth+scale);
         // check_share(x_3, 1ULL << (bitwidth+scale), "x_3_ring");
         fixPoint->truncate_reduce(x_3,scale,bitwidth+scale);
         // check_share(x_3, 1ULL << (bitwidth), "x_3 after truncate");
         auto x_4 = ElementWiseMul(x_2, x_2, HE);
         // check_share(x_4, HE->plain_mod, "x_4");
-        fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale, signed_arithmetic);
+        fixPoint->Field2Ring(x_4, HE->plain_mod, bitwidth+scale);
         // check_share(x_4, 1ULL << (bitwidth+scale), "x_4_ring");
         fixPoint->truncate_reduce(x_4,scale,bitwidth+scale);
         // check_share(x_4, 1ULL << (bitwidth), "x_4 after truncate");
@@ -94,9 +98,13 @@ class GeLU : public Module{
           F0(i) = x_4(i)*coe_fix[0]-x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))-coe_fix[3])+coe_fix[4];
           F1(i) = x_4(i)*coe_fix[0]+x_3(i)*coe_fix[1]+x_2_ring(i)*coe_fix[2]+x_ring(i)*(round(0.5* (1ULL << scale))+coe_fix[3])+coe_fix[4];
         }
+        // check_share(F0, 1ULL << (bitwidth), "F0");
         // check_share(F1, 1ULL << (bitwidth), "F1");
+        
         fixPoint->truncate(F0,scale,bitwidth);
         fixPoint->truncate(F1,scale,bitwidth);
+        // check_share(F0, 1ULL << (bitwidth), "F0 after truncate");
+        // check_share(F1, 1ULL << (bitwidth), "F1 after truncate");
         // cout << "OK12" << endl;
         Tensor<uint8_t> b0(x.shape()), b1(x.shape()), b2(x.shape());
         fixPoint->less_than_constant(x_ring, -2.7* (1ULL << scale), b0, bitwidth);

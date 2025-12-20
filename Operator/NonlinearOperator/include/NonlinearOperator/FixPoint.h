@@ -3,6 +3,7 @@
 #include <seal/util/common.h>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 #include <string>
 #include <type_traits>
 #pragma once
@@ -87,7 +88,7 @@ class FixPoint {
         }
 
         // for now, only support uint64_t. TODO: support other types
-        void truncate(Tensor<T> &x, int32_t shift, int32_t bw, bool signed_arithmetic=true, bool msb_zero=false){
+        void truncate(Tensor<T> &x, int32_t shift, int32_t bw, bool msb_zero=false){
             uint8_t *msb_x = nullptr;
             if (msb_zero){
                 msb_x = new uint8_t[x.size()];
@@ -98,6 +99,7 @@ class FixPoint {
             x.flatten();
             T* x_flatten = x.data().data();
             std::thread truncation_threads[num_threads];
+            bool signed_arithmetic = std::is_signed_v<T>;
             int chunk_size = dim / num_threads;
             for (int i = 0; i < num_threads; i++) {
                 int offset = i * chunk_size;
@@ -105,6 +107,9 @@ class FixPoint {
             }
             for (int i = 0; i < num_threads; i++) {
                 truncation_threads[i].join();
+            }
+            if (msb_zero) {
+                delete[] msb_x;
             }
             x.reshape(shape);
         }
@@ -128,11 +133,12 @@ class FixPoint {
         }
 
         // for now, T only support uint64_t
-        void extend(Tensor<T> &x, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, bool msb_zero=false){
+        void extend(Tensor<T> &x, int32_t bwA, int32_t bwB, bool msb_zero=false){
             int dim = x.size();
             T* x_flatten = x.data().data();
             std::thread extend_threads[num_threads];
             int chunk_size = dim / num_threads;
+            const bool signed_arithmetic = std::is_signed_v<T>;
             for (int i = 0; i < num_threads; i++) {
                 int offset = i * chunk_size;
                 extend_threads[i] = std::thread(extend_thread, aux[i], x_flatten+offset, x_flatten+offset, chunk_size, bwA, bwB, signed_arithmetic, msb_zero);
@@ -185,14 +191,13 @@ class FixPoint {
             }
         }
         // Conversion from ring to field
-        void Ring2Field(Tensor<T> &x, ModulusType Q, int bitwidth = 0, bool signed_arithmetic=false){
+        void Ring2Field(Tensor<T> &x, ModulusType Q, int bitwidth = 0){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
             // cout << "bitwidth: " << bitwidth << endl;
             int ext_bit = 60 - bitwidth;
-            // cout << "signed_arithmetic: " << signed_arithmetic << endl;
-            extend(x, bitwidth, bitwidth + ext_bit, signed_arithmetic);
+            extend(x, bitwidth, bitwidth + ext_bit);
             int total_bw = bitwidth + ext_bit;
             if (total_bw < 0) total_bw = 0;
             if (total_bw >= static_cast<int>(sizeof(ModulusType) * 8)) {
@@ -224,13 +229,11 @@ class FixPoint {
         }
 
         // Conversion from Q to bitwidth, if ceil(log2(Q)) > bitwidth, first extend to ceil(log2(Q)), then truncate to bitwidth
-        void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0, bool signed_arithmetic=false){
+        void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0){
             if (bitwidth == 0){
                 bitwidth = x.bitwidth;
             }
-            if (signed_arithmetic && std::is_unsigned_v<T>) {
-                throw std::invalid_argument("signed Field2Ring requires signed tensor type");
-            }
+            const bool signed_arithmetic = std::is_signed_v<T>;
             // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
             if constexpr (std::is_same_v<T, uint64_t>) {
                 std::thread field2ring_threads[num_threads];
@@ -345,11 +348,25 @@ class FixPoint {
         }
 
         void static truncation_thread(TruncationProtocol *truncationProtocol, T* input, T* result, int lnum_ops, int32_t shift, int32_t bw, bool signed_arithmetic=true, uint8_t *msb_x=nullptr){
-            truncationProtocol->truncate(lnum_ops, input, result, shift, bw, signed_arithmetic, msb_x);
+            if constexpr (sizeof(T) == sizeof(uint64_t)) {
+                auto input_u64 = reinterpret_cast<uint64_t*>(input);
+                auto result_u64 = reinterpret_cast<uint64_t*>(result);
+                truncationProtocol->truncate(lnum_ops, input_u64, result_u64, shift, bw, signed_arithmetic, msb_x);
+            } else {
+                static_assert(sizeof(T) == sizeof(uint64_t),
+                              "truncate only supports 64-bit tensor types at the moment");
+            }
         }
 
         void static truncate_reduce_thread(TruncationProtocol *truncationProtocol, T* input, T* result, int lnum_ops, int32_t shift, int32_t bw){
-            truncationProtocol->truncate_and_reduce(lnum_ops, input, result, shift, bw);
+            if constexpr (sizeof(T) == sizeof(uint64_t)) {
+                auto input_u64 = reinterpret_cast<uint64_t*>(input);
+                auto result_u64 = reinterpret_cast<uint64_t*>(result);
+                truncationProtocol->truncate_and_reduce(lnum_ops, input_u64, result_u64, shift, bw);
+            } else {
+                static_assert(sizeof(T) == sizeof(uint64_t),
+                              "truncate_reduce only supports 64-bit tensor types at the moment");
+            }
         }
 
         void static extend_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bwA, int32_t bwB, bool signed_arithmetic=true, bool msb_zero=false){
@@ -365,13 +382,18 @@ class FixPoint {
                 } else {
                     aux->z_extend(lnum_ops, reinterpret_cast<int128_t*>(input), reinterpret_cast<int128_t*>(result), bwA, bwB, msb_x);
                 }
-            } else {
-                // 64-bit version (uint64_t)
+            } else if constexpr (sizeof(T) == sizeof(uint64_t)) {
+                // Treat any 64-bit integral T as the uint64_t view expected by AuxProtocols
+                auto input_u64 = reinterpret_cast<uint64_t*>(input);
+                auto result_u64 = reinterpret_cast<uint64_t*>(result);
                 if (signed_arithmetic){
-                    aux->s_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+                    aux->s_extend(lnum_ops, input_u64, result_u64, bwA, bwB, msb_x);
                 } else {
-                    aux->z_extend(lnum_ops, input, result, bwA, bwB, msb_x);
+                    aux->z_extend(lnum_ops, input_u64, result_u64, bwA, bwB, msb_x);
                 }
+            } else {
+                static_assert(std::is_same_v<T, int128_t> || std::is_same_v<T, __int128> || sizeof(T) == sizeof(uint64_t),
+                              "FixPoint::extend only supports 64-bit or 128-bit integer tensor types");
             }
             if (msb_zero) {
                 delete[] msb_x;
@@ -557,7 +579,29 @@ class FixPoint {
         void static secure_requant_thread(AuxProtocols *aux, T* input, T* result,
                                           int lnum_ops, double scale_in, double scale_out,
                                           int32_t bw_in, int32_t bw_out, int32_t s_fix, int party) {
-            
+
+            const bool signed_arithmetic = std::is_signed_v<T>;
+            auto z_or_s_extend = [&](int32_t from_bw, int32_t to_bw) {
+                if constexpr (std::is_same_v<T, int128_t> || std::is_same_v<T, __int128>) {
+                    if (signed_arithmetic) {
+                        aux->s_extend(lnum_ops, reinterpret_cast<int128_t*>(input), reinterpret_cast<int128_t*>(result), from_bw, to_bw, nullptr);
+                    } else {
+                        aux->z_extend(lnum_ops, reinterpret_cast<int128_t*>(input), reinterpret_cast<int128_t*>(result), from_bw, to_bw, nullptr);
+                    }
+                } else if constexpr (sizeof(T) == sizeof(uint64_t)) {
+                    auto *in_u64 = reinterpret_cast<uint64_t*>(input);
+                    auto *out_u64 = reinterpret_cast<uint64_t*>(result);
+                    if (signed_arithmetic) {
+                        aux->s_extend(lnum_ops, in_u64, out_u64, from_bw, to_bw, nullptr);
+                    } else {
+                        aux->z_extend(lnum_ops, in_u64, out_u64, from_bw, to_bw, nullptr);
+                    }
+                } else {
+                    static_assert(std::is_same_v<T, int128_t> || std::is_same_v<T, __int128> || sizeof(T) == sizeof(uint64_t),
+                                  "secure_requant only supports 64-bit or 128-bit integer tensor types");
+                }
+            };
+
             // Determine the type of requantization based on bitwidths
             bool is_acc_to_fix = (bw_in < bw_out);  // Algorithm 2: b_acc -> b_fix
             bool is_fix_to_acc = (bw_in > bw_out);  // Algorithm 3: b_fix -> b_acc
@@ -566,15 +610,15 @@ class FixPoint {
             if (is_acc_to_acc) {
                 // Algorithm 1: From b_acc to b_acc with scale change (s to s')
                 // Step 1: Extend from b_acc to b_fix
-                aux->z_extend(lnum_ops, input, result, bw_in, s_fix * 2, nullptr);
+                z_or_s_extend(bw_in, s_fix * 2);
                 
                 // Step 2: Locally compute X_fix = X_q * (s/s') * 2^{s_fix}
-                // Convert scale ratio to integer as late as possible
                 double scale_ratio = scale_in / scale_out;
-                uint64_t scale_factor = (uint64_t)(scale_ratio * (1ULL << s_fix));
-                uint64_t mask_fix = (s_fix * 2 == 64 ? -1ULL : ((1ULL << (s_fix * 2)) - 1));
+                int128_t scale_factor = static_cast<int128_t>(scale_ratio * (1ULL << s_fix));
+                uint64_t mask_fix = (s_fix * 2 == 64 ? static_cast<uint64_t>(-1) : ((1ULL << (s_fix * 2)) - 1));
                 for (int i = 0; i < lnum_ops; i++) {
-                    result[i] = (result[i] * scale_factor) & mask_fix;
+                    int128_t mul = static_cast<int128_t>(result[i]) * scale_factor;
+                    result[i] = static_cast<T>(static_cast<uint64_t>(mul) & mask_fix);
                 }
                 
                 // Step 3: Secure rounding to get X'_q
@@ -583,31 +627,30 @@ class FixPoint {
             } else if (is_acc_to_fix) {
                 // Algorithm 2: From b_acc to b_fix with scale s to scale 2^{s_fix}
                 // Step 1: Extend from b_acc to b_fix
-                aux->z_extend(lnum_ops, input, result, bw_in, bw_out, nullptr);
+                z_or_s_extend(bw_in, bw_out);
                 
                 // Step 2: Locally compute X_f = X_q * s * 2^{s_fix}
-                // Convert scale to integer as late as possible
-                uint64_t scale_factor = (uint64_t)(scale_in * (1ULL << s_fix));
-                uint64_t mask_out = (bw_out == 64 ? -1ULL : ((1ULL << bw_out) - 1));
+                int128_t scale_factor = static_cast<int128_t>(scale_in * (1ULL << s_fix));
+                uint64_t mask_out = (bw_out == 64 ? static_cast<uint64_t>(-1) : ((1ULL << bw_out) - 1));
                 for (int i = 0; i < lnum_ops; i++) {
-                    result[i] = (result[i] * scale_factor) & mask_out;
+                    int128_t mul = static_cast<int128_t>(result[i]) * scale_factor;
+                    result[i] = static_cast<T>(static_cast<uint64_t>(mul) & mask_out);
                 }
                 
             } else if (is_fix_to_acc) {
                 // Algorithm 3: From b_fix to b_acc with scale change
                 // Step 1: Extend from b_fix to 2*b_fix
-                aux->z_extend(lnum_ops, input, result, bw_in, 2 * bw_in, nullptr);
+                z_or_s_extend(bw_in, 2 * bw_in);
                 
                 // Step 2: Locally compute X_f * (1/s') * 2^{s_fix}
-                // Convert scale to integer as late as possible
-                uint64_t scale_factor = (uint64_t)((1ULL << s_fix) / scale_out);
-                uint64_t mask_inter = (2 * bw_in == 64 ? -1ULL : ((1ULL << (2 * bw_in)) - 1));
+                int128_t scale_factor = static_cast<int128_t>((1ULL << s_fix) / scale_out);
+                uint64_t mask_inter = (2 * bw_in == 64 ? static_cast<uint64_t>(-1) : ((1ULL << (2 * bw_in)) - 1));
                 for (int i = 0; i < lnum_ops; i++) {
-                    result[i] = (result[i] * scale_factor) & mask_inter;
+                    int128_t mul = static_cast<int128_t>(result[i]) * scale_factor;
+                    result[i] = static_cast<T>(static_cast<uint64_t>(mul) & mask_inter);
                 }
                 
                 // Step 3: Secure rounding to get X'_q
-                // We use s_fix as the rounding shift
                 secure_round_thread(aux, result, result, lnum_ops, s_fix, 2 * bw_in, bw_out, party);
             }
         }

@@ -317,6 +317,31 @@ private:
         return digits;
     }
 
+    static int32_t sanitize_bitwidth(int32_t candidate) {
+        if (candidate <= 0) {
+            return 64;
+        }
+        if (candidate > 64) {
+            return 64;
+        }
+        return candidate;
+    }
+
+    static int64_t interpret_unsigned_as_signed(uint64_t value, int32_t bitwidth) {
+        const int32_t bw = sanitize_bitwidth(bitwidth);
+        if (bw >= 64) {
+            return static_cast<int64_t>(value);
+        }
+        const uint64_t modulus = uint64_t(1) << bw;
+        const uint64_t mask = modulus - 1;
+        const uint64_t sign_bit = uint64_t(1) << (bw - 1);
+        value &= mask;
+        if (value & sign_bit) {
+            return static_cast<int64_t>(value) - static_cast<int64_t>(modulus);
+        }
+        return static_cast<int64_t>(value);
+    }
+
     std::vector<size_t> shape_;
     std::vector<size_t> strides_;
     std::vector<T> data_;
