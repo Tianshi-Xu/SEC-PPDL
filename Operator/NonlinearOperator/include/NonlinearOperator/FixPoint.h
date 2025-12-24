@@ -231,11 +231,11 @@ class FixPoint {
         // Conversion from Q to bitwidth, if ceil(log2(Q)) > bitwidth, first extend to ceil(log2(Q)), then truncate to bitwidth
         void Field2Ring(Tensor<T> &x, ModulusType Q, int bitwidth = 0){
             if (bitwidth == 0){
-                bitwidth = x.bitwidth;
+                bitwidth = x.bitwidth; 
             }
             const bool signed_arithmetic = std::is_signed_v<T>;
             // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
-            if constexpr (std::is_same_v<T, uint64_t>) {
+            if constexpr (sizeof(T) == sizeof(uint64_t)) {
                 std::thread field2ring_threads[num_threads];
                 int chunk_size = x.size() / num_threads;
                 for (int i = 0; i < num_threads; i++) {
@@ -401,28 +401,24 @@ class FixPoint {
         }
 
         static void field2ring_thread(AuxProtocols *aux, T* input, T* result, int lnum_ops, int32_t bw, uint64_t Q, bool signed_arithmetic){
+            auto input_u64 = reinterpret_cast<uint64_t*>(input);
             uint64_t mask_bw = (bw == 64 ? static_cast<uint64_t>(-1) : ((1ULL << bw) - 1));
             uint8_t *wrap_x = new uint8_t[lnum_ops];
             int32_t logQ = static_cast<int32_t>(ceil(std::log2(Q)));
             if (bw < logQ){
-                aux->wrap_computation_prime(input, wrap_x, lnum_ops, logQ, Q);
+                aux->wrap_computation_prime(input_u64, wrap_x, lnum_ops, logQ, Q);
             }
             else{
-                aux->wrap_computation_prime(input, wrap_x, lnum_ops, bw, Q);
+                aux->wrap_computation_prime(input_u64, wrap_x, lnum_ops, bw, Q);
             }
             uint64_t *arith_wrap = new uint64_t[lnum_ops];
             aux->B2A(wrap_x, arith_wrap, lnum_ops, bw);
-            const __int128 signed_threshold = (bw == 0 ? 0 : (__int128(1) << (bw - 1)));
-            const __int128 signed_modulus = (bw == 0 ? 0 : (__int128(1) << bw));
+            const uint64_t signed_threshold = (bw == 0 ? 0 : (1ULL << (bw - 1)));
             for (int i = 0; i < lnum_ops; i++){
-                result[i] = ((input[i]%Q) - Q * arith_wrap[i]) & mask_bw;
-                if (signed_arithmetic && bw > 0) {
-                    __int128 candidate = static_cast<__int128>(result[i]);
-                    if (candidate >= signed_threshold) {
-                        candidate -= signed_modulus;
-                    }
-                    result[i] = static_cast<T>(candidate);
-                }
+                __int128 raw = static_cast<uint64_t>(input_u64[i]);
+                raw -= static_cast<__int128>(Q) * static_cast<__int128>(arith_wrap[i]);
+                uint64_t masked = static_cast<uint64_t>(raw) & mask_bw;
+                result[i] = static_cast<T>(masked);
             }
             delete[] wrap_x;
             delete[] arith_wrap;

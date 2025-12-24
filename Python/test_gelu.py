@@ -6,9 +6,7 @@ def main():
     df = pd.read_csv("gelu_eval.csv")
 
     df["abs_err"] = (df["gt"] - df["he"]).abs()
-    mask_exclude = ((df.index >= 2048) & (df.index < 4096)) | ((df.index >= 6144) & (df.index < 8192))
     df["abs_err_masked"] = df["abs_err"]
-    df.loc[mask_exclude, "abs_err_masked"] = 0.0  # treat excluded ranges as 0 error
 
     mae = df["abs_err_masked"].mean()
     max_err = df["abs_err_masked"].max()

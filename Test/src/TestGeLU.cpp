@@ -113,20 +113,24 @@ void test_gelu(){
   Tensor<double> gt({n});
   const int bitwidth = 20;
   const int scale = 15;
-
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,bitwidth*2,Datatype::HOST,{});
+  he->GenerateNewKey();
+  he->print_parameters();
   if (party == ALICE){
     for (size_t i = 0; i < n; ++i){
-      double v =  -4 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
-      // double v = 2;
+      double v = -4 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
+      // double v = -2;
       input_real(i) = v;
       input(i) = static_cast<T>(llround(v * static_cast<double>(1ULL << scale)));
     }
+    printf("input_real(0): ", input_real(0));
+    printf("input(0): ", input(0));
     // input(0) = 4.00049 * (1ULL << scale);
     // input_real(0) = 4.00049;
     gt = gelu_gt(input_real);
   }
   
-  GeLU<T> gelu(fixpoint, he, bitwidth*2, scale);
+  GeLU<T> gelu(fixpoint, he, bitwidth, scale);
   gelu(input);  // in-place share of HE GeLU output
 
   if (party == ALICE){
@@ -202,17 +206,14 @@ int main(int argc, char **argv) {
         new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port + i);
     otpackArr[i] = new IKNPOTPack<Utils::NetIO>(ioArr[i], party);
   }
-  he = new HE::HEEvaluator(ioArr[0], party, 8192,40,Datatype::HOST,{});
-  he->GenerateNewKey();
-  he->print_parameters();
   fixpoint = new FixPoint<T>(party, otpackArr, num_threads);
-  std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
-  for (int i = 0; i < num_threads; i++) {
-    auto temp = ioArr[i]->counter;
-    comm_threads[i] = temp;
-    std::cout << "Thread i = " << i << ", total data sent till now = " << temp
-              << std::endl;
-  }
+  // std::cout << "After one-time setup, communication" << std::endl; // TODO: warm up
+  // for (int i = 0; i < num_threads; i++) {
+  //   auto temp = ioArr[i]->counter;
+  //   comm_threads[i] = temp;
+  //   std::cout << "Thread i = " << i << ", total data sent till now = " << temp
+  //             << std::endl;
+  // }
 
   // 测试不同密文位宽
   // test_gelu_bitwidth();
@@ -220,11 +221,11 @@ int main(int argc, char **argv) {
   // 原始测试
   test_gelu();
 
-  uint64_t totalComm = 0;
-  for (int i = 0; i < num_threads; i++) {
-    auto temp = ioArr[i]->counter;
-    std::cout << "Thread i = " << i << ", total data sent till now = " << temp
-              << std::endl;
-    totalComm += (temp - comm_threads[i]);
-  }
+  // uint64_t totalComm = 0;
+  // for (int i = 0; i < num_threads; i++) {
+  //   auto temp = ioArr[i]->counter;
+  //   std::cout << "Thread i = " << i << ", total data sent till now = " << temp
+  //             << std::endl;
+  //   totalComm += (temp - comm_threads[i]);
+  // }
 }
