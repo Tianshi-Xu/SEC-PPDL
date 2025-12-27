@@ -111,14 +111,14 @@ void test_gelu(){
   Tensor<T> input({n});
   Tensor<double> input_real({n});
   Tensor<double> gt({n});
-  const int bitwidth = 20;
-  const int scale = 15;
-  he = new HE::HEEvaluator(ioArr[0], party, 8192,bitwidth*2,Datatype::HOST,{});
+  const int bitwidth = 16;
+  const int scale = 12;
+  he = new HE::HEEvaluator(ioArr[0], party, 8192,bitwidth*2,Datatype::HOST,{60,33,33});
   he->GenerateNewKey();
   he->print_parameters();
   if (party == ALICE){
     for (size_t i = 0; i < n; ++i){
-      double v = -4 + 8.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
+      double v = 4.0 * static_cast<double>(i) / static_cast<double>(n - 1); // [-4,4]均匀分布
       // double v = -2;
       input_real(i) = v;
       input(i) = static_cast<T>(llround(v * static_cast<double>(1ULL << scale)));
