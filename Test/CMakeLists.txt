@@ -42,3 +42,6 @@ target_link_libraries(test_fixpoint PUBLIC NonlinearOperator)
 
 add_executable(test_gelu ${CMAKE_CURRENT_LIST_DIR}/src/TestGeLU.cpp)
 target_link_libraries(test_gelu PUBLIC NonlinearLayer)
+
+add_executable(test_silu ${CMAKE_CURRENT_LIST_DIR}/src/TestSiLU.cpp)
+target_link_libraries(test_silu PUBLIC NonlinearLayer)

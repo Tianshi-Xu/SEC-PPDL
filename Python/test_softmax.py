@@ -106,38 +106,57 @@ def exp_polynomial_approx(x):
     return result
 
 
-def exp_fixed_point(x, integer_bits=8, fractional_bits=16):
+def exp_fixed_point(x, integer_bits=8, fractional_bits=24, *, fp=None, x_is_fixed=False, return_fixed=False):
     """
-    使用定点数实现的exp函数近似
+    使用定点数实现的exp函数近似, 支持直接传入定点数数据
     使用公式: exp(x) = (1 + x/(2^6))^(2^6)
     
     Args:
         x: 输入值,范围应该在[-13, 0]之间
         integer_bits: 定点数整数部分位数
         fractional_bits: 定点数小数部分位数
+        fp: 复用的FixedPoint实例
+        x_is_fixed: 输入是否已经是定点数格式
+        return_fixed: 是否直接返回定点数结果
     
     Returns:
-        exp(x)的定点数近似结果
+        exp(x)的定点数近似结果(浮点或定点数)
     """
-    # 创建定点数对象
-    fp = FixedPoint(integer_bits, fractional_bits)
+    # 创建或复用定点数对象
+    fp = fp or FixedPoint(integer_bits, fractional_bits)
     
     # 将输入转换为定点数
-    x_fixed = fp.quantize(x)
+    if x_is_fixed:
+        x_fixed = np.asarray(x, dtype=np.int64)
+    else:
+        x_fixed = fp.quantize(np.asarray(x, dtype=np.float64))
+    
+    # 处理标量输入
+    squeeze = False
+    if x_fixed.ndim == 0:
+        x_fixed = np.expand_dims(x_fixed, 0)
+        squeeze = True
     
     # n = 2^6 = 64
     n = 64
-    n_fixed = fp.quantize(np.full_like(x, n, dtype=np.float64))
+    shape = x_fixed.shape
+    n_fixed = fp.quantize(np.full(shape, n, dtype=np.float64))
     
     # 计算 x/n
     x_div_n = fp.fixed_div(x_fixed, n_fixed)
     
     # 计算 1 + x/n
-    one_fixed = fp.quantize(np.ones_like(x, dtype=np.float64))
+    one_fixed = fp.quantize(np.ones(shape, dtype=np.float64))
     base = fp.fixed_add(one_fixed, x_div_n)
     
     # 计算 (1 + x/n)^64
-    result_fixed = fp.fixed_power(base, 64)
+    result_fixed = fp.fixed_power(base, n)
+    
+    if squeeze:
+        result_fixed = np.squeeze(result_fixed, axis=0)
+    
+    if return_fixed:
+        return result_fixed
     
     # 转换回浮点数
     result = fp.dequantize(result_fixed)
@@ -145,7 +164,7 @@ def exp_fixed_point(x, integer_bits=8, fractional_bits=16):
     return result.astype(np.float32)
 
 
-def test_exp_functions(integer_bits=8, fractional_bits=16):
+def test_exp_functions(integer_bits=8, fractional_bits=24):
     """
     测试和比较三个exp函数的精度
     
@@ -404,7 +423,7 @@ def test_different_bitwidths():
 
 
 def plot_comparison(x_values, y_normal, y_approx, y_fixed, abs_error_poly, rel_error_poly, abs_error_fixed, rel_error_fixed, 
-                    integer_bits=8, fractional_bits=16):
+                    integer_bits=8, fractional_bits=24):
     """
     绘制对比图表(三种方法)
     """
@@ -464,7 +483,7 @@ def plot_comparison(x_values, y_normal, y_approx, y_fixed, abs_error_poly, rel_e
     plt.show()
 
 
-def test_specific_values(integer_bits=8, fractional_bits=16):
+def test_specific_values(integer_bits=8, fractional_bits=24):
     """
     测试一些特定值(三种方法)
     """
@@ -487,7 +506,69 @@ def test_specific_values(integer_bits=8, fractional_bits=16):
         print(f"{x:8.2f} | {normal:15.10f} | {approx:15.10f} | {fixed:15.10f} | {poly_rel_err:12.6f} | {fixed_rel_err:12.6f}")
 
 
-def test_softmax_scenario(integer_bits=8, fractional_bits=16):
+def softmax_fixed_point(logits, integer_bits=8, fractional_bits=24, axis=-1, return_fixed=False):
+    """使用完全定点路径计算softmax"""
+    logits = np.asarray(logits, dtype=np.float64)
+    if logits.ndim == 0:
+        raise ValueError("Softmax输入至少需要一维")
+    fp = FixedPoint(integer_bits, fractional_bits)
+    moved = np.moveaxis(logits, axis, -1)
+    original_shape = moved.shape
+    flattened = moved.reshape(-1, original_shape[-1])
+    probs_fixed = np.zeros_like(flattened, dtype=np.int64)
+    for idx, row in enumerate(flattened):
+        row_fixed = fp.quantize(row)
+        max_fixed = np.max(row_fixed)
+        shifted_fixed = row_fixed - max_fixed
+        exp_vals_fixed = exp_fixed_point(shifted_fixed, fp=fp, x_is_fixed=True, return_fixed=True)
+        sum_fixed = np.sum(exp_vals_fixed, dtype=np.int64)
+        if sum_fixed == 0:
+            raise ZeroDivisionError("Softmax分母为0, 请检查输入范围")
+        denom_fixed = np.full_like(exp_vals_fixed, sum_fixed)
+        probs_fixed[idx] = fp.fixed_div(exp_vals_fixed, denom_fixed)
+    probs_fixed = probs_fixed.reshape(original_shape)
+    probs_fixed = np.moveaxis(probs_fixed, -1, axis)
+    if return_fixed:
+        return probs_fixed
+    return fp.dequantize(probs_fixed).astype(np.float32)
+
+
+def plot_softmax_comparison(logits, softmax_normal, softmax_fixed, integer_bits=8, fractional_bits=24,
+                            filename='softmax_fixed_vs_float.png'):
+    """Draw a smoothed single-chart comparison between float and fixed-point softmax."""
+    logits = np.asarray(logits).reshape(-1)
+    softmax_normal = np.asarray(softmax_normal).reshape(-1)
+    softmax_fixed = np.asarray(softmax_fixed).reshape(-1)
+    if logits.size != softmax_normal.size:
+        logits = np.linspace(0, softmax_normal.size - 1, softmax_normal.size)
+    sort_idx = np.argsort(logits)
+    logits_sorted = logits[sort_idx]
+    normal_sorted = softmax_normal[sort_idx]
+    fixed_sorted = softmax_fixed[sort_idx]
+    x_dense = np.linspace(logits_sorted[0], logits_sorted[-1], 300)
+    normal_dense = np.interp(x_dense, logits_sorted, normal_sorted)
+    fixed_dense = np.interp(x_dense, logits_sorted, fixed_sorted)
+    error_dense = np.abs(normal_dense - fixed_dense)
+    fig, ax_prob = plt.subplots(figsize=(10, 6))
+    prob_line = ax_prob.plot(x_dense, normal_dense, label='Softmax FP32', linewidth=2)
+    fixed_line = ax_prob.plot(x_dense, fixed_dense, linestyle='--', label=f'Softmax Q{integer_bits}.{fractional_bits}', linewidth=2)
+    ax_prob.set_xlabel('Input logits (x)')
+    ax_prob.set_ylabel('Probability (y)')
+    ax_prob.set_title('Softmax Comparison (Float vs Fixed-point)')
+    ax_prob.grid(True, alpha=0.3)
+    ax_err = ax_prob.twinx()
+    err_fill = ax_err.fill_between(x_dense, 0, error_dense, color='tab:red', alpha=0.25, label='Absolute error |Δy|')
+    ax_err.set_ylabel('Absolute error |Δy|')
+    lines = prob_line + fixed_line + [err_fill]
+    labels = ['Softmax FP32', f'Softmax Q{integer_bits}.{fractional_bits}', 'Absolute error |Δy|']
+    ax_prob.legend(lines, labels, loc='upper left')
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"\nSoftmax比较图已保存为 '{filename}'")
+    plt.show()
+
+
+def test_softmax_scenario(integer_bits=8, fractional_bits=24, plot=True):
     """
     模拟LLM中softmax的场景测试(三种方法)
     """
@@ -509,9 +590,8 @@ def test_softmax_scenario(integer_bits=8, fractional_bits=16):
     exp_logits_approx = exp_polynomial_approx(logits)
     softmax_approx = exp_logits_approx / np.sum(exp_logits_approx)
     
-    # 使用定点数exp计算softmax
-    exp_logits_fixed = exp_fixed_point(logits, integer_bits, fractional_bits)
-    softmax_fixed = exp_logits_fixed / np.sum(exp_logits_fixed)
+    # 使用全定点softmax
+    softmax_fixed = softmax_fixed_point(logits, integer_bits, fractional_bits)
     
     print("Softmax结果对比:")
     print(f"{'Idx':>4} | {'Normal':>12} | {'Poly_FP32':>12} | {'Fixed':>12} | {'Poly_Err%':>11} | {'Fixed_Err%':>12}")
@@ -529,11 +609,16 @@ def test_softmax_scenario(integer_bits=8, fractional_bits=16):
     print(f"【定点数 Q{integer_bits}.{fractional_bits}】Softmax最大绝对误差: {np.max(np.abs(softmax_normal - softmax_fixed)):.10f}")
     print(f"【定点数 Q{integer_bits}.{fractional_bits}】Softmax平均绝对误差: {np.mean(np.abs(softmax_normal - softmax_fixed)):.10f}")
 
+    if plot:
+        plot_softmax_comparison(logits, softmax_normal, softmax_fixed, integer_bits, fractional_bits)
+
+    return softmax_normal, softmax_fixed
+
 
 if __name__ == "__main__":
-    # 第一阶段: 使用默认配置Q8.16进行初步测试
+    # 第一阶段: 使用默认配置Q8.24进行初步测试
     default_int_bits = 8
-    default_frac_bits = 16
+    default_frac_bits = 24
     
     print("\n" + "="*70)
     print(f"第一阶段: 使用默认配置 Q{default_int_bits}.{default_frac_bits} 进行初步测试")
