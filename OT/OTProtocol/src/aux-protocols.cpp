@@ -885,10 +885,10 @@ void AuxProtocols::AND(uint8_t *x, uint8_t *y, uint8_t *z, int32_t size) {
 //   delete[] msnzb_index;
 // }
 
-// template void AuxProtocols::lookup_table(uint64_t **spec, uint64_t *x,
-//                                          uint64_t *y, int32_t size,
-//                                          int32_t bw_x, int32_t bw_y);
-// template void AuxProtocols::lookup_table(uint8_t **spec, uint8_t *x, uint8_t *y,
-//                                          int32_t size, int32_t bw_x,
-//                                          int32_t bw_y);
+template void AuxProtocols::lookup_table(uint64_t **spec, uint64_t *x,
+                                         uint64_t *y, int32_t size,
+                                         int32_t bw_x, int32_t bw_y);
+template void AuxProtocols::lookup_table(uint8_t **spec, uint8_t *x, uint8_t *y,
+                                         int32_t size, int32_t bw_x,
+                                         int32_t bw_y);
 } // namespace OTProtocol

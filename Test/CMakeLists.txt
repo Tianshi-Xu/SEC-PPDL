@@ -45,3 +45,6 @@ target_link_libraries(test_gelu PUBLIC NonlinearLayer)
 
 add_executable(test_silu ${CMAKE_CURRENT_LIST_DIR}/src/TestSiLU.cpp)
 target_link_libraries(test_silu PUBLIC NonlinearLayer)
+
+add_executable(test_division ${CMAKE_CURRENT_LIST_DIR}/src/test_division.cpp)
+target_link_libraries(test_division PUBLIC NonlinearOperator)

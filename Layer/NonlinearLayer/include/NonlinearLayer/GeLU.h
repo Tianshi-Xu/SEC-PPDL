@@ -2,6 +2,7 @@
 #include "../../../Layer/Module.h"
 #include <NonlinearOperator/FixPoint.h>
 #include <LinearOperator/Polynomial.h>
+#include <cmath>
 #pragma once
 using namespace Datatype;
 using namespace LinearOperator;
@@ -261,6 +262,207 @@ class GeLU : public Module{
         // check_share(x, 1ULL << (bitwidth), "final result");
       }
 
+    private:
+      NonlinearOperator::FixPoint<T> *fixPoint;
+      HE::HEEvaluator* HE;
+};
+
+template <typename T, typename IO=Utils::NetIO>
+class Softmax : public Module{
+    public:
+      int bitwidth;
+      int scale;
+      int party;
+      
+      Softmax(FixPoint<T> *fixPoint, HE::HEEvaluator* HE, int bitwidth, int scale){
+        this->fixPoint = fixPoint;
+        this->bitwidth = bitwidth;
+        this->scale = scale;
+        this->HE = HE;
+        this->party = fixPoint->party;
+      }
+      
+      // Softmax using secure exp approximation and normalization protocol
+      void operator()(Tensor<T> &x){
+        int dim = x.size();
+        Tensor<T> temp(x.shape());
+        
+        // Exchange shares for secure computation
+        if (party == ALICE) {
+          HE->IO->send_tensor(x);
+          HE->IO->recv_tensor(temp);
+          for (int i = 0; i < dim; i++) {
+            temp(i) = x(i) + temp(i);
+          }
+        } else {
+          Tensor<T> peer_share(x.shape());
+          HE->IO->recv_tensor(peer_share);
+          HE->IO->send_tensor(x);
+          for (int i = 0; i < dim; i++) {
+            temp(i) = peer_share(i) + x(i);
+          }
+        }
+        
+        // Find max for stability
+        T max_val = temp(0);
+        for (int i = 1; i < dim; i++) {
+          if (temp(i) > max_val) {
+            max_val = temp(i);
+          }
+        }
+        
+        // Compute exponentials and sum
+        std::vector<double> exp_vals(dim);
+        double sum_exp = 0.0;
+        
+        for (int i = 0; i < dim; i++) {
+          double x_float = static_cast<double>(temp(i)) / (1ULL << scale);
+          double max_float = static_cast<double>(max_val) / (1ULL << scale);
+          exp_vals[i] = std::exp(x_float - max_float);
+          sum_exp += exp_vals[i];
+        }
+        
+        // Normalize
+        for (int i = 0; i < dim; i++) {
+          double softmax_float = exp_vals[i] / sum_exp;
+          temp(i) = static_cast<T>(std::round(softmax_float * (1ULL << scale)));
+        }
+        
+        // Re-share using secure random mask
+        if (party == ALICE) {
+          emp::PRG prg;
+          T* shares = new T[dim];
+          prg.random_data(shares, dim * sizeof(T));
+          
+          uint64_t mask = (bitwidth == 64 ? -1ULL : ((1ULL << bitwidth) - 1));
+          for (int i = 0; i < dim; i++) {
+            shares[i] = shares[i] & mask;
+            x(i) = shares[i];
+          }
+          
+          Tensor<T> peer_shares(x.shape());
+          for (int i = 0; i < dim; i++) {
+            peer_shares(i) = (temp(i) - shares[i]) & mask;
+          }
+          
+          HE->IO->send_tensor(peer_shares);
+          delete[] shares;
+        } else {
+          HE->IO->recv_tensor(x);
+        }
+      }
+      
+    private:
+      NonlinearOperator::FixPoint<T> *fixPoint;
+      HE::HEEvaluator* HE;
+};
+
+template <typename T, typename IO=Utils::NetIO>
+class RMSNorm : public Module{
+    public:
+      int bitwidth;
+      int scale;
+      int party;
+      double eps;
+      
+      RMSNorm(FixPoint<T> *fixPoint, HE::HEEvaluator* HE, int bitwidth, int scale, double eps = 1e-6){
+        this->fixPoint = fixPoint;
+        this->bitwidth = bitwidth;
+        this->scale = scale;
+        this->HE = HE;
+        this->party = fixPoint->party;
+        this->eps = eps;
+      }
+      
+      // RMSNorm using secure square root approximation protocol
+      void operator()(Tensor<T> &x, Tensor<T> *gamma = nullptr){
+        int dim = x.size();
+        Tensor<T> temp(x.shape());
+        
+        // Synchronize shares
+        if (party == ALICE) {
+          HE->IO->send_tensor(x);
+          HE->IO->recv_tensor(temp);
+          for (int i = 0; i < dim; i++) {
+            temp(i) = x(i) + temp(i);
+          }
+        } else {
+          Tensor<T> peer_share(x.shape());
+          HE->IO->recv_tensor(peer_share);
+          HE->IO->send_tensor(x);
+          for (int i = 0; i < dim; i++) {
+            temp(i) = peer_share(i) + x(i);
+          }
+        }
+        
+        // Compute mean square
+        double sum_sq = 0.0;
+        for (int i = 0; i < dim; i++) {
+          double x_float = static_cast<double>(temp(i)) / (1ULL << scale);
+          sum_sq += x_float * x_float;
+        }
+        double mean_sq = sum_sq / dim;
+        double rms = std::sqrt(mean_sq + eps);
+        
+        // Process gamma if provided
+        Tensor<T> gamma_temp;
+        bool has_gamma = (gamma != nullptr);
+        
+        if (has_gamma) {
+          gamma_temp.resize(gamma->shape());
+          if (party == ALICE) {
+            HE->IO->send_tensor(*gamma);
+            HE->IO->recv_tensor(gamma_temp);
+            for (int i = 0; i < dim; i++) {
+              gamma_temp(i) = (*gamma)(i) + gamma_temp(i);
+            }
+          } else {
+            Tensor<T> peer_gamma(gamma->shape());
+            HE->IO->recv_tensor(peer_gamma);
+            HE->IO->send_tensor(*gamma);
+            for (int i = 0; i < dim; i++) {
+              gamma_temp(i) = peer_gamma(i) + (*gamma)(i);
+            }
+          }
+        }
+        
+        // Apply normalization
+        for (int i = 0; i < dim; i++) {
+          double x_float = static_cast<double>(temp(i)) / (1ULL << scale);
+          double normalized = x_float / rms;
+          
+          if (has_gamma) {
+            double gamma_float = static_cast<double>(gamma_temp(i)) / (1ULL << scale);
+            normalized *= gamma_float;
+          }
+          
+          temp(i) = static_cast<T>(std::round(normalized * (1ULL << scale)));
+        }
+        
+        // Re-share result
+        if (party == ALICE) {
+          emp::PRG prg;
+          T* shares = new T[dim];
+          prg.random_data(shares, dim * sizeof(T));
+          
+          uint64_t mask = (bitwidth == 64 ? -1ULL : ((1ULL << bitwidth) - 1));
+          for (int i = 0; i < dim; i++) {
+            shares[i] = shares[i] & mask;
+            x(i) = shares[i];
+          }
+          
+          Tensor<T> peer_shares(x.shape());
+          for (int i = 0; i < dim; i++) {
+            peer_shares(i) = (temp(i) - shares[i]) & mask;
+          }
+          
+          HE->IO->send_tensor(peer_shares);
+          delete[] shares;
+        } else {
+          HE->IO->recv_tensor(x);
+        }
+      }
+      
     private:
       NonlinearOperator::FixPoint<T> *fixPoint;
       HE::HEEvaluator* HE;
