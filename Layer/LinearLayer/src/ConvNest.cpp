@@ -259,16 +259,23 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
     /*
     Depacking the results is almost the inverse of flattening, except considering the stride and 
     the weight offset. Also, since we use anti-diagonal, the blocks here are in the inversed order. 
+    Note: The second half of output channels are stored in the second half of slots (offset by tile_size).
     */
+    uint64_t half_out_channels = out_channels / 2;
     for (uint64_t i = 0; i < out_channels; i++) {
         for (uint64_t j = 0; j < out_feature_size; j++) {
             for (uint64_t k = 0; k < out_feature_size; k++) {
                 uint64_t offset = stride * padded_feature_size * j + stride * k + (kernel_size - 1) * (padded_feature_size + 1);
-                if (i < out_channels / 2) {
-                    y({i, j, k}) = out_msg({i / tile_size, ((tile_size * out_channels - i) % tile_size) * padded_feature_size * padded_feature_size + offset});
+                if (i < half_out_channels) {
+                    // First half: use slot index directly (0 to tile_size-1)
+                    uint64_t slot_idx = (tile_size - i % tile_size) % tile_size;
+                    y({i, j, k}) = out_msg({i / tile_size, slot_idx * padded_feature_size * padded_feature_size + offset});
                 }
                 else {
-                    y({i, j, k}) = out_msg({(i - out_channels / 2) / tile_size, ((tile_size * out_channels - i + out_channels / 2) % tile_size) * padded_feature_size * padded_feature_size + offset});
+                    // Second half: use slot index + tile_size to access second half of slots
+                    uint64_t local_i = i - half_out_channels;
+                    uint64_t slot_idx = (tile_size - local_i % tile_size) % tile_size + tile_size;
+                    y({i, j, k}) = out_msg({local_i / tile_size, slot_idx * padded_feature_size * padded_feature_size + offset});
                 }
             }
         }
@@ -278,8 +285,8 @@ Tensor<uint64_t> Conv2DNest::DepackResult(Tensor<uint64_t> &out_msg) {
 }
 
 Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci, H, W}
-    cout << "in Conv2D, x.shape:" << endl;
-    x.print_shape();
+    // cout << "in Conv2D, x.shape:" << endl;
+    // x.print_shape();
     // cout << "in Conv2DNest operator" << endl;
     // cout << "x.shape" << endl;
     // x.print_shape();
@@ -303,6 +310,7 @@ Tensor<uint64_t> Conv2DNest::operator()(Tensor<uint64_t> &x) {  // x.shape = {Ci
     // std::cout << "out_msg generated" << std::endl;
     // out_msg.print_shape();
     Tensor<uint64_t> y = DepackResult(out_msg);  // y.shape = {Co, H, W}
+    // std::cout << "y generated" << std::endl;
     return y;
 };
 

@@ -60,6 +60,30 @@ class LinearBolt : public Linear {
 };
 
 
+class LinearNest : public Linear {
+    public:
+        uint64_t padded_dim_0;
+        uint64_t padded_dim_1;
+        uint64_t padded_dim_2;
+        uint64_t tiled_dim_1;
+        uint64_t tiled_dim_2;
+        uint64_t tile_size;
+        uint64_t input_rot;
+        Tensor<uint64_t> padded_weight;
+
+        LinearNest(uint64_t dim_0, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
+        LinearNest(uint64_t dim_0, uint64_t dim_1, uint64_t dim_2, HE::HEEvaluator* HE);
+        Tensor<uint64_t> operator()(Tensor<uint64_t> &x) override;
+
+    private:
+        Tensor<HE::unified::UnifiedPlaintext> PackWeight() override;
+        Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) override;
+        Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) override;
+        Tensor<uint64_t> DepackResult(Tensor<uint64_t> &out) override;
+        void compute_he_params();
+};
+
+
 class MatmulCtctBumble : public Module {
     public:
         HE::HEEvaluator* HE;
