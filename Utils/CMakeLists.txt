@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Utils_test)
 
+# HEXL for NTT
+find_package(HEXL 1.2.6 REQUIRED PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/hexl/hexl_build" NO_DEFAULT_PATH)
+message(STATUS "HEXL_FOUND for Utils: ${HEXL_FOUND}")
+
 # EMP-TOOL相关配置
 set(EMP-TOOL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-tool")
 set(EMP-TOOL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-tool")
@@ -33,6 +37,7 @@ target_include_directories(Utils PUBLIC include)
 
 target_link_libraries(Utils
     PUBLIC ${OPENSSL_LIBRARIES} ${GMP_LIBRARIES}
+    HEXL::hexl
 )
 
 

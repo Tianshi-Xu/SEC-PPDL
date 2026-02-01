@@ -58,7 +58,6 @@ int main(int argc, char **argv){
     output1.print(10);
     LinearNest* matmul_nest = new LinearNest(d0, weight, weight, &HE);
     Tensor<uint64_t> output_nest = matmul_nest->operator()(input);
-    cout << (998251184618198176 + 154670319988632417)%1152921504606830593 << endl;
     cout << "--------output LinearNest--------" << endl;
     output_nest.print(10);
     // MatmulCtctBumble* matmul2 = new MatmulCtctBumble(&HE);

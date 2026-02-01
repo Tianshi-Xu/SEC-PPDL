@@ -83,7 +83,6 @@ class LinearNest : public Linear {
         void compute_he_params();
 };
 
-
 class MatmulCtctBumble : public Module {
     public:
         HE::HEEvaluator* HE;

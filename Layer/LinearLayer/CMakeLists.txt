@@ -10,6 +10,7 @@ target_include_directories(LinearLayer PUBLIC include)
 
 target_link_libraries(LinearLayer PUBLIC
     LinearOperator NonlinearOperator
+    Utils
     HEXL::hexl
 )
 

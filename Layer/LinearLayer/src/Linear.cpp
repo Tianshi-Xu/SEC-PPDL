@@ -1,5 +1,6 @@
 #include <LinearLayer/Linear.h>
 #include <cassert>
+#include <hexl/hexl.hpp>
 
 using namespace seal;
 using namespace HE;
@@ -252,38 +253,88 @@ LinearNest::LinearNest(uint64_t dim_0, uint64_t dim_1, uint64_t dim_2, HE::HEEva
 }
 
 void LinearNest::compute_he_params() {
+    // Follow Conv2DNest structure: padded_dim_0 is like padded_feature_size^2
+    // Pad dim_0 to power of 2
     padded_dim_0 = dim_0 - 1;
     for (int i = 0; i < 5; i++) {
         padded_dim_0 |= padded_dim_0 >> (1 << i);
     }
     padded_dim_0 += 1;
-    tile_size = HE->polyModulusDegree / padded_dim_0;
-    padded_dim_1 = dim_1 - 1;
-    padded_dim_1 = padded_dim_1 + tile_size - padded_dim_1 % tile_size;
-    tiled_dim_1 = padded_dim_1 / tile_size;
-    padded_dim_2 = dim_2 - 1;
-    padded_dim_2 = padded_dim_2 + tile_size - padded_dim_2 % tile_size;
-    tiled_dim_2 = padded_dim_2 / tile_size;
-    input_rot = std::sqrt(tile_size);
+    
+    // Similar to Conv2DNest: tile_size = N / (2 * padded_feature_size^2)
+    // Here padded_dim_0 plays the role of padded_feature_size^2
+    tile_size = HE->polyModulusDegree / (2 * padded_dim_0);
+    
+    // IMPORTANT: tile_size should not exceed the actual number of channels
+    // Otherwise BSGS indices will be out of bounds
+    tile_size = std::min(tile_size, std::max(dim_1, dim_2));
+    
+    // Ceiling division for tiled dimensions
+    tiled_dim_1 = dim_1 / tile_size + (dim_1 % tile_size != 0);
+    tiled_dim_2 = dim_2 / tile_size + (dim_2 % tile_size != 0);
+    
+    // Padded dimensions are multiples of tile_size
+    padded_dim_1 = tiled_dim_1 * tile_size;
+    padded_dim_2 = tiled_dim_2 * tile_size;
+    
+    input_rot = 1;
+    while (input_rot * input_rot < tile_size) {
+        input_rot++;
+    }
 
     padded_weight = Tensor<uint64_t>({padded_dim_1, padded_dim_2});
-    for (uint64_t i = 0; i < weight.size(); i++) {
-        padded_weight.data()[(i / dim_2) * padded_dim_2 + i % dim_2] = weight.data()[i];
+    for (uint64_t i = 0; i < dim_1; i++) {
+        for (uint64_t j = 0; j < dim_2; j++) {
+            padded_weight({i, j}) = weight({i, j});
+        }
     }
+    
+    std::cout << "LinearNest params: dim_0=" << dim_0 << " padded=" << padded_dim_0
+              << ", dim_1=" << dim_1 << ", dim_2=" << dim_2
+              << ", tile_size=" << tile_size << ", input_rot=" << input_rot
+              << ", tiled=(" << tiled_dim_1 << "," << tiled_dim_2 << ")" << std::endl;
 }
 
 Tensor<UnifiedPlaintext> LinearNest::PackWeight() {
+    // NTT size is padded_dim_0, similar to padded_feature_size^2 in Conv2DNest
+    intel::hexl::NTT ntt(padded_dim_0, HE->plain_mod);
     Tensor<UnifiedPlaintext> weight_pt({tiled_dim_1, tiled_dim_2, tile_size}, HE->Backend());
 
     for (uint64_t i = 0; i < tiled_dim_1; i++) {
         for (uint64_t j = 0; j < tiled_dim_2; j++) {
             for (uint64_t k = 0; k < tile_size; k++) {
                 std::vector<uint64_t> tmp_vec(HE->polyModulusDegree, 0);
-                for (uint64_t l = 0; l < HE->polyModulusDegree / 2; l++) {
-                    uint64_t idx_0 = i * tile_size + (l / padded_dim_0 + input_rot - 1 - (k % input_rot)) % tile_size;
-                    uint64_t idx_1 = (3 * tile_size - l / padded_dim_0 - input_rot + (k % input_rot) - k) % tile_size;
-                    tmp_vec[l] = padded_weight({idx_0, j * tile_size + idx_1});
-                    tmp_vec[l + HE->polyModulusDegree / 2] = padded_weight({idx_0, j * tile_size + idx_1});
+                
+                for (uint64_t l = 0; l < tile_size; l++) {
+                    uint64_t in_channel_idx, out_channel_idx;
+                    
+                    if (tile_size == 1) {
+                        // Simple case: no BSGS, direct mapping
+                        in_channel_idx = i;
+                        out_channel_idx = j;
+                    } else {
+                        // BSGS anti-diagonal pattern (same as Conv2DNest)
+                        in_channel_idx = i * tile_size + (l + (input_rot - k % input_rot - 1)) % tile_size;
+                        out_channel_idx = j * tile_size + (3 * tile_size - l - k - (input_rot - k % input_rot)) % tile_size;
+                    }
+                    
+                    if (in_channel_idx < dim_1 && out_channel_idx < dim_2) {
+                        uint64_t poly_idx = l * padded_dim_0;
+                        tmp_vec[poly_idx] = padded_weight({in_channel_idx, out_channel_idx});
+                        tmp_vec[poly_idx + HE->polyModulusDegree / 2] = padded_weight({in_channel_idx, out_channel_idx});
+                    }
+                }
+
+                // Perform NTT on each block independently
+                for (uint64_t l = 0; l < 2 * tile_size; l++) {
+                    std::vector<uint64_t> tmp_ntt(padded_dim_0, 0);
+                    for (uint64_t m = 0; m < padded_dim_0; m++) {
+                        tmp_ntt[m] = tmp_vec[l * padded_dim_0 + m];
+                    }
+                    ntt.ComputeForward(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
+                    for (uint64_t m = 0; m < padded_dim_0; m++) {
+                        tmp_vec[l * padded_dim_0 + m] = tmp_ntt[m];
+                    }
                 }
 
                 bool zero_flag = 1;
@@ -302,16 +353,38 @@ Tensor<UnifiedPlaintext> LinearNest::PackWeight() {
 }
 
 Tensor<uint64_t> LinearNest::PackActivation(Tensor<uint64_t> &x) {
+    // NTT size is padded_dim_0, similar to padded_feature_size^2 in Conv2DNest
+    intel::hexl::NTT ntt(padded_dim_0, HE->plain_mod);
     Tensor<uint64_t> ac_msg({tiled_dim_1, HE->polyModulusDegree});
 
     for (uint64_t i = 0; i < tiled_dim_1; i++) {
-        for (uint64_t j = 0; j < HE->polyModulusDegree / 2; j++) {
-            uint64_t idx = i * tile_size + j / (padded_dim_0 / 2);
-            if (idx < dim_1) {
-                ac_msg({i, j}) = x({j % (padded_dim_0 / 2), idx});
-                if (j % (padded_dim_0 / 2) + padded_dim_0 / 2 < dim_0) {
-                    ac_msg({i, j + HE->polyModulusDegree / 2}) = x({j % (padded_dim_0 / 2) + padded_dim_0 / 2, i * tile_size + j / (padded_dim_0 / 2)});
+        /*
+        We initialize ciphertexts along tiled_in_channels dimension.
+        The encoding is similar to Conv2DNest: flatten the input into blocks.
+        */
+        for (uint64_t j = 0; j < tile_size; j++) {
+            uint64_t in_channel_idx = i * tile_size + j;
+            if (in_channel_idx < dim_1) {
+                // Pack all batch elements (dim_0) for this channel into one block
+                for (uint64_t b = 0; b < padded_dim_0; b++) {
+                    uint64_t poly_idx = j * padded_dim_0 + b;
+                    if (b < dim_0) {
+                        ac_msg({i, poly_idx}) = x({b, in_channel_idx});
+                        ac_msg({i, poly_idx + HE->polyModulusDegree / 2}) = x({b, in_channel_idx});
+                    }
                 }
+            }
+        }
+
+        // Perform NTT on each block
+        for (uint64_t j = 0; j < 2 * tile_size; j++) {
+            std::vector<uint64_t> tmp_ntt(padded_dim_0, 0);
+            for (uint64_t k = 0; k < padded_dim_0; k++) {
+                tmp_ntt[k] = ac_msg({i, j * padded_dim_0 + k});
+            }
+            ntt.ComputeForward(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
+            for (uint64_t k = 0; k < padded_dim_0; k++) {
+                ac_msg({i, j * padded_dim_0 + k}) = tmp_ntt[k];
             }
         }
     }
@@ -320,24 +393,51 @@ Tensor<uint64_t> LinearNest::PackActivation(Tensor<uint64_t> &x) {
 }
 
 Tensor<UnifiedCiphertext> LinearNest::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct) {
+    /** 
+     *  NOTE:
+     *  Server computes on HE->Backend()
+     *  Client does nothing
+     *  Following Conv2DNest structure with NTT-based encoding
+     */
     const auto target = HE->server ? HE->Backend() : HOST;
     Tensor<UnifiedCiphertext> out_ct({tiled_dim_2}, HE->GenerateZeroCiphertext(target));
 
-    if (HE->server) {
+    if (!HE->server) return out_ct;
+    
+    UnifiedGaloisKeys* keys = HE->galoisKeys;
+    
+    if (tile_size == 1) {
+        // Simple case: no BSGS, just multiply and accumulate
+        for (uint64_t j = 0; j < tiled_dim_2; j++) {
+            bool first = true;
+            for (uint64_t i = 0; i < tiled_dim_1; i++) {
+                UnifiedCiphertext tmp_ct(target);
+                HE->evaluator->multiply_plain(ac_ct(i), weight_pt({i, j, 0}), tmp_ct);
+                if (first) {
+                    out_ct(j) = tmp_ct;
+                    first = false;
+                } else {
+                    HE->evaluator->add_inplace(out_ct(j), tmp_ct);
+                }
+            }
+        }
+    } else {
+        // Full BSGS
         Tensor<UnifiedCiphertext> ac_rot_ct({input_rot, tiled_dim_1}, HE->GenerateZeroCiphertext(target));
         Tensor<UnifiedCiphertext> int_ct({tiled_dim_2, tile_size}, HE->GenerateZeroCiphertext(target));
-        UnifiedGaloisKeys* keys = HE->galoisKeys;
 
+        // First, complete the input rotation (rotate by padded_dim_0 for each block)
         for (uint64_t i = 0; i < input_rot; i++) {
             for (uint64_t j = 0; j < tiled_dim_1; j++) {
                 if (i) {
-                    HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_dim_0 / 2, *keys, ac_rot_ct({i, j}));
+                    HE->evaluator->rotate_rows(ac_rot_ct({i - 1, j}), padded_dim_0, *keys, ac_rot_ct({i, j}));
                 }
                 else {
                     ac_rot_ct({i, j}) = ac_ct(j);
                 }
             }
         }
+        // Then, complete all the multiplication, and reduce along the input channel dimension
         for (uint64_t i = 0; i < tiled_dim_1; i++) {
             for (uint64_t j = 0; j < tiled_dim_2; j++) {
                 for (uint64_t k = 0; k < tile_size; k++) {
@@ -353,14 +453,16 @@ Tensor<UnifiedCiphertext> LinearNest::HECompute(const Tensor<UnifiedPlaintext> &
             }
         }
         for (uint64_t i = 0; i < tiled_dim_2; i++) {
+            // Reduce along the input rotation dimension, since it has been completed
             for (uint64_t j = 0; j < tile_size; j++) {
                 if (j % input_rot) {
                     HE->evaluator->add_inplace(int_ct({i, j - j % input_rot}), int_ct({i, j}));
                 }
             }
             out_ct(i) = int_ct({i, 0});
+            // Complete output rotation to reduce along this dimension
             for (uint64_t j = input_rot; j < tile_size; j += input_rot) {
-                HE->evaluator->rotate_rows(out_ct(i), padded_dim_0 * input_rot / 2, *keys, out_ct(i));
+                HE->evaluator->rotate_rows(out_ct(i), padded_dim_0 * input_rot, *keys, out_ct(i));
                 HE->evaluator->add_inplace(out_ct(i), int_ct({i, j}));
             }
         }
@@ -370,20 +472,40 @@ Tensor<UnifiedCiphertext> LinearNest::HECompute(const Tensor<UnifiedPlaintext> &
 }
 
 Tensor<uint64_t> LinearNest::DepackResult(Tensor<uint64_t> &out_msg) {
+    // Perform iNTT before depacking, similar to Conv2DNest
+    intel::hexl::NTT ntt(padded_dim_0, HE->plain_mod);
     Tensor<uint64_t> y({dim_0, dim_2});
-    
+
+    // iNTT needs to be executed before depacking
     for (uint64_t i = 0; i < tiled_dim_2; i++) {
-        for (uint64_t j = 0; j < HE->polyModulusDegree; j++) {
-            // Fix: Add modulo tile_size to ensure slot index is in range [0, tile_size)
-            uint64_t idx = i * tile_size + ((tile_size - j / (padded_dim_0 / 2) % tile_size) % tile_size);
-            if (idx < dim_2) {
-                if (j < HE->polyModulusDegree / 2) {
-                    y({j % (padded_dim_0 / 2), idx}) = out_msg({i, j});
-                }
-                else if (j % (padded_dim_0 / 2) + padded_dim_0 / 2 < dim_0) {
-                    y({j % (padded_dim_0 / 2) + padded_dim_0 / 2, idx}) = out_msg({i, j});
-                }
+        for (uint64_t j = 0; j < 2 * tile_size; j++) {
+            std::vector<uint64_t> tmp_ntt(padded_dim_0, 0);
+            for (uint64_t k = 0; k < padded_dim_0; k++) {
+                tmp_ntt[k] = out_msg({i, j * padded_dim_0 + k});
             }
+            ntt.ComputeInverse(tmp_ntt.data(), tmp_ntt.data(), 1, 1);
+            for (uint64_t k = 0; k < padded_dim_0; k++) {
+                out_msg({i, j * padded_dim_0 + k}) = tmp_ntt[k];
+            }
+        }
+    }
+
+    // Depacking
+    for (uint64_t i = 0; i < dim_2; i++) {
+        uint64_t tile_idx = i / tile_size;
+        uint64_t slot_in_tile;
+        
+        if (tile_size == 1) {
+            // Simple case: direct mapping
+            slot_in_tile = 0;
+        } else {
+            // BSGS: blocks are in inversed order due to anti-diagonal encoding
+            slot_in_tile = (tile_size - i % tile_size) % tile_size;
+        }
+        
+        for (uint64_t b = 0; b < dim_0; b++) {
+            uint64_t poly_idx = slot_in_tile * padded_dim_0 + b;
+            y({b, i}) = out_msg({tile_idx, poly_idx});
         }
     }
 
