@@ -10,6 +10,7 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include "Datatype/UnifiedType.h"
 
 namespace Datatype {

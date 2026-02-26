@@ -1,3 +1,5 @@
+#pragma once
+
 #include <seal/seal.h>
 #include <hexl/hexl.hpp>
 #include <Datatype/Tensor.h>
@@ -105,7 +107,9 @@ class CirConv2D : public Conv2D {
         uint64_t padded_feature_size = 0;
         uint64_t input_rot;
         uint64_t block_size = 1;
-        vector<uint64_t> tmp_w;
+        uint64_t ntt_size;
+        uint64_t num_blocks_in;
+        uint64_t num_blocks_out;
 
         CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, uint64_t block_size, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
         CirConv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t block_size, HE::HEEvaluator* HE);

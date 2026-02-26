@@ -28,6 +28,9 @@ target_link_libraries(test_matmul PUBLIC LinearLayer Model)
 add_executable(test_cir_linear ${CMAKE_CURRENT_LIST_DIR}/src/TestCirLinear.cpp)
 target_link_libraries(test_cir_linear PUBLIC LinearLayer Model)
 
+add_executable(test_cir_conv ${CMAKE_CURRENT_LIST_DIR}/src/TestCirConv.cpp)
+target_link_libraries(test_cir_conv PUBLIC LinearLayer Model)
+
 add_executable(test_ntt ${CMAKE_CURRENT_LIST_DIR}/src/TestNTT.cpp)
 target_link_libraries(test_ntt PUBLIC Utils)
 

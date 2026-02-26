@@ -1,0 +1,217 @@
+diff --git a/native/src/seal/ckks.h b/native/src/seal/ckks.h
+index 9af50032..32e2bf57 100644
+--- a/native/src/seal/ckks.h
++++ b/native/src/seal/ckks.h
+@@ -79,6 +79,205 @@ namespace seal
+                 return a;
+             }
+         };
++        template <>
++        class Arithmetic<std::complex<int64_t>, std::complex<int64_t>, int64_t>
++        {
++        public:
++            int scale;
++            Arithmetic()
++            {}
++            Arithmetic(int scale)
++            {this->scale = scale;}
++
++            inline std::complex<int64_t> add(const std::complex<int64_t> &a, const std::complex<int64_t> &b) const
++            {
++                return a + b;
++            }
++
++            inline std::complex<int64_t> sub(const std::complex<int64_t> &a, const std::complex<int64_t> &b) const
++            {
++                return a - b;
++            }
++
++            inline std::complex<int64_t> mul_root(const std::complex<int64_t> &a, const std::complex<int64_t> &r) const
++            {
++                auto c = a * r;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int64_t> mul_scalar(const std::complex<int64_t> &a, const int64_t &s) const
++            {
++                auto c = a * s;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int64_t> mul_root_scalar(const std::complex<int64_t> &r, const int64_t &s) const
++            {
++                auto c = r * s;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int64_t> guard(const std::complex<int64_t> &a) const
++            {
++                return a;
++            }
++        };
++
++        template <>
++        class Arithmetic<std::complex<uint64_t>, std::complex<uint64_t>, uint64_t>
++        {
++        public:
++            int scale;
++            Arithmetic()
++            {}
++            Arithmetic(int scale)
++            {this->scale = scale;}
++
++            inline std::complex<uint64_t> add(const std::complex<uint64_t> &a, const std::complex<uint64_t> &b) const
++            {
++                return a + b;
++            }
++
++            inline std::complex<uint64_t> sub(const std::complex<uint64_t> &a, const std::complex<uint64_t> &b) const
++            {
++                return a - b;
++            }
++
++            inline std::complex<uint64_t> mul_root(const std::complex<uint64_t> &a, const std::complex<uint64_t> &r) const
++            {
++                auto c = a * r;
++                c.real(((int64_t)c.real())>>scale);
++                c.imag(((int64_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint64_t> mul_scalar(const std::complex<uint64_t> &a, const uint64_t &s) const
++            {
++                auto c = a * s;
++                c.real(((int64_t)c.real())>>scale);
++                c.imag(((int64_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint64_t> mul_root_scalar(const std::complex<uint64_t> &r, const uint64_t &s) const
++            {
++                auto c = r * s;
++                c.real(((int64_t)c.real())>>scale);
++                c.imag(((int64_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint64_t> guard(const std::complex<uint64_t> &a) const
++            {
++                return a;
++            }
++        };
++
++        template <>
++        class Arithmetic<std::complex<int128_t>, std::complex<int128_t>, int128_t>
++        {
++        public:
++            int scale;
++            Arithmetic()
++            {}
++            Arithmetic(int scale)
++            {this->scale = scale;}
++
++            inline std::complex<int128_t> add(const std::complex<int128_t> &a, const std::complex<int128_t> &b) const
++            {
++                return a + b;
++            }
++
++            inline std::complex<int128_t> sub(const std::complex<int128_t> &a, const std::complex<int128_t> &b) const
++            {
++                return a - b;
++            }
++
++            inline std::complex<int128_t> mul_root(const std::complex<int128_t> &a, const std::complex<int128_t> &r) const
++            {
++                auto c = a * r;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int128_t> mul_scalar(const std::complex<int128_t> &a, const int128_t &s) const
++            {
++                auto c = a * s;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int128_t> mul_root_scalar(const std::complex<int128_t> &r, const int128_t &s) const
++            {
++                auto c = r * s;
++                c.real(c.real()>>scale);
++                c.imag(c.imag()>>scale);
++                return c;
++            }
++
++            inline std::complex<int128_t> guard(const std::complex<int128_t> &a) const
++            {
++                return a;
++            }
++        };
++        
++        template <>
++        class Arithmetic<std::complex<uint128_t>, std::complex<uint128_t>, uint128_t>
++        {
++        public:
++            int scale;
++            Arithmetic()
++            {}
++            Arithmetic(int scale)
++            {this->scale = scale;}
++
++            inline std::complex<uint128_t> add(const std::complex<uint128_t> &a, const std::complex<uint128_t> &b) const
++            {
++                return a + b;
++            }
++
++            inline std::complex<uint128_t> sub(const std::complex<uint128_t> &a, const std::complex<uint128_t> &b) const
++            {
++                return a - b;
++            }
++
++            inline std::complex<uint128_t> mul_root(const std::complex<uint128_t> &a, const std::complex<uint128_t> &r) const
++            {
++                auto c = a * r;
++                c.real(((int128_t)c.real())>>scale);
++                c.imag(((int128_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint128_t> mul_scalar(const std::complex<uint128_t> &a, const uint128_t &s) const
++            {
++                auto c = a * s;
++                c.real(((int128_t)c.real())>>scale);
++                c.imag(((int128_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint128_t> mul_root_scalar(const std::complex<uint128_t> &r, const uint128_t &s) const
++            {
++                auto c = r * s;
++                c.real(((int128_t)c.real())>>scale);
++                c.imag(((int128_t)c.imag())>>scale);
++                return c;
++            }
++
++            inline std::complex<uint128_t> guard(const std::complex<uint128_t> &a) const
++            {
++                return a;
++            }
++        };
+     } // namespace util
+ 
+     /**
+@@ -773,4 +972,4 @@ namespace seal
+ 
+         FFTHandler fft_handler_;
+     };
+-} // namespace seal
++} // namespace seal
+\ No newline at end of file
