@@ -1,6 +1,6 @@
-# SEC-LAB-PPDL Codebase
+# 🔥SEC-LAB-PPDL Codebase 2026
 
-An open-source Privacy-Preserving Deep Learning framework by SEC LAB.
+🔥🔥🔥An open-source Privacy-Preserving Deep Learning framework by SEC LAB.🔥🔥🔥
 
 - Multiple MPC and HE protocols
 - One-click CPU / GPU switching
