@@ -66,9 +66,9 @@ cmake --build build -j
 
 Tests use a two-party protocol. Start **Server** (`r=1`) before **Client** (`r=2`) with the same port.
 
-### PrivCirNet
+### [PrivCirNet](https://proceedings.neurips.cc/paper_files/paper/2024/file/ca9873918aa72e9033041f76e77b5c15-Paper-Conference.pdf)
 
-`test_cir_linear` and `test_cir_conv` are reference implementations for [PrivCirNet](https://arxiv.org/abs/2407.13418), testing Block Circulant Linear and Convolution layers respectively. More projects will be added.
+`test_cir_linear` and `test_cir_conv` are reference implementations for [PrivCirNet]([https://arxiv.org/abs/2407.13418]([https://proceedings.neurips.cc/paper_files/paper/2024/hash/ca9873918aa72e9033041f76e77b5c15-Abstract-Conference.html](https://proceedings.neurips.cc/paper_files/paper/2024/file/ca9873918aa72e9033041f76e77b5c15-Paper-Conference.pdf))), testing Block Circulant Linear and Convolution layers respectively. More projects will be added.
 
 ```bash
 # Block Circulant Linear
