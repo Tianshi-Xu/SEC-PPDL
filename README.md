@@ -79,3 +79,26 @@ Tests use a two-party protocol. Start **Server** (`r=1`) before **Client** (`r=2
 ./build/Test/test_cir_conv r=1 p=1234     # Terminal 1 (Server)
 ./build/Test/test_cir_conv r=2 p=1234     # Terminal 2 (Client)
 ```
+
+## Citation
+
+If you use this codebase, please cite both of the following:
+
+```bibtex
+@article{xu2024privcirnet,
+  title={Privcirnet: Efficient private inference via block circulant transformation},
+  author={Xu, Tianshi and Wu, Lemeng and Wang, Runsheng and Li, Meng},
+  journal={Advances in Neural Information Processing Systems},
+  volume={37},
+  pages={111802--111831},
+  year={2024}
+}
+
+@inproceedings{xu2025breaking,
+  title={Breaking the layer barrier: Remodeling private transformer inference with hybrid {CKKS} and {MPC}},
+  author={Xu, Tianshi and Lu, Wen-jie and Yu, Jiangrui and Chen, Yi and Lin, Chenqi and Wang, Runsheng and Li, Meng},
+  booktitle={34th USENIX Security Symposium (USENIX Security 25)},
+  pages={2653--2672},
+  year={2025}
+}
+```
