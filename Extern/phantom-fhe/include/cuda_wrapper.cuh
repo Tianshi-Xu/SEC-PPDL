@@ -216,19 +216,27 @@ namespace phantom::util {
             if (ptr_ == nullptr) {
                 return;
             }
-            if (cudaStream_ == nullptr) {
-                std::cerr << "Warning: stream is null when freeing, use default per-thread stream" << std::endl;
-                cudaStream_ = cudaStreamPerThread;
-            }
-            auto err = free_with_fallback(ptr_, cudaStream_, used_async_alloc_);
-            if (err != cudaSuccess) {
-                std::cerr << "Error freeing " << n_ << " * " << sizeof(T) << " bytes at " << ptr_
-                          << " on stream " << cudaStream_ << std::endl;
-                std::cerr << "Error code: " << cudaGetErrorString(err) << std::endl;
-            }
+            T *ptr = ptr_;
+            const size_t n = n_;
+            cudaStream_t stream = cudaStream_;
+            const bool used_async_alloc = used_async_alloc_;
+
+            // Make reset idempotent: avoid double-free if reset() is called again (e.g., destructor after manual reset).
+            ptr_ = nullptr;
             n_ = 0;
             cudaStream_ = nullptr;
             used_async_alloc_ = true;
+
+            if (stream == nullptr) {
+                std::cerr << "Warning: stream is null when freeing, use default per-thread stream" << std::endl;
+                stream = cudaStreamPerThread;
+            }
+            auto err = free_with_fallback(ptr, stream, used_async_alloc);
+            if (err != cudaSuccess) {
+                std::cerr << "Error freeing " << n << " * " << sizeof(T) << " bytes at " << ptr
+                          << " on stream " << stream << std::endl;
+                std::cerr << "Error code: " << cudaGetErrorString(err) << std::endl;
+            }
         }
     };
 

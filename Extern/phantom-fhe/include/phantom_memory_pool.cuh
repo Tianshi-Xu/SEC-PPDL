@@ -33,7 +33,11 @@ inline cudaError_t pool_cudaFree(void *devPtr) {
 }
 
 inline cudaError_t pool_cudaMallocAsync(void **devPtr, size_t size, cudaStream_t stream) {
-    return phantom_device_allocator().DeviceAllocate(devPtr, size, stream);
+    (void) stream;
+    // Avoid binding cached blocks to ephemeral streams. CUB replays event-record on
+    // the associated stream at free time; per-thread/default transient stream handles
+    // can become invalid during teardown and trigger invalid-resource-handle errors.
+    return phantom_device_allocator().DeviceAllocate(devPtr, size, nullptr);
 }
 
 inline cudaError_t pool_cudaFreeAsync(void *devPtr, cudaStream_t stream) {
