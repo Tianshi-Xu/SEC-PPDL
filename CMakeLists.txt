@@ -15,6 +15,24 @@ set(EMP-OT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Extern/emp-ot")
 include_directories(${EMP-OT_INCLUDE_DIR} 
                     ${EMP-TOOL_INCLUDE_DIR}) 
 
+# CUDA 13+ may place cuda::std headers under "<cuda-root>/.../include/cccl".
+# Add it globally in GPU builds so every target can resolve <cuda/std/...>.
+if(USE_HE_GPU)
+    set(_cuda_cccl_candidates
+        "$ENV{CUDA_HOME}/targets/x86_64-linux/include/cccl"
+        "$ENV{CUDA_HOME}/include/cccl"
+        "/usr/local/cuda/targets/x86_64-linux/include/cccl"
+        "/usr/local/cuda/include/cccl")
+    foreach(_cccl_dir IN LISTS _cuda_cccl_candidates)
+        if(_cccl_dir AND EXISTS "${_cccl_dir}")
+            include_directories(SYSTEM "${_cccl_dir}")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${_cccl_dir}")
+            message(STATUS "Global CUDA CCCL include: ${_cccl_dir}")
+            break()
+        endif()
+    endforeach()
+endif()
+
 
 add_subdirectory(Datatype)
 add_subdirectory(Utils)

@@ -435,6 +435,13 @@ int main()
         }
         nvtxPop("BS-Rot", backend);
 
+        // multiply_plain_ntt requires ciphertext operands in NTT form.
+        vector<UnifiedCiphertext> baby_ctxts_ntt = baby_ctxts;
+        for (size_t i = 0; i < baby_step; i++)
+        {
+            evaluator.transform_to_ntt_inplace(baby_ctxts_ntt[i]);
+        }
+
         for (size_t tiled_col_idx = 0; tiled_col_idx < num_tiled_weight_cols; tiled_col_idx++)
         {
             auto &result_ctxt = result_ctxts[tiled_col_idx];
@@ -451,9 +458,9 @@ int main()
 
                 nvtxPush("MAC", backend);
 #ifdef ONLINE_ENCODING
-                evaluator.multiply_plain_ntt(baby_ctxts[0], weight_ptxt[0], giant_ctxt);
+                evaluator.multiply_plain_ntt(baby_ctxts_ntt[0], weight_ptxt[0], giant_ctxt);
 #else
-                evaluator.multiply_plain_ntt(baby_ctxts[0], random_pt, giant_ctxt);
+                evaluator.multiply_plain_ntt(baby_ctxts_ntt[0], random_pt, giant_ctxt);
 #endif
 
                 for (size_t baby_idx = 1; baby_idx < baby_step; baby_idx++)
@@ -461,13 +468,15 @@ int main()
                     UnifiedCiphertext temp_ctxt(backend);
 #ifdef ONLINE_ENCODING
                     evaluator.multiply_plain_ntt(
-                        baby_ctxts[baby_idx], weight_ptxt[i * baby_step + baby_idx], temp_ctxt);
+                        baby_ctxts_ntt[baby_idx], weight_ptxt[i * baby_step + baby_idx], temp_ctxt);
 #else
-                    evaluator.multiply_plain_ntt(baby_ctxts[baby_idx], random_pt, temp_ctxt);
+                    evaluator.multiply_plain_ntt(baby_ctxts_ntt[baby_idx], random_pt, temp_ctxt);
 #endif
                     evaluator.add_inplace(giant_ctxt, temp_ctxt);
                 }
                 nvtxPop("MAC", backend);
+
+                evaluator.transform_from_ntt_inplace(giant_ctxt);
 
                 if (group_idx == 0 && i == 0)
                 {

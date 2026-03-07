@@ -14,6 +14,16 @@ if(USE_HE_GPU)
     message(STATUS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe")
     find_package(Phantom REQUIRED PATHS "${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe/build_phantom")
     message(STATUS "Phantom_FOUND:${Phantom_FOUND}")
+    # CUDA 13+ may place cuda::std headers under "<cuda include>/cccl".
+    set(CUDA_CCCL_INCLUDE_DIRS "")
+    foreach(_cuda_inc IN LISTS CUDAToolkit_INCLUDE_DIRS)
+        if(EXISTS "${_cuda_inc}/cccl")
+            list(APPEND CUDA_CCCL_INCLUDE_DIRS "${_cuda_inc}/cccl")
+        endif()
+    endforeach()
+    if(CUDA_CCCL_INCLUDE_DIRS)
+        message(STATUS "Adding CUDA CCCL include dirs: ${CUDA_CCCL_INCLUDE_DIRS}")
+    endif()
     # if(NOT Phantom_FOUND)
     #     message(STATUS "Phantom was not found: install locally")
     #     execute_process(COMMAND ${CMAKE_COMMAND} -S . -B build -DCMAKE_INSTALL_PREFIX=${FATHER_PROJECT_SOURCE_DIR}/Extern/phantom-fhe
@@ -52,6 +62,9 @@ if(NOT USE_HE_GPU)
     )
 else()
     target_compile_definitions(HE PUBLIC USE_HE_GPU)
+    if(CUDA_CCCL_INCLUDE_DIRS)
+        target_include_directories(HE PUBLIC ${CUDA_CCCL_INCLUDE_DIRS})
+    endif()
     target_link_libraries(HE PUBLIC
         SEAL::seal
         phantom::Phantom

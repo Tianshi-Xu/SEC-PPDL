@@ -147,7 +147,7 @@ void bfv_rotation_example()
     uint64_t polyModulusDegree = 8192;
     uint64_t plainWidth = 20;
 
-    UnifiedContext context(polyModulusDegree, plainWidth, true, Datatype::DEVICE);
+    UnifiedContext context(polyModulusDegree, plainWidth, {}, true, Datatype::DEVICE);
     print_parameters(context);
     UnifiedBatchEncoder encoder(context);
     UnifiedEvaluator evaluator(context);
@@ -238,7 +238,7 @@ void bfv_ct_ct_mult_example()
     uint64_t polyModulusDegree = 8192;
     uint64_t plainWidth = 20;
 
-    UnifiedContext context(polyModulusDegree, plainWidth, true, Datatype::DEVICE);
+    UnifiedContext context(polyModulusDegree, plainWidth, {}, true, Datatype::DEVICE);
     print_parameters(context);
     UnifiedBatchEncoder encoder(context);
     UnifiedEvaluator evaluator(context);
@@ -332,7 +332,7 @@ void bfv_pt_ct_mult_example()
     uint64_t polyModulusDegree = 8192;
     uint64_t plainWidth = 20;
 
-    UnifiedContext context(polyModulusDegree, plainWidth, true, Datatype::DEVICE);
+    UnifiedContext context(polyModulusDegree, plainWidth, {}, true, Datatype::DEVICE);
     print_parameters(context);
     UnifiedBatchEncoder encoder(context);
     UnifiedEvaluator evaluator(context);
@@ -424,7 +424,7 @@ void bfv_pt_ct_mult_with_pre_ntt_example()
     uint64_t polyModulusDegree = 8192;
     uint64_t plainWidth = 20;
 
-    UnifiedContext context(polyModulusDegree, plainWidth, true, Datatype::DEVICE);
+    UnifiedContext context(polyModulusDegree, plainWidth, {}, true, Datatype::DEVICE);
     print_parameters(context);
     UnifiedBatchEncoder encoder(context);
     UnifiedEvaluator evaluator(context);
