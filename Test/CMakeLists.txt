@@ -15,6 +15,8 @@ if(USE_HE_GPU)
     target_link_libraries(testHEGPU PUBLIC HE Datatype)
     add_executable(testFFN ${CMAKE_CURRENT_LIST_DIR}/src/TestFFN.cpp)
     target_link_libraries(testFFN PUBLIC HE Datatype)
+    add_executable(test_pir_gpu ${CMAKE_CURRENT_LIST_DIR}/src/TestPIRGPU.cpp)
+    target_link_libraries(test_pir_gpu PUBLIC HE Datatype)
 endif()
 
 

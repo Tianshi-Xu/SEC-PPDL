@@ -570,7 +570,7 @@ void bench_gemm(nvbench::state &state) {
     const auto h_modulus_chain = CoeffModulus::Create(dim, std::vector<int>(batch_size, 50));
     // copy modulus to device
     DModulus *d_modulus_chain;
-    cudaMalloc(&d_modulus_chain, batch_size * sizeof(DModulus));
+    pool_cudaMalloc(&d_modulus_chain, batch_size * sizeof(DModulus));
     for (size_t i = 0; i < batch_size; i++) {
         d_modulus_chain[i].set(h_modulus_chain[i].value(), h_modulus_chain[i].const_ratio()[0],
                                h_modulus_chain[i].const_ratio()[1]);
@@ -597,19 +597,19 @@ void bench_gemm(nvbench::state &state) {
     }
 
     uint64_t *d_batched_A;
-    cudaMalloc(&d_batched_A, batch_size * m * k * sizeof(uint64_t));
+    pool_cudaMalloc(&d_batched_A, batch_size * m * k * sizeof(uint64_t));
     cudaMemcpy(d_batched_A, h_batched_A, batch_size * m * k * sizeof(uint64_t), cudaMemcpyHostToDevice);
 
     uint64_t *d_batched_A_shoup;
-    cudaMalloc(&d_batched_A_shoup, batch_size * m * k * sizeof(uint64_t));
+    pool_cudaMalloc(&d_batched_A_shoup, batch_size * m * k * sizeof(uint64_t));
     cudaMemcpy(d_batched_A_shoup, h_batched_A_shoup, batch_size * m * k * sizeof(uint64_t), cudaMemcpyHostToDevice);
 
     uint64_t *d_batched_B;
-    cudaMalloc(&d_batched_B, batch_size * k * n * sizeof(uint64_t));
+    pool_cudaMalloc(&d_batched_B, batch_size * k * n * sizeof(uint64_t));
     cudaMemcpy(d_batched_B, h_batched_B, batch_size * k * n * sizeof(uint64_t), cudaMemcpyHostToDevice);
 
     uint64_t *d_batched_C;
-    cudaMalloc(&d_batched_C, batch_size * m * n * sizeof(uint64_t));
+    pool_cudaMalloc(&d_batched_C, batch_size * m * n * sizeof(uint64_t));
 
     if (version == 0) {
         state.exec([d_batched_C, &ldc, d_batched_A, &lda, d_batched_B, &ldb, d_modulus_chain, &m, &n, &k,
@@ -655,11 +655,11 @@ void bench_gemm(nvbench::state &state) {
         }
     }
 
-    cudaFree(d_modulus_chain);
-    cudaFree(d_batched_A);
-    cudaFree(d_batched_A_shoup);
-    cudaFree(d_batched_B);
-    cudaFree(d_batched_C);
+    pool_cudaFree(d_modulus_chain);
+    pool_cudaFree(d_batched_A);
+    pool_cudaFree(d_batched_A_shoup);
+    pool_cudaFree(d_batched_B);
+    pool_cudaFree(d_batched_C);
     delete[] h_batched_A;
     delete[] h_batched_A_shoup;
     delete[] h_batched_B;

@@ -16,6 +16,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
+#include "phantom_memory_pool.cuh"
+
 #define PHANTOM_CHECK_CUDA(val) check((val), #val, __FILE__, __LINE__)
 #define PHANTOM_CHECK_CUDA_LAST() checkLast(__FILE__, __LINE__)
 
@@ -51,14 +53,14 @@ namespace phantom::util {
     template<class T>
     inline cudaError_t malloc_with_fallback(T **ptr, size_t n, const cudaStream_t &stream, bool &used_async_alloc) {
         used_async_alloc = true;
-        cudaError_t err = cudaMallocAsync(reinterpret_cast<void **>(ptr), n * sizeof(T), stream);
+        cudaError_t err = pool_cudaMallocAsync(reinterpret_cast<void **>(ptr), n * sizeof(T), stream);
         if (err == cudaSuccess) {
             return cudaSuccess;
         }
         if (is_async_alloc_unsupported(err)) {
             // Clear stale async-allocation error before fallback.
             (void)cudaGetLastError();
-            err = cudaMalloc(reinterpret_cast<void **>(ptr), n * sizeof(T));
+            err = pool_cudaMalloc(reinterpret_cast<void **>(ptr), n * sizeof(T));
             if (err == cudaSuccess) {
                 used_async_alloc = false;
             }
@@ -69,17 +71,17 @@ namespace phantom::util {
     template<class T>
     inline cudaError_t free_with_fallback(T *ptr, const cudaStream_t &stream, bool used_async_alloc) {
         if (used_async_alloc) {
-            cudaError_t err = cudaFreeAsync(ptr, stream);
+            cudaError_t err = pool_cudaFreeAsync(ptr, stream);
             if (err == cudaSuccess) {
                 return cudaSuccess;
             }
             if (is_async_alloc_unsupported(err)) {
                 (void)cudaGetLastError();
-                return cudaFree(ptr);
+                return pool_cudaFree(ptr);
             }
             return err;
         }
-        return cudaFree(ptr);
+        return pool_cudaFree(ptr);
     }
 
     class cuda_stream_wrapper {
