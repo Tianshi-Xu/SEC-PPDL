@@ -6,6 +6,8 @@ project(test)
 # target_link_libraries(test_HE PUBLIC HE Utils)
 add_executable(test_HE ${CMAKE_CURRENT_LIST_DIR}/src/test_HE.cpp)
 target_link_libraries(test_HE PUBLIC Model)
+add_executable(test_pir_baseline ${CMAKE_CURRENT_LIST_DIR}/src/TestPIRBaseline.cpp)
+target_link_libraries(test_pir_baseline PUBLIC HE Datatype)
 
 
 if(USE_HE_GPU)

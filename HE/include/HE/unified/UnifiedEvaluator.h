@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <seal/evaluator.h>
 #include "HE/unified/UnifiedCiphertext.h"
 #include "HE/unified/UnifiedEvk.h"
@@ -49,6 +50,20 @@ namespace HE
             inline auto &host_evalutor() const
             {
                 return *this;
+            }
+
+            inline void apply_galois_inplace(
+                UnifiedCiphertext &encrypted, std::uint32_t galois_elt, const UnifiedGaloisKeys &galois_keys) const
+            {
+                seal::Evaluator::apply_galois_inplace(encrypted, galois_elt, galois_keys);
+            }
+
+            inline void apply_galois(
+                const UnifiedCiphertext &encrypted, std::uint32_t galois_elt, const UnifiedGaloisKeys &galois_keys,
+                UnifiedCiphertext &destination) const
+            {
+                destination = encrypted;
+                apply_galois_inplace(destination, galois_elt, galois_keys);
             }
         };
 
@@ -214,6 +229,17 @@ namespace HE
             {
                 destination = encrypted;
                 multiply_plain_ntt_inplace(destination, plain);
+            }
+
+            void apply_galois_inplace(
+                UnifiedCiphertext &encrypted, std::uint32_t galois_elt, const UnifiedGaloisKeys &galois_keys) const;
+
+            inline void apply_galois(
+                const UnifiedCiphertext &encrypted, std::uint32_t galois_elt, const UnifiedGaloisKeys &galois_keys,
+                UnifiedCiphertext &destination) const
+            {
+                destination = encrypted;
+                apply_galois_inplace(destination, galois_elt, galois_keys);
             }
 
             void rotate_vector_inplace(

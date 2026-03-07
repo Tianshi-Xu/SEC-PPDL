@@ -59,6 +59,12 @@ void PhantomEvaluator::mod_switch_to_next(const PhantomCiphertext &encrypted, Ph
     destination = std::move(phantom::mod_switch_to_next(context_, encrypted));
 }
 
+void PhantomEvaluator::apply_galois_inplace(
+    PhantomCiphertext &encrypted, std::uint32_t galois_elt, const PhantomGaloisKey &galois_key) const
+{
+    phantom::apply_galois_inplace(context_, encrypted, static_cast<size_t>(galois_elt), galois_key);
+}
+
 void PhantomEvaluator::rotate_vector_inplace(
     PhantomCiphertext &encrypted, int step, const PhantomGaloisKey &galois_key) const
 {

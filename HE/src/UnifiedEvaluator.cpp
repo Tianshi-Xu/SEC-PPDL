@@ -156,6 +156,20 @@ void UnifiedEvaluator::multiply_plain_ntt_inplace(UnifiedCiphertext &encrypted, 
     }
 }
 
+void UnifiedEvaluator::apply_galois_inplace(
+    UnifiedCiphertext &encrypted, std::uint32_t galois_elt, const UnifiedGaloisKeys &galois_keys) const
+{
+    backend_check(encrypted, galois_keys);
+    if (encrypted.on_host() && galois_keys.on_host())
+    {
+        seal_eval_->apply_galois_inplace(encrypted, galois_elt, galois_keys);
+    }
+    else
+    {
+        phantom_eval_->apply_galois_inplace(encrypted, galois_elt, galois_keys);
+    }
+}
+
 void UnifiedEvaluator::rotate_vector_inplace(
     UnifiedCiphertext &encrypted, int step, const UnifiedGaloisKeys &galois_key) const
 {

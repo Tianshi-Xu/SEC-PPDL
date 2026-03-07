@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <phantom/batchencoder.h>
 #include <phantom/ciphertext.h>
 #include <phantom/context.cuh>
@@ -81,6 +82,9 @@ namespace HE
         void rescale_to_next(const PhantomCiphertext &encrypted, PhantomCiphertext &destination) const;
 
         void mod_switch_to_next(const PhantomCiphertext &encrypted, PhantomCiphertext &destination) const;
+
+        void apply_galois_inplace(
+            PhantomCiphertext &encrypted, std::uint32_t galois_elt, const PhantomGaloisKey &galois_key) const;
 
         void rotate_vector_inplace(PhantomCiphertext &encrypted, int step, const PhantomGaloisKey &galois_key) const;
 

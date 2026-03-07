@@ -1,6 +1,13 @@
 .cache
 .vscode
 build/
+build_gpu/
+build*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
 *.tex
 *.zip
 *.tar.gz
