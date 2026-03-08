@@ -17,6 +17,10 @@ if(USE_HE_GPU)
     target_link_libraries(testFFN PUBLIC HE Datatype)
     add_executable(test_pir_gpu ${CMAKE_CURRENT_LIST_DIR}/src/TestPIRGPU.cpp)
     target_link_libraries(test_pir_gpu PUBLIC HE Datatype)
+    add_executable(test_batch_pir_gpu ${CMAKE_CURRENT_LIST_DIR}/src/batch_gpu_pir.cpp)
+    target_link_libraries(test_batch_pir_gpu PUBLIC HE Datatype)
+    add_executable(test_ntt_microbench_gpu ${CMAKE_CURRENT_LIST_DIR}/src/TestPhantomNTTMicroBench.cpp)
+    target_link_libraries(test_ntt_microbench_gpu PUBLIC HE Datatype)
 endif()
 
 

@@ -1316,6 +1316,55 @@ Returns (f, e1, e2) such that
         encrypted.set_scale(new_scale);
     }
 
+    void multiply_plain_ntt_and_add_inplace(
+        const PhantomContext &context, const PhantomCiphertext &encrypted,
+        const PhantomPlaintext &plain, PhantomCiphertext &destination) {
+        const auto &s = cudaStreamPerThread;
+
+        if (!encrypted.is_ntt_form() || !plain.is_ntt_form() || !destination.is_ntt_form()) {
+            throw std::invalid_argument("multiply_plain_ntt_and_add_inplace expects NTT-form operands");
+        }
+        if (encrypted.chain_index() != plain.chain_index() ||
+            encrypted.coeff_modulus_size() != plain.coeff_modulus_size()) {
+            throw std::invalid_argument("encrypted and plain parameter mismatch");
+        }
+        if (destination.chain_index() != encrypted.chain_index() ||
+            destination.coeff_modulus_size() != encrypted.coeff_modulus_size() ||
+            destination.poly_modulus_degree() != encrypted.poly_modulus_degree() ||
+            destination.size() != encrypted.size()) {
+            throw std::invalid_argument("destination and encrypted parameter mismatch");
+        }
+
+        // Extract encryption parameters.
+        auto &context_data = context.get_context_data(encrypted.chain_index());
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        auto coeff_mod_size = coeff_modulus.size();
+        auto poly_degree = parms.poly_modulus_degree();
+        auto base_rns = context.gpu_rns_tables().modulus();
+        auto rns_coeff_count = poly_degree * coeff_mod_size;
+        uint64_t gridDimGlb = rns_coeff_count / blockDimGlb.x;
+
+        for (size_t i = 0; i < encrypted.size(); i++) {
+            const uint64_t *src = encrypted.data() + i * rns_coeff_count;
+            uint64_t *dst = destination.data() + i * rns_coeff_count;
+            multiply_and_add_rns_poly<<<gridDimGlb, blockDimGlb, 0, s>>>(
+                    src, plain.data(), dst, base_rns, dst, poly_degree, coeff_mod_size);
+        }
+    }
+
+    void multiply_plain_and_add_inplace(
+        const PhantomContext &context, const PhantomCiphertext &encrypted,
+        const PhantomPlaintext &plain, PhantomCiphertext &destination) {
+        if (encrypted.is_ntt_form() && plain.is_ntt_form() && destination.is_ntt_form()) {
+            multiply_plain_ntt_and_add_inplace(context, encrypted, plain, destination);
+            return;
+        }
+        PhantomCiphertext temp = encrypted;
+        multiply_plain_inplace(context, temp, plain);
+        add_inplace(context, destination, temp);
+    }
+
 
 #ifndef RNS_POLY_BATCH
     static void multiply_plain_normal(const PhantomContext &context, PhantomCiphertext &encrypted,

@@ -6,6 +6,14 @@ project(Utils_test)
 # HEXL for NTT
 find_package(HEXL 1.2.6 REQUIRED PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/hexl/hexl_build" NO_DEFAULT_PATH)
 message(STATUS "HEXL_FOUND for Utils: ${HEXL_FOUND}")
+if(TARGET HEXL::hexl AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_target_property(_hexl_if_opts HEXL::hexl INTERFACE_COMPILE_OPTIONS)
+    if(_hexl_if_opts)
+        list(FILTER _hexl_if_opts EXCLUDE REGEX "^-Wno-unknown-warning$")
+        list(FILTER _hexl_if_opts EXCLUDE REGEX "^-Wno-unknown-warning-option$")
+        set_target_properties(HEXL::hexl PROPERTIES INTERFACE_COMPILE_OPTIONS "${_hexl_if_opts}")
+    endif()
+endif()
 
 # EMP-TOOL相关配置
 set(EMP-TOOL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Extern/emp-tool")
@@ -23,7 +31,19 @@ file(GLOB_RECURSE srcs CONFIGURE_DEPENDS src/*.cpp include/*.h)
 add_library(Utils STATIC ${srcs})
 target_compile_options(Utils
     PUBLIC
-    "-pthread;-maes;-msse4.1;-mavx;-mavx2;-faligned-new;-std=c++17;-O3;-Wno-parentheses-equality;-Wno-deprecated-declarations;-Wno-macro-redefined")
+    -pthread
+    -maes
+    -msse4.1
+    -mavx
+    -mavx2
+    -faligned-new
+    -std=c++17
+    -O3
+    -Wno-deprecated-declarations
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(Utils PUBLIC -Wno-parentheses-equality -Wno-macro-redefined)
+endif()
 if(USE_RANDOM_DEVICE)
     target_compile_definitions(Utils PUBLIC EMP_USE_RANDOM_DEVICE=1)
 else(USE_RANDOM_DEVICE)

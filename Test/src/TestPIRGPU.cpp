@@ -2,6 +2,7 @@
 #include <phantom/ciphertext.h>
 #include <phantom/context.cuh>
 #include <phantom/evaluate.cuh>
+#include <phantom/phantom_memory_pool.cuh>
 #include <phantom/plaintext.h>
 #include <phantom/polymath.cuh>
 #include <phantom/secretkey.h>
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -514,9 +516,10 @@ vector<PhantomCiphertext> expand_query_sealpir_device(
         galois_elts[i] = (n + (1U << i)) >> i;
     }
 
-    uint64_t two_data = 2;
+    vector<uint64_t> two_coeff(static_cast<size_t>(n), 0ULL);
+    two_coeff[0] = 2ULL;
     PhantomPlaintext two;
-    two.load(&two_data, context, 0, 1.0);
+    two.load(two_coeff.data(), context, 0, 1.0);
 
     vector<PhantomCiphertext> temp{ encrypted };
     PhantomCiphertext temp_rotated;
@@ -601,6 +604,30 @@ Tensor3D<PhantomPlaintext> encode_db_to_device(
     return db_plain;
 }
 
+void copy_ciphertext_device_fast(const PhantomCiphertext &src, PhantomCiphertext &dst)
+{
+    const bool same_layout = dst.size() == src.size() && dst.chain_index() == src.chain_index() &&
+                             dst.coeff_modulus_size() == src.coeff_modulus_size() &&
+                             dst.poly_modulus_degree() == src.poly_modulus_degree() && dst.data() != nullptr;
+    if (!same_layout)
+    {
+        dst = src;
+        return;
+    }
+
+    const size_t coeff_count = src.size() * src.coeff_modulus_size() * src.poly_modulus_degree();
+    const size_t bytes = coeff_count * sizeof(uint64_t);
+    const cudaError_t err = cudaMemcpyAsync(dst.data(), src.data(), bytes, cudaMemcpyDeviceToDevice, cudaStreamPerThread);
+    if (err != cudaSuccess)
+    {
+        throw std::runtime_error("copy_ciphertext_device_fast cudaMemcpyAsync failed: " + string(cudaGetErrorString(err)));
+    }
+    dst.set_scale(src.scale());
+    dst.set_ntt_form(src.is_ntt_form());
+    dst.set_correction_factor(src.correction_factor());
+    dst.SetNoiseScaleDeg(src.GetNoiseScaleDeg());
+}
+
 struct PirQueryBundle
 {
     PhantomCiphertext compressed_x{};
@@ -670,12 +697,17 @@ public:
         {
             throw std::invalid_argument("query_batch_size > 1 is reserved for next batch-enabled version.");
         }
+        (void)phantom_device_allocator();
     }
 
     PirGpuComputeResult run(
         const Tensor3D<PhantomPlaintext> &db_plain, const vector<PhantomCiphertext> &expanded_x,
         const vector<PhantomCiphertext> &row_selectors, size_t row_count, size_t block_count, size_t chunk_count) const
     {
+        if (row_count == 0 || block_count == 0 || chunk_count == 0)
+        {
+            throw std::invalid_argument("row_count, block_count, and chunk_count must be positive.");
+        }
         if (row_selectors.size() != row_count)
         {
             throw std::invalid_argument("row_selectors size mismatch.");
@@ -686,74 +718,98 @@ public:
         }
 
         PirGpuComputeResult result;
-
-        Tensor2D<PhantomCiphertext> t_layer1(row_count, chunk_count);
         vector<PhantomCiphertext> t_layer2(chunk_count);
 
         result.t_compute_muladd_ms = time_phase(
             [&]() {
-                // Extension point for ct-pt kernel fusion / row batching.
+                if (expanded_x.empty())
+                {
+                    throw std::invalid_argument("expanded_x is empty.");
+                }
+                const size_t query_chain_index = expanded_x.front().chain_index();
+
+                // Step 2.1: transform expanded selectors to NTT once.
+                vector<PhantomCiphertext> expanded_x_ntt = expanded_x;
+                for (size_t c = 0; c < block_count; ++c)
+                {
+                    if (!expanded_x_ntt[c].is_ntt_form())
+                    {
+                        phantom::transform_to_ntt_inplace(context_, expanded_x_ntt[c]);
+                    }
+                    if (expanded_x_ntt[c].chain_index() != query_chain_index)
+                    {
+                        throw std::logic_error("expanded_x chain index mismatch in lazy-INTT path.");
+                    }
+                }
+
+                vector<PhantomCiphertext> row_terms(row_count);
+                PhantomCiphertext accum_ntt;
+                PhantomCiphertext scratch_prod_ntt;
                 for (size_t k = 0; k < chunk_count; ++k)
                 {
                     for (size_t r = 0; r < row_count; ++r)
                     {
                         bool initialized = false;
-                        PhantomCiphertext accum;
-
                         for (size_t c = 0; c < block_count; ++c)
                         {
-                            PhantomCiphertext prod = expanded_x[c];
-                            phantom::multiply_plain_inplace(context_, prod, db_plain.at(r, c, k));
+                            // Step 2.2: plain is transformed on-the-fly to NTT for this multiply.
+                            PhantomPlaintext plain_ntt = db_plain.at(r, c, k);
+                            if (!plain_ntt.is_ntt_form())
+                            {
+                                phantom::transform_to_ntt_inplace(context_, plain_ntt, query_chain_index);
+                            }
+                            else if (plain_ntt.chain_index() != query_chain_index)
+                            {
+                                throw std::logic_error("plain_ntt chain index mismatch in lazy-INTT path.");
+                            }
 
                             if (!initialized)
                             {
-                                accum = std::move(prod);
+                                copy_ciphertext_device_fast(expanded_x_ntt[c], accum_ntt);
+                                phantom::multiply_plain_ntt_inplace(context_, accum_ntt, plain_ntt);
                                 initialized = true;
                             }
                             else
                             {
-                                phantom::add_inplace(context_, accum, prod);
+                                if (options_.enable_ct_pt_fusion)
+                                {
+                                    // Step 2.3: NTT-domain fused multiply-add.
+                                    phantom::multiply_plain_ntt_and_add_inplace(
+                                        context_, expanded_x_ntt[c], plain_ntt, accum_ntt);
+                                }
+                                else
+                                {
+                                    copy_ciphertext_device_fast(expanded_x_ntt[c], scratch_prod_ntt);
+                                    phantom::multiply_plain_ntt_inplace(context_, scratch_prod_ntt, plain_ntt);
+                                    phantom::add_inplace(context_, accum_ntt, scratch_prod_ntt);
+                                }
                             }
-                        }
-
-                        t_layer1.at(r, k) = std::move(accum);
-                    }
-                }
-
-                // Extension point for ct-ct + relinearize fusion.
-                for (size_t k = 0; k < chunk_count; ++k)
-                {
-                    bool initialized = false;
-                    PhantomCiphertext accum;
-
-                    for (size_t r = 0; r < row_count; ++r)
-                    {
-                        PhantomCiphertext term = t_layer1.at(r, k);
-                        if (options_.enable_ct_ct_fusion)
-                        {
-                            phantom::multiply_and_relin_inplace(context_, term, row_selectors[r], relin_keys_);
-                        }
-                        else
-                        {
-                            phantom::multiply_inplace(context_, term, row_selectors[r]);
-                            phantom::relinearize_inplace(context_, term, relin_keys_);
                         }
 
                         if (!initialized)
                         {
-                            accum = std::move(term);
-                            initialized = true;
+                            throw std::logic_error("accum_ntt is uninitialized.");
+                        }
+                        // Step 2.4: lazy INTT only once per (r,k), after finishing c-loop.
+                        phantom::transform_from_ntt_inplace(context_, accum_ntt);
+
+                        if (options_.enable_ct_ct_fusion)
+                        {
+                            phantom::multiply_and_relin_inplace(context_, accum_ntt, row_selectors[r], relin_keys_);
                         }
                         else
                         {
-                            phantom::add_inplace(context_, accum, term);
+                            phantom::multiply_inplace(context_, accum_ntt, row_selectors[r]);
+                            phantom::relinearize_inplace(context_, accum_ntt, relin_keys_);
                         }
-                    }
 
-                    t_layer2[k] = std::move(accum);
+                        copy_ciphertext_device_fast(accum_ntt, row_terms[r]);
+                    }
+                    // Step 3.1: batch row accumulation with add_many to reduce launch overhead.
+                    phantom::add_many(context_, row_terms, t_layer2[k]);
                 }
             },
-            true, "T_Compute_MulAdd");
+            true, "T_Compute_MulAddLazyINTT");
 
         if (options_.capture_chunk_answers)
         {
@@ -762,18 +818,46 @@ public:
 
         result.t_compute_rot_ms = time_phase(
             [&]() {
+                result.answer = t_layer2[0];
+                if (chunk_count <= 1)
+                {
+                    return;
+                }
+
+                // Step 3.2: dispatch rotations asynchronously from different host threads
+                // so each one uses a thread-local CUDA stream.
+                int current_device = 0;
+                cudaError_t device_err = cudaGetDevice(&current_device);
+                if (device_err != cudaSuccess)
+                {
+                    throw std::runtime_error(
+                        "cudaGetDevice failed before async rotate: " + string(cudaGetErrorString(device_err)));
+                }
+                vector<std::future<void>> rotate_jobs;
+                rotate_jobs.reserve(chunk_count - 1);
                 for (size_t k = 1; k < chunk_count; ++k)
                 {
-                    phantom::rotate_inplace(context_, t_layer2[k], static_cast<int>(k), galois_keys_);
+                    rotate_jobs.emplace_back(std::async(std::launch::async, [&, k, current_device]() {
+                        cudaError_t set_err = cudaSetDevice(current_device);
+                        if (set_err != cudaSuccess)
+                        {
+                            throw std::runtime_error(
+                                "cudaSetDevice failed in async rotate worker: " + string(cudaGetErrorString(set_err)));
+                        }
+                        phantom::rotate_inplace(context_, t_layer2[k], static_cast<int>(k), galois_keys_);
+                    }));
+                }
+                for (auto &job : rotate_jobs)
+                {
+                    job.get();
+                }
+
+                for (size_t k = 1; k < chunk_count; ++k)
+                {
+                    phantom::add_inplace(context_, result.answer, t_layer2[k]);
                 }
             },
-            true, "T_Compute_Rot");
-
-        result.answer = t_layer2[0];
-        for (size_t k = 1; k < chunk_count; ++k)
-        {
-            phantom::add_inplace(context_, result.answer, t_layer2[k]);
-        }
+            true, "T_Compute_RotReduceAsync");
         gpu_sync_or_throw("T_Compute_FinalAdd");
 
         return result;
@@ -890,32 +974,32 @@ int main()
 
     PirExecutionOptions exec_options;
     exec_options.query_batch_size = 1;
-    exec_options.enable_ct_pt_fusion = false;
-    exec_options.enable_ct_ct_fusion = false;
+    exec_options.enable_ct_pt_fusion = true;
+    exec_options.enable_ct_ct_fusion = true;
     exec_options.capture_chunk_answers = true;
 
+    // Baseline path.
     PirGpuExecutor executor(context, relin_keys, galois_keys, exec_options);
-    PirGpuComputeResult compute_result = executor.run(
+    PirGpuComputeResult compute_result_baseline = executor.run(
         db_plain, expanded_x, query_bundle.row_selectors, shape.h, shape.blocks_per_row, shape.chunks);
+    latency.t_compute_muladd_ms = compute_result_baseline.t_compute_muladd_ms;
+    latency.t_compute_rot_ms = compute_result_baseline.t_compute_rot_ms;
 
-    latency.t_compute_muladd_ms = compute_result.t_compute_muladd_ms;
-    latency.t_compute_rot_ms = compute_result.t_compute_rot_ms;
-
-    PhantomPlaintext answer_pt;
+    PhantomPlaintext answer_pt_baseline;
     latency.t_decrypt_ms = time_phase(
         [&]() {
-            secret_key.decrypt(context, compute_result.answer, answer_pt);
+            secret_key.decrypt(context, compute_result_baseline.answer, answer_pt_baseline);
         },
-        true, "T_Decrypt");
+        true, "T_Decrypt_Baseline");
 
-    vector<uint64_t> answer_plain;
+    vector<uint64_t> answer_plain_baseline;
     latency.t_decode_ms = time_phase(
         [&]() {
-            batch_encoder.decode(context, answer_pt, answer_plain);
+            batch_encoder.decode(context, answer_pt_baseline, answer_plain_baseline);
         },
-        true, "T_Decode");
+        true, "T_Decode_Baseline");
 
-    cout << "\n===== Phase Latency (ms) =====" << endl;
+    cout << "\n===== Phase Latency (ms) - Baseline =====" << endl;
     cout << std::fixed << std::setprecision(3);
     cout << "T_Encode:         " << latency.t_encode_ms << endl;
     cout << "T_Encrypt:        " << latency.t_encrypt_ms << endl;
@@ -925,13 +1009,14 @@ int main()
     cout << "T_Decrypt:        " << latency.t_decrypt_ms << endl;
     cout << "T_Decode:         " << latency.t_decode_ms << endl;
 
-    if (shape.oft < answer_plain.size())
+    if (shape.oft < answer_plain_baseline.size())
     {
-        cout << "INFO: Final answer slot[" << shape.oft << "] = " << answer_plain[shape.oft] << endl;
+        cout << "INFO: Final answer slot[" << shape.oft << "] = " << answer_plain_baseline[shape.oft] << endl;
     }
 
+    cout << "\n===== Retrieval Spot Check (Baseline) =====" << endl;
     print_chunk_spot_check(
-        compute_result.chunk_answers_before_rotation, shape, db_values, context, secret_key, batch_encoder);
+        compute_result_baseline.chunk_answers_before_rotation, shape, db_values, context, secret_key, batch_encoder);
 
     const size_t num_primes = context.key_context_data().parms().coeff_modulus().size();
     print_overhead_estimates(shape.h * shape.blocks_per_row, shape.chunks, shape.poly_modulus_degree, num_primes);

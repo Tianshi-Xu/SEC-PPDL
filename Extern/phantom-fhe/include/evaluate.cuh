@@ -111,6 +111,14 @@ namespace phantom {
         return destination;
     }
 
+    // destination += encrypted * plain, where encrypted/plain/destination are expected to be in NTT form.
+    void multiply_plain_ntt_and_add_inplace(const PhantomContext &context, const PhantomCiphertext &encrypted,
+                                            const PhantomPlaintext &plain, PhantomCiphertext &destination);
+
+    // Generic helper that falls back to multiply_plain + add when NTT fused path is unavailable.
+    void multiply_plain_and_add_inplace(const PhantomContext &context, const PhantomCiphertext &encrypted,
+                                        const PhantomPlaintext &plain, PhantomCiphertext &destination);
+
     // encrypted1 *= encrypted2
     void
     multiply_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1, const PhantomCiphertext &encrypted2);
