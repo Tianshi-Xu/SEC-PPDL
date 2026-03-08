@@ -1,49 +1,170 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <unordered_map>
+#include <utility>
 
 #include <cuda_runtime_api.h>
+#include <rmm/cuda_device.hpp>
+#include <rmm/cuda_stream_view.hpp>
+#include <rmm/error.hpp>
+#include <rmm/mr/device/cuda_async_memory_resource.hpp>
+#include <rmm/mr/device/device_memory_resource.hpp>
 
-#if defined(__has_include)
-#if __has_include(<cub/util_allocator.cuh>)
-#include <cub/util_allocator.cuh>
-#elif __has_include(<cccl/cub/util_allocator.cuh>)
-#include <cccl/cub/util_allocator.cuh>
-#else
-#error "CUB CachingDeviceAllocator header not found."
-#endif
-#else
-#include <cub/util_allocator.cuh>
-#endif
+namespace phantom::util {
 
-inline cub::CachingDeviceAllocator &phantom_device_allocator() {
-    static cub::CachingDeviceAllocator allocator(true);
-    return allocator;
+    struct rmm_allocation_record {
+        int device = 0;
+        size_t bytes = 0;
+    };
+
+    class rmm_device_allocator {
+    public:
+        static rmm_device_allocator &instance() {
+            static rmm_device_allocator allocator;
+            return allocator;
+        }
+
+        void *allocate(size_t bytes, cudaStream_t stream) {
+            if (bytes == 0) {
+                return nullptr;
+            }
+
+            auto [device_id, resource] = resource_for_current_device();
+            const rmm::cuda_stream_view rmm_stream = to_rmm_stream(stream);
+            void *ptr = resource->allocate(bytes, rmm_stream);
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                allocations_.emplace(ptr, rmm_allocation_record{device_id, bytes});
+            }
+            return ptr;
+        }
+
+        void deallocate(void *ptr, cudaStream_t stream) {
+            if (ptr == nullptr) {
+                return;
+            }
+
+            rmm_allocation_record record{};
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                const auto it = allocations_.find(ptr);
+                if (it == allocations_.end()) {
+                    throw rmm::logic_error("attempting to free an untracked device pointer");
+                }
+                record = it->second;
+                allocations_.erase(it);
+            }
+
+            const rmm::cuda_set_device_raii set_device(rmm::cuda_device_id{record.device});
+            auto *resource = resource_for_device(record.device);
+            const rmm::cuda_stream_view rmm_stream = to_rmm_stream(stream);
+            resource->deallocate(ptr, record.bytes, rmm_stream);
+        }
+
+    private:
+        rmm_device_allocator() = default;
+
+        static rmm::cuda_stream_view to_rmm_stream(cudaStream_t stream) {
+            return (stream == nullptr) ? rmm::cuda_stream_per_thread : rmm::cuda_stream_view{stream};
+        }
+
+        std::pair<int, rmm::mr::device_memory_resource *> resource_for_current_device() {
+            int device_id = 0;
+            const cudaError_t status = cudaGetDevice(&device_id);
+            if (status != cudaSuccess) {
+                throw rmm::cuda_error(cudaGetErrorString(status));
+            }
+
+            return {device_id, resource_for_device(device_id)};
+        }
+
+        rmm::mr::device_memory_resource *resource_for_device(int device_id) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return resource_for_device_unlocked(device_id);
+        }
+
+        rmm::mr::device_memory_resource *resource_for_device_unlocked(int device_id) {
+            auto it = resources_.find(device_id);
+            if (it != resources_.end()) {
+                return it->second.get();
+            }
+
+            const rmm::cuda_set_device_raii set_device(rmm::cuda_device_id{device_id});
+            auto resource = std::make_unique<rmm::mr::cuda_async_memory_resource>(
+                    std::nullopt,
+                    std::optional<std::size_t>{std::numeric_limits<std::size_t>::max()});
+            auto *resource_ptr = resource.get();
+            resources_.emplace(device_id, std::move(resource));
+            return resource_ptr;
+        }
+
+        std::mutex mutex_{};
+        std::unordered_map<int, std::unique_ptr<rmm::mr::cuda_async_memory_resource>> resources_{};
+        std::unordered_map<void *, rmm_allocation_record> allocations_{};
+    };
+
+    inline cudaError_t wrap_rmm_exception(const std::exception &e) {
+        (void)cudaGetLastError();
+        (void)e;
+        if (dynamic_cast<const rmm::out_of_memory *>(&e) != nullptr ||
+            dynamic_cast<const rmm::bad_alloc *>(&e) != nullptr) {
+            return cudaErrorMemoryAllocation;
+        }
+        if (dynamic_cast<const rmm::logic_error *>(&e) != nullptr) {
+            return cudaErrorInvalidDevicePointer;
+        }
+        return cudaErrorUnknown;
+    }
+
 }
 
 inline cudaError_t pool_cudaMalloc(void **devPtr, size_t size) {
-    return phantom_device_allocator().DeviceAllocate(devPtr, size);
+    try {
+        *devPtr = phantom::util::rmm_device_allocator::instance().allocate(size, cudaStreamPerThread);
+        return cudaSuccess;
+    } catch (const std::exception &e) {
+        *devPtr = nullptr;
+        return phantom::util::wrap_rmm_exception(e);
+    }
 }
 
 inline cudaError_t pool_cudaFree(void *devPtr) {
-    if (devPtr == nullptr) {
+    try {
+        phantom::util::rmm_device_allocator::instance().deallocate(devPtr, cudaStreamPerThread);
         return cudaSuccess;
+    } catch (const std::exception &e) {
+        return phantom::util::wrap_rmm_exception(e);
     }
-    return phantom_device_allocator().DeviceFree(devPtr);
 }
 
 inline cudaError_t pool_cudaMallocAsync(void **devPtr, size_t size, cudaStream_t stream) {
-    (void) stream;
-    // Avoid binding cached blocks to ephemeral streams. CUB replays event-record on
-    // the associated stream at free time; per-thread/default transient stream handles
-    // can become invalid during teardown and trigger invalid-resource-handle errors.
-    return phantom_device_allocator().DeviceAllocate(devPtr, size, nullptr);
+    try {
+        *devPtr = phantom::util::rmm_device_allocator::instance().allocate(size, stream);
+        return cudaSuccess;
+    } catch (const std::exception &e) {
+        *devPtr = nullptr;
+        return phantom::util::wrap_rmm_exception(e);
+    }
 }
 
 inline cudaError_t pool_cudaFreeAsync(void *devPtr, cudaStream_t stream) {
-    (void) stream;
-    if (devPtr == nullptr) {
+    try {
+        phantom::util::rmm_device_allocator::instance().deallocate(devPtr, stream);
         return cudaSuccess;
+    } catch (const std::exception &e) {
+        return phantom::util::wrap_rmm_exception(e);
     }
-    return phantom_device_allocator().DeviceFree(devPtr);
+}
+
+// Compatibility shim: keeps existing call sites that eagerly initialize
+// the device allocator while using the RMM-backed implementation.
+inline phantom::util::rmm_device_allocator &phantom_device_allocator() {
+    return phantom::util::rmm_device_allocator::instance();
 }

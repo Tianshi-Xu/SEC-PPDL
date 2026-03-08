@@ -40,6 +40,9 @@ target_include_directories(Phantom PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+
+target_link_libraries(Phantom PUBLIC rmm::rmm)
+
 if (FP64_MM_ARITH)
     target_compile_definitions(Phantom PUBLIC FP64_MM_ARITH)
 endif()

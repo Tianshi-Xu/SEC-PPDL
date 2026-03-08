@@ -4,6 +4,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(Phantom LANGUAGES CXX CUDA VERSION 2.1 DESCRIPTION "CUDA-Accelerated Homomorphic Encryption Library")
 
+include(GNUInstallDirs)
+include(FetchContent)
+
 # [option] PHANTOM_USE_CUDA_PTX (default: ON)
 option(PHANTOM_USE_CUDA_PTX "Use CUDA PTX Assembly" ON)
 message(STATUS "Use CUDA PTX Assembly: ${PHANTOM_USE_CUDA_PTX}")
@@ -25,7 +28,86 @@ if (RNS_POLY_BATCH)
     add_compile_definitions(RNS_POLY_BATCH)
 endif ()
 
-if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+set(PHANTOM_MIN_RMM_VERSION "25.08")
+option(PHANTOM_AUTO_INSTALL_RMM "Automatically install RMM when missing or too old" ON)
+set(PHANTOM_RMM_SOURCE_DIR "$ENV{RMM_SOURCE_DIR}" CACHE PATH "Local RMM source root (contains cpp/CMakeLists.txt)")
+set(PHANTOM_RMM_BUILD_DIR "${CMAKE_BINARY_DIR}/_deps/rmm-build" CACHE PATH "Build directory for auto-installed RMM")
+set(PHANTOM_RMM_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/_deps/rmm-install" CACHE PATH "Install prefix for auto-installed RMM")
+
+function(phantom_ensure_rmm min_version)
+    find_package(rmm ${min_version} CONFIG QUIET)
+    if (rmm_FOUND)
+        return()
+    endif ()
+
+    if (NOT PHANTOM_AUTO_INSTALL_RMM)
+        message(FATAL_ERROR "RMM >= ${min_version} is required. Set PHANTOM_AUTO_INSTALL_RMM=ON to auto-install.")
+    endif ()
+
+    set(_rmm_candidates
+            "${PHANTOM_RMM_SOURCE_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../rmm"
+            "$ENV{HOME}/rmm"
+            "/data/home/chaoyang/rmm")
+    set(_rmm_src "")
+    foreach (_candidate IN LISTS _rmm_candidates)
+        if (_candidate AND EXISTS "${_candidate}/cpp/CMakeLists.txt")
+            set(_rmm_src "${_candidate}")
+            break()
+        endif ()
+    endforeach ()
+
+    if (NOT _rmm_src)
+        message(STATUS "RMM source not found locally. Fetching rmm branch-25.08...")
+        FetchContent_Declare(
+                rmm_src
+                GIT_REPOSITORY https://github.com/rapidsai/rmm.git
+                GIT_TAG branch-25.08
+                GIT_SHALLOW ON)
+        FetchContent_Populate(rmm_src)
+        set(_rmm_src "${rmm_src_SOURCE_DIR}")
+    endif ()
+
+    message(STATUS "Auto-installing RMM from: ${_rmm_src}")
+    message(STATUS "RMM build dir: ${PHANTOM_RMM_BUILD_DIR}")
+    message(STATUS "RMM install prefix: ${PHANTOM_RMM_INSTALL_PREFIX}")
+
+    set(_rmm_config_cmd
+            ${CMAKE_COMMAND}
+            -S "${_rmm_src}/cpp"
+            -B "${PHANTOM_RMM_BUILD_DIR}"
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_INSTALL_PREFIX=${PHANTOM_RMM_INSTALL_PREFIX}
+            -DBUILD_TESTS=OFF
+            -DBUILD_BENCHMARKS=OFF
+            -DRMM_NVTX=OFF)
+    if (DEFINED CMAKE_CUDA_ARCHITECTURES)
+        list(APPEND _rmm_config_cmd -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES})
+    endif ()
+
+    execute_process(
+            COMMAND ${_rmm_config_cmd}
+            RESULT_VARIABLE _rmm_config_status)
+    if (NOT _rmm_config_status EQUAL 0)
+        message(FATAL_ERROR "Failed to configure RMM auto-install (status=${_rmm_config_status}).")
+    endif ()
+
+    execute_process(
+            COMMAND ${CMAKE_COMMAND} --build "${PHANTOM_RMM_BUILD_DIR}" --target install --parallel
+            RESULT_VARIABLE _rmm_build_status)
+    if (NOT _rmm_build_status EQUAL 0)
+        message(FATAL_ERROR "Failed to build/install RMM (status=${_rmm_build_status}).")
+    endif ()
+
+    list(PREPEND CMAKE_PREFIX_PATH "${PHANTOM_RMM_INSTALL_PREFIX}")
+    find_package(rmm ${min_version} CONFIG REQUIRED PATHS "${PHANTOM_RMM_INSTALL_PREFIX}" NO_DEFAULT_PATH)
+endfunction()
+
+phantom_ensure_rmm(${PHANTOM_MIN_RMM_VERSION})
+message(STATUS "Use RMM memory pool: ON")
+message(STATUS "RMM version requirement: >= ${PHANTOM_MIN_RMM_VERSION} (fixed)")
+
+if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR "${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
     set(CMAKE_CUDA_ARCHITECTURES native)
 endif ()
 
@@ -81,11 +163,8 @@ if (PHANTOM_ENABLE_PYTHON_BINDING)
 endif ()
 
 # config for installation
-# NOTE: Why is it necessary to explicitly set the CMAKE-INSTALL_XX variable here ?
-set(CMAKE_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/lib")
-set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
 install(TARGETS Phantom
         EXPORT PhantomConfig
-        INCLUDES DESTINATION include/phantom)
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/phantom)
 install(EXPORT PhantomConfig NAMESPACE phantom:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phantom)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/phantom)

@@ -1,11 +1,6 @@
 #include "polymath.cuh"
 #include "uintmodmath.cuh"
 
-//#include <rmm/device_scalar.hpp>
-//#include <rmm/device_vector.hpp>
-//#include <thrust/device_vector.h>
-//#include <thrust/reduce.h>
-
 using namespace phantom::util;
 using namespace phantom::arith;
 

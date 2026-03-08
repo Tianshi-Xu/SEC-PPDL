@@ -119,6 +119,17 @@ namespace phantom {
     void multiply_plain_and_add_inplace(const PhantomContext &context, const PhantomCiphertext &encrypted,
                                         const PhantomPlaintext &plain, PhantomCiphertext &destination);
 
+    // destination = sum_i (encrypteds[i] * plains[i]), all in NTT form.
+    // This fuses the reduction over i into one kernel per ciphertext component.
+    void multiply_plain_ntt_many(
+        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
+        const std::vector<PhantomPlaintext> &plains, PhantomCiphertext &destination);
+
+    // Pointer-view variant to avoid temporary plaintext object copies.
+    void multiply_plain_ntt_many_ptrs(
+        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
+        const std::vector<const PhantomPlaintext *> &plains, PhantomCiphertext &destination);
+
     // encrypted1 *= encrypted2
     void
     multiply_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1, const PhantomCiphertext &encrypted2);

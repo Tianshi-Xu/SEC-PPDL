@@ -2,6 +2,7 @@
 
 #include "rns_bconv.cuh"
 #include "scalingvariant.cuh"
+#include "uintmodmath.cuh"
 #include "util.cuh"
 
 using namespace std;
@@ -1351,6 +1352,171 @@ Returns (f, e1, e2) such that
             multiply_and_add_rns_poly<<<gridDimGlb, blockDimGlb, 0, s>>>(
                     src, plain.data(), dst, base_rns, dst, poly_degree, coeff_mod_size);
         }
+    }
+
+    __global__ static void multiply_rns_poly_ct_pt_many_reduce(
+        uint64_t *destination, const uint64_t *const *encrypted_terms, const uint64_t *const *plain_terms,
+        const DModulus *modulus, const uint64_t poly_degree, const uint64_t rns_coeff_count,
+        const uint64_t term_count)
+    {
+        const uint64_t coeff_idx = static_cast<uint64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+        const uint64_t poly_idx = blockIdx.y;
+        if (coeff_idx >= rns_coeff_count)
+        {
+            return;
+        }
+
+        const uint64_t mod_idx = coeff_idx / poly_degree;
+        const DModulus mod = modulus[mod_idx];
+        uint128_t accum{0, 0};
+
+        for (uint64_t term_idx = 0; term_idx < term_count; ++term_idx)
+        {
+            const uint64_t *ct_term = encrypted_terms[term_idx] + poly_idx * rns_coeff_count;
+            const uint64_t *pt_term = plain_terms[term_idx];
+            const uint128_t prod = multiply_uint64_uint64(ct_term[coeff_idx], pt_term[coeff_idx]);
+            add_uint128_uint128(prod, accum, accum);
+        }
+
+        destination[poly_idx * rns_coeff_count + coeff_idx] =
+            barrett_reduce_uint128_uint64(accum, mod.value(), mod.const_ratio());
+    }
+
+    struct MultiplyPlainNttManyWorkspace
+    {
+        std::vector<const uint64_t *> host_encrypted_terms;
+        std::vector<const uint64_t *> host_plain_terms;
+        cuda_auto_ptr<const uint64_t *> device_encrypted_terms;
+        cuda_auto_ptr<const uint64_t *> device_plain_terms;
+        std::size_t capacity = 0;
+    };
+
+    template <typename PlainAccessor>
+    static void multiply_plain_ntt_many_impl(
+        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds, std::size_t plain_count,
+        PlainAccessor plain_at, PhantomCiphertext &destination)
+    {
+        const auto &s = cudaStreamPerThread;
+        if (encrypteds.empty())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds is empty");
+        }
+        if (encrypteds.size() != plain_count)
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds/plains size mismatch");
+        }
+
+        const PhantomCiphertext &first_ct = encrypteds.front();
+        const PhantomPlaintext &first_pt = plain_at(0);
+        if (!first_ct.is_ntt_form() || !first_pt.is_ntt_form())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many expects NTT-form operands");
+        }
+
+        const std::size_t chain_index = first_ct.chain_index();
+        const std::size_t coeff_modulus_size = first_ct.coeff_modulus_size();
+        const std::size_t poly_degree = first_ct.poly_modulus_degree();
+        const std::size_t ct_size = first_ct.size();
+        const std::size_t rns_coeff_count = coeff_modulus_size * poly_degree;
+        const uint64_t correction_factor = first_ct.correction_factor();
+
+        for (std::size_t i = 0; i < encrypteds.size(); ++i)
+        {
+            const PhantomCiphertext &ct = encrypteds[i];
+            const PhantomPlaintext &pt = plain_at(i);
+            if (!ct.is_ntt_form() || !pt.is_ntt_form())
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many expects NTT-form operands");
+            }
+            if (ct.chain_index() != chain_index || pt.chain_index() != chain_index)
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: chain index mismatch");
+            }
+            if (ct.coeff_modulus_size() != coeff_modulus_size || pt.coeff_modulus_size() != coeff_modulus_size)
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: coeff_modulus_size mismatch");
+            }
+            if (ct.poly_modulus_degree() != poly_degree || pt.coeff_count() != rns_coeff_count)
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: poly degree mismatch");
+            }
+            if (ct.size() != ct_size)
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: ciphertext size mismatch");
+            }
+            if (ct.correction_factor() != correction_factor)
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: correction factor mismatch");
+            }
+            if (!are_same_scale(ct, first_ct) || !are_same_scale(pt, first_pt))
+            {
+                throw std::invalid_argument("multiply_plain_ntt_many: scale mismatch across terms");
+            }
+        }
+
+        auto base_rns = context.gpu_rns_tables().modulus();
+
+        destination.resize(context, chain_index, ct_size, s);
+
+        static thread_local MultiplyPlainNttManyWorkspace workspace;
+        if (workspace.capacity < encrypteds.size())
+        {
+            workspace.device_encrypted_terms = make_cuda_auto_ptr<const uint64_t *>(encrypteds.size(), s);
+            workspace.device_plain_terms = make_cuda_auto_ptr<const uint64_t *>(encrypteds.size(), s);
+            workspace.capacity = encrypteds.size();
+        }
+        workspace.host_encrypted_terms.resize(encrypteds.size());
+        workspace.host_plain_terms.resize(encrypteds.size());
+
+        for (std::size_t i = 0; i < encrypteds.size(); ++i)
+        {
+            workspace.host_encrypted_terms[i] = encrypteds[i].data();
+            workspace.host_plain_terms[i] = plain_at(i).data();
+        }
+
+        PHANTOM_CHECK_CUDA(cudaMemcpyAsync(
+            workspace.device_encrypted_terms.get(), workspace.host_encrypted_terms.data(),
+            workspace.host_encrypted_terms.size() * sizeof(const uint64_t *), cudaMemcpyHostToDevice, s));
+        PHANTOM_CHECK_CUDA(cudaMemcpyAsync(
+            workspace.device_plain_terms.get(), workspace.host_plain_terms.data(),
+            workspace.host_plain_terms.size() * sizeof(const uint64_t *),
+            cudaMemcpyHostToDevice, s));
+
+        dim3 grid((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x, ct_size);
+        multiply_rns_poly_ct_pt_many_reduce<<<grid, blockDimGlb, 0, s>>>(
+            destination.data(), workspace.device_encrypted_terms.get(), workspace.device_plain_terms.get(), base_rns,
+            poly_degree,
+            rns_coeff_count, encrypteds.size());
+
+        destination.set_ntt_form(true);
+        destination.set_scale(first_ct.scale() * first_pt.scale());
+        destination.set_correction_factor(correction_factor);
+        destination.SetNoiseScaleDeg(first_ct.GetNoiseScaleDeg());
+    }
+
+    void multiply_plain_ntt_many(
+        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
+        const std::vector<PhantomPlaintext> &plains, PhantomCiphertext &destination)
+    {
+        multiply_plain_ntt_many_impl(
+            context, encrypteds, plains.size(),
+            [&](std::size_t i) -> const PhantomPlaintext & { return plains[i]; }, destination);
+    }
+
+    void multiply_plain_ntt_many_ptrs(
+        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
+        const std::vector<const PhantomPlaintext *> &plains, PhantomCiphertext &destination)
+    {
+        multiply_plain_ntt_many_impl(
+            context, encrypteds, plains.size(),
+            [&](std::size_t i) -> const PhantomPlaintext & {
+                if (plains[i] == nullptr)
+                {
+                    throw std::invalid_argument("multiply_plain_ntt_many_ptrs: null plaintext pointer");
+                }
+                return *plains[i];
+            },
+            destination);
     }
 
     void multiply_plain_and_add_inplace(

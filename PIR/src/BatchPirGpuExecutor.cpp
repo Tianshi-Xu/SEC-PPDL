@@ -15,6 +15,7 @@
 #include <phantom/secretkey.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <exception>
 #include <future>
 #include <iomanip>
@@ -48,7 +49,7 @@ public:
     }
 
     std::vector<PirGpuComputeResult> run(
-        const Tensor3D<PhantomPlaintext> &db_plain, std::size_t batch_size,
+        Tensor3D<PhantomPlaintext> &db_plain, std::size_t batch_size,
         const std::vector<PhantomCiphertext> &batch_compressed_x,
         const std::vector<std::vector<PhantomCiphertext>> &batch_row_selectors, std::size_t row_count,
         std::size_t block_count, std::size_t chunk_count) const
@@ -132,17 +133,16 @@ public:
                 std::vector<PhantomCiphertext> row_accum_ntt(batch_size);
                 std::vector<PhantomCiphertext> scratch_prod_ntt(batch_size);
                 std::vector<uint8_t> row_initialized(batch_size, 0U);
+                std::vector<const PhantomPlaintext *> row_plain_ntt_ptrs(block_count, nullptr);
                 std::vector<std::vector<PhantomCiphertext>> row_terms(batch_size, std::vector<PhantomCiphertext>(row_count));
 
-                for (std::size_t k = 0; k < chunk_count; ++k)
+                for (std::size_t r = 0; r < row_count; ++r)
                 {
-                    for (std::size_t r = 0; r < row_count; ++r)
+                    for (std::size_t c = 0; c < block_count; ++c)
                     {
-                        std::fill(row_initialized.begin(), row_initialized.end(), 0U);
-
-                        for (std::size_t c = 0; c < block_count; ++c)
+                        for (std::size_t k = 0; k < chunk_count; ++k)
                         {
-                            PhantomPlaintext plain_ntt = db_plain.at(r, c, k);
+                            PhantomPlaintext &plain_ntt = db_plain.at(r, c, k);
                             if (!plain_ntt.is_ntt_form())
                             {
                                 phantom::transform_to_ntt_inplace(context_, plain_ntt, query_chain_index);
@@ -151,21 +151,42 @@ public:
                             {
                                 throw std::logic_error("plain_ntt chain index mismatch in lazy-INTT path.");
                             }
+                        }
+                    }
+                }
+
+                for (std::size_t k = 0; k < chunk_count; ++k)
+                {
+                    for (std::size_t r = 0; r < row_count; ++r)
+                    {
+                        if (options_.enable_ct_pt_fusion)
+                        {
+                            for (std::size_t c = 0; c < block_count; ++c)
+                            {
+                                row_plain_ntt_ptrs[c] = &db_plain.at(r, c, k);
+                            }
 
                             for (std::size_t b = 0; b < batch_size; ++b)
                             {
-                                if (!row_initialized[b])
+                                phantom::multiply_plain_ntt_many_ptrs(
+                                    context_, batch_expanded_x[b], row_plain_ntt_ptrs, row_accum_ntt[b]);
+                            }
+                        }
+                        else
+                        {
+                            std::fill(row_initialized.begin(), row_initialized.end(), 0U);
+
+                            for (std::size_t c = 0; c < block_count; ++c)
+                            {
+                                const PhantomPlaintext &plain_ntt = db_plain.at(r, c, k);
+
+                                for (std::size_t b = 0; b < batch_size; ++b)
                                 {
-                                    copy_ciphertext_device_fast(batch_expanded_x[b][c], row_accum_ntt[b]);
-                                    phantom::multiply_plain_ntt_inplace(context_, row_accum_ntt[b], plain_ntt);
-                                    row_initialized[b] = 1U;
-                                }
-                                else
-                                {
-                                    if (options_.enable_ct_pt_fusion)
+                                    if (!row_initialized[b])
                                     {
-                                        phantom::multiply_plain_ntt_and_add_inplace(
-                                            context_, batch_expanded_x[b][c], plain_ntt, row_accum_ntt[b]);
+                                        copy_ciphertext_device_fast(batch_expanded_x[b][c], row_accum_ntt[b]);
+                                        phantom::multiply_plain_ntt_inplace(context_, row_accum_ntt[b], plain_ntt);
+                                        row_initialized[b] = 1U;
                                     }
                                     else
                                     {
@@ -175,15 +196,17 @@ public:
                                     }
                                 }
                             }
+                            for (std::size_t b = 0; b < batch_size; ++b)
+                            {
+                                if (!row_initialized[b])
+                                {
+                                    throw std::logic_error("row_accum is uninitialized.");
+                                }
+                            }
                         }
 
                         for (std::size_t b = 0; b < batch_size; ++b)
                         {
-                            if (!row_initialized[b])
-                            {
-                                throw std::logic_error("row_accum is uninitialized.");
-                            }
-
                             phantom::transform_from_ntt_inplace(context_, row_accum_ntt[b]);
                             if (options_.enable_ct_ct_fusion)
                             {
@@ -373,7 +396,15 @@ int run_test_batch_pir_gpu(int argc, char **argv)
             true, "T_Encrypt_Batch");
 
         BatchPirExecutionOptions options;
-        options.enable_ct_pt_fusion = true;
+        const bool ct_pt_fusion_enabled = [&]() {
+            const char *env = std::getenv("PIR_CT_PT_FUSION");
+            if (env == nullptr)
+            {
+                return true;
+            }
+            return std::string(env) != "0";
+        }();
+        options.enable_ct_pt_fusion = ct_pt_fusion_enabled;
         options.enable_ct_ct_fusion = true;
         options.fuse_rotate_and_reduce = true;
         options.capture_chunk_answers = true;
@@ -397,6 +428,7 @@ int run_test_batch_pir_gpu(int argc, char **argv)
         std::cout << "T_Encode:         " << t_encode_ms << std::endl;
         std::cout << "T_Encrypt_Batch:  " << t_encrypt_ms << std::endl;
         std::cout << "T_Server_Batch:   " << t_server_ms << std::endl;
+        std::cout << "ct_pt_fusion:     " << (ct_pt_fusion_enabled ? "ON" : "OFF") << std::endl;
         if (!results.empty())
         {
             std::cout << "T_Compute_MulAdd: " << results[0].t_compute_muladd_ms << std::endl;

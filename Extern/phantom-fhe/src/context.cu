@@ -122,13 +122,7 @@ PhantomContext::PhantomContext(const phantom::EncryptionParameters &params) {
     if (params.coeff_modulus().size() == 1)
         throw std::invalid_argument("The coefficient modulus must be a vector of at least two primes");
 
-    // GPU setup
-    int device;
-    cudaGetDevice(&device);
-    cudaMemPool_t mempool;
-    cudaDeviceGetDefaultMemPool(&mempool, device);
-    uint64_t threshold = UINT64_MAX;
-    cudaMemPoolSetAttribute(mempool, cudaMemPoolAttrReleaseThreshold, &threshold);
+    // GPU setup is managed by the RMM-backed allocator.
 
     const auto &s = cudaStreamPerThread;
 

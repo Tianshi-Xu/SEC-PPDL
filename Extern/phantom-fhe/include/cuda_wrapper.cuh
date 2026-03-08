@@ -50,44 +50,16 @@ namespace phantom::util {
         return (stream == nullptr) ? cudaStreamPerThread : stream;
     }
 
-    inline bool is_async_alloc_unsupported(cudaError_t err) {
-        return err == cudaErrorNotSupported || err == cudaErrorOperatingSystem;
+    template<class T>
+    inline cudaError_t malloc_device(T **ptr, size_t n, const cudaStream_t &stream) {
+        const cudaStream_t effective_stream = normalize_stream(stream);
+        return pool_cudaMallocAsync(reinterpret_cast<void **>(ptr), n * sizeof(T), effective_stream);
     }
 
     template<class T>
-    inline cudaError_t malloc_with_fallback(T **ptr, size_t n, const cudaStream_t &stream, bool &used_async_alloc) {
+    inline cudaError_t free_device(T *ptr, const cudaStream_t &stream) {
         const cudaStream_t effective_stream = normalize_stream(stream);
-        used_async_alloc = true;
-        cudaError_t err = pool_cudaMallocAsync(reinterpret_cast<void **>(ptr), n * sizeof(T), effective_stream);
-        if (err == cudaSuccess) {
-            return cudaSuccess;
-        }
-        if (is_async_alloc_unsupported(err)) {
-            // Clear stale async-allocation error before fallback.
-            (void)cudaGetLastError();
-            err = pool_cudaMalloc(reinterpret_cast<void **>(ptr), n * sizeof(T));
-            if (err == cudaSuccess) {
-                used_async_alloc = false;
-            }
-        }
-        return err;
-    }
-
-    template<class T>
-    inline cudaError_t free_with_fallback(T *ptr, const cudaStream_t &stream, bool used_async_alloc) {
-        const cudaStream_t effective_stream = normalize_stream(stream);
-        if (used_async_alloc) {
-            cudaError_t err = pool_cudaFreeAsync(ptr, effective_stream);
-            if (err == cudaSuccess) {
-                return cudaSuccess;
-            }
-            if (is_async_alloc_unsupported(err)) {
-                (void)cudaGetLastError();
-                return pool_cudaFree(ptr);
-            }
-            return err;
-        }
-        return pool_cudaFree(ptr);
+        return pool_cudaFreeAsync(ptr, effective_stream);
     }
 
     class cuda_stream_wrapper {
@@ -115,28 +87,24 @@ namespace phantom::util {
         T *ptr_ = nullptr;
         size_t n_ = 0;
         cudaStream_t cudaStream_ = cudaStreamPerThread;
-        bool used_async_alloc_ = true;
 
     public:
         cuda_auto_ptr() = default;
 
-        explicit cuda_auto_ptr(T *ptr, size_t n, const cudaStream_t &stream, bool used_async_alloc = true) {
+        explicit cuda_auto_ptr(T *ptr, size_t n, const cudaStream_t &stream) {
             ptr_ = ptr;
             n_ = n;
             cudaStream_ = normalize_stream(stream);
-            used_async_alloc_ = used_async_alloc;
         }
 
         // copy constructor
         cuda_auto_ptr(const cuda_auto_ptr &obj) {
             const cudaStream_t src_stream = normalize_stream(obj.cudaStream_);
-            bool used_async_alloc = true;
-            PHANTOM_CHECK_CUDA(malloc_with_fallback(&this->ptr_, obj.n_, src_stream, used_async_alloc));
+            PHANTOM_CHECK_CUDA(malloc_device(&this->ptr_, obj.n_, src_stream));
             PHANTOM_CHECK_CUDA(cudaMemcpyAsync(this->ptr_, obj.ptr_, obj.n_ * sizeof(T), cudaMemcpyDeviceToDevice,
                                                src_stream));
             this->n_ = obj.n_;
             this->cudaStream_ = src_stream;
-            this->used_async_alloc_ = used_async_alloc;
         }
 
         // copy assignment
@@ -148,13 +116,11 @@ namespace phantom::util {
             reset();
 
             const cudaStream_t src_stream = normalize_stream(obj.cudaStream_);
-            bool used_async_alloc = true;
-            PHANTOM_CHECK_CUDA(malloc_with_fallback(&this->ptr_, obj.n_, src_stream, used_async_alloc));
+            PHANTOM_CHECK_CUDA(malloc_device(&this->ptr_, obj.n_, src_stream));
             PHANTOM_CHECK_CUDA(cudaMemcpyAsync(this->ptr_, obj.ptr_, obj.n_ * sizeof(T), cudaMemcpyDeviceToDevice,
                                                src_stream));
             this->n_ = obj.n_;
             this->cudaStream_ = src_stream;
-            this->used_async_alloc_ = used_async_alloc;
             return *this;
         }
 
@@ -164,13 +130,11 @@ namespace phantom::util {
             this->ptr_ = dyingObj.ptr_;
             this->n_ = dyingObj.n_;
             this->cudaStream_ = normalize_stream(dyingObj.cudaStream_);
-            this->used_async_alloc_ = dyingObj.used_async_alloc_;
 
             // reset the dying object
             dyingObj.ptr_ = nullptr;
             dyingObj.n_ = 0;
             dyingObj.cudaStream_ = nullptr;
-            dyingObj.used_async_alloc_ = true;
         }
 
         // move assignment
@@ -184,13 +148,11 @@ namespace phantom::util {
             this->ptr_ = dyingObj.ptr_;
             this->n_ = dyingObj.n_;
             this->cudaStream_ = normalize_stream(dyingObj.cudaStream_);
-            this->used_async_alloc_ = dyingObj.used_async_alloc_;
 
             // reset the dying object
             dyingObj.ptr_ = nullptr;
             dyingObj.n_ = 0;
             dyingObj.cudaStream_ = nullptr;
-            dyingObj.used_async_alloc_ = true;
 
             return *this;
         }
@@ -227,16 +189,14 @@ namespace phantom::util {
             T *ptr = ptr_;
             const size_t n = n_;
             cudaStream_t stream = cudaStream_;
-            const bool used_async_alloc = used_async_alloc_;
 
             // Make reset idempotent: avoid double-free if reset() is called again (e.g., destructor after manual reset).
             ptr_ = nullptr;
             n_ = 0;
             cudaStream_ = cudaStreamPerThread;
-            used_async_alloc_ = true;
 
             stream = normalize_stream(stream);
-            auto err = free_with_fallback(ptr, stream, used_async_alloc);
+            auto err = free_device(ptr, stream);
             if (err != cudaSuccess) {
                 std::cerr << "Error freeing " << n << " * " << sizeof(T) << " bytes at " << ptr
                           << " on stream " << stream << std::endl;
@@ -248,9 +208,8 @@ namespace phantom::util {
     template<class T>
     cuda_auto_ptr<T> make_cuda_auto_ptr(size_t n, const cudaStream_t &stream) {
         T *ptr;
-        bool used_async_alloc = true;
-        PHANTOM_CHECK_CUDA(malloc_with_fallback(&ptr, n, stream, used_async_alloc));
-        return cuda_auto_ptr<T>(ptr, n, stream, used_async_alloc);
+        PHANTOM_CHECK_CUDA(malloc_device(&ptr, n, stream));
+        return cuda_auto_ptr<T>(ptr, n, stream);
     }
 
     class CUDATimer {

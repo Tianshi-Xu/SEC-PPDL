@@ -15,38 +15,6 @@ namespace phantom::util::global_variables {
     //    const size_t global_backward_GPU_threads = 64;
     //    const size_t global_backward_balance = 64;
 
-    /*using DefaultUpstream = rmm::mr::cuda_memory_resource;
-          using MemoryPoolBase = rmm::mr::binning_memory_resource<DefaultUpstream>;
-          using MemoryBin = rmm::mr::fixed_size_memory_resource<DefaultUpstream>;
-
-          DefaultUpstream base__;
-          MemoryPoolBase device_pool__(&base__);
-
-          void addBin(size_t size) {
-              auto bin = std::make_shared<MemoryBin>(&base__, size, preallocation_size);
-              device_pool__.add_bin(size, bin.get());
-          }
-
-          void initMemoryPool()
-          {
-              rmm::mr::set_current_device_resource(&device_pool__);
-              addBin(32);
-              addBin(64);
-              addBin(128);
-              addBin(1024);
-              addBin(2048);
-              addBin(4096);
-              addBin(8192);
-              addBin(16384);
-              addBin(32768);
-              addBin(65536);
-          }
-
-          void finMemoryPool()
-          {
-              rmm::mr::set_current_device_resource(nullptr);
-          }*/
-
     const map<size_t, vector<arith::Modulus>> &GetDefaultCoeffModulus128() {
         static const map<size_t, vector<arith::Modulus>> default_coeff_modulus_128{
             /*
