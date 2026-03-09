@@ -72,7 +72,16 @@ namespace phantom::util {
         rmm_device_allocator() = default;
 
         static rmm::cuda_stream_view to_rmm_stream(cudaStream_t stream) {
-            return (stream == nullptr) ? rmm::cuda_stream_per_thread : rmm::cuda_stream_view{stream};
+            if (stream == nullptr) {
+                return rmm::cuda_stream_default;
+            }
+            if (stream == cudaStreamLegacy) {
+                return rmm::cuda_stream_legacy;
+            }
+            if (stream == cudaStreamPerThread) {
+                return rmm::cuda_stream_per_thread;
+            }
+            return rmm::cuda_stream_view{stream};
         }
 
         std::pair<int, rmm::mr::device_memory_resource *> resource_for_current_device() {
