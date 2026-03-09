@@ -106,6 +106,8 @@ struct PirExecutionOptions
 {
     std::size_t query_batch_size = 1;
     bool enable_ct_pt_fusion = false;
+    bool enable_ct_pt_2d_fusion = false;
+    std::size_t ct_pt_2d_tile_rows = 32;
     bool enable_ct_ct_fusion = false;
     bool capture_chunk_answers = true;
 };

@@ -13,13 +13,14 @@
 #include <phantom/phantom_memory_pool.cuh>
 #include <phantom/secretkey.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <cstdlib>
 
 #include <cuda_runtime.h>
 
@@ -87,8 +88,14 @@ public:
                 }
 
                 std::vector<PhantomCiphertext> row_terms(row_count);
-                PhantomCiphertext accum_ntt;
                 std::vector<const PhantomPlaintext *> plain_terms(block_count, nullptr);
+                const auto throw_cuda_error = [](const cudaError_t err, const char *op_name) {
+                    if (err == cudaSuccess)
+                    {
+                        return;
+                    }
+                    throw std::runtime_error(std::string(op_name) + " failed: " + cudaGetErrorString(err));
+                };
 
                 for (std::size_t r = 0; r < row_count; ++r)
                 {
@@ -108,34 +115,150 @@ public:
                         }
                     }
                 }
-                for (std::size_t k = 0; k < chunk_count; ++k)
+
+                const auto &context_data = context_.get_context_data(query_chain_index);
+                const auto &parms = context_data.parms();
+                const std::size_t poly_modulus_degree = parms.poly_modulus_degree();
+                const std::size_t coeff_modulus_size = parms.coeff_modulus().size();
+                const std::size_t rns_coeff_count = coeff_modulus_size * poly_modulus_degree;
+                const std::size_t cipher_coeff_count = 2 * rns_coeff_count;
+                const cudaStream_t stream = cudaStreamPerThread;
+
+                bool use_2d_fusion = options_.enable_ct_pt_fusion && options_.enable_ct_pt_2d_fusion;
+                if (use_2d_fusion)
                 {
-                    for (std::size_t r = 0; r < row_count; ++r)
+                    for (std::size_t c = 0; c < block_count; ++c)
                     {
-                        for (std::size_t c = 0; c < block_count; ++c)
+                        const PhantomCiphertext &ct = expanded_x_ntt[c];
+                        if (ct.size() != 2)
                         {
-                            plain_terms[c] = &db_plain.at(r, c, k);
+                            use_2d_fusion = false;
+                            break;
                         }
-
-                        phantom::multiply_plain_ntt_many_ptrs(context_, expanded_x_ntt, plain_terms, accum_ntt);
-
-                        phantom::transform_from_ntt_inplace(context_, accum_ntt);
-
-                        if (options_.enable_ct_ct_fusion)
+                        if (ct.coeff_modulus_size() != coeff_modulus_size || ct.poly_modulus_degree() != poly_modulus_degree)
                         {
-                            phantom::multiply_and_relin_inplace(context_, accum_ntt, row_selectors[r], relin_keys_);
+                            throw std::logic_error("expanded_x layout mismatch in ct-pt 2D fusion path.");
                         }
-                        else
-                        {
-                            phantom::multiply_inplace(context_, accum_ntt, row_selectors[r]);
-                            phantom::relinearize_inplace(context_, accum_ntt, relin_keys_);
-                        }
-
-                        // Keep zero-copy ownership transfer but avoid reusing a moved-from
-                        // ciphertext object whose metadata may stay non-zero.
-                        std::swap(row_terms[r], accum_ntt);
                     }
-                    phantom::add_many(context_, row_terms, t_layer2[k]);
+                }
+
+                if (use_2d_fusion)
+                {
+                    const std::size_t tile_rows = std::min(row_count, std::max<std::size_t>(1, options_.ct_pt_2d_tile_rows));
+                    auto ct_terms = phantom::util::make_cuda_auto_ptr<uint64_t>(block_count * cipher_coeff_count, stream);
+                    auto pt_tile =
+                        phantom::util::make_cuda_auto_ptr<uint64_t>(tile_rows * block_count * rns_coeff_count, stream);
+                    auto ans_tile = phantom::util::make_cuda_auto_ptr<uint64_t>(tile_rows * cipher_coeff_count, stream);
+
+                    for (std::size_t c = 0; c < block_count; ++c)
+                    {
+                        const std::size_t dst_offset = c * cipher_coeff_count;
+                        throw_cuda_error(
+                            cudaMemcpyAsync(
+                                ct_terms.get() + dst_offset, expanded_x_ntt[c].data(), cipher_coeff_count * sizeof(uint64_t),
+                                cudaMemcpyDeviceToDevice, stream),
+                            "copy expanded_x into ct_terms");
+                    }
+
+                    const double fused_scale = expanded_x_ntt.front().scale() * db_plain.at(0, 0, 0).scale();
+                    const uint64_t fused_correction_factor = expanded_x_ntt.front().correction_factor();
+                    const std::size_t fused_noise_scale_deg = expanded_x_ntt.front().GetNoiseScaleDeg();
+
+                    for (std::size_t k = 0; k < chunk_count; ++k)
+                    {
+                        for (std::size_t row_base = 0; row_base < row_count; row_base += tile_rows)
+                        {
+                            const std::size_t active_rows = std::min(tile_rows, row_count - row_base);
+                            for (std::size_t local_r = 0; local_r < active_rows; ++local_r)
+                            {
+                                const std::size_t r = row_base + local_r;
+                                const std::size_t row_offset = local_r * block_count * rns_coeff_count;
+                                for (std::size_t c = 0; c < block_count; ++c)
+                                {
+                                    const uint64_t *src = db_plain.at(r, c, k).data();
+                                    uint64_t *dst = pt_tile.get() + row_offset + c * rns_coeff_count;
+                                    throw_cuda_error(
+                                        cudaMemcpyAsync(
+                                            dst, src, rns_coeff_count * sizeof(uint64_t), cudaMemcpyDeviceToDevice, stream),
+                                        "pack plaintext tile");
+                                }
+                            }
+
+                            throw_cuda_error(
+                                cudaMemsetAsync(ans_tile.get(), 0, active_rows * cipher_coeff_count * sizeof(uint64_t), stream),
+                                "zero ans_tile");
+
+                            phantom::launch_multiply_add_2d_fusion(
+                                context_, pt_tile.get(), ct_terms.get(), ans_tile.get(), active_rows, block_count,
+                                query_chain_index, block_count * rns_coeff_count, rns_coeff_count, cipher_coeff_count,
+                                cipher_coeff_count, stream);
+                            throw_cuda_error(cudaGetLastError(), "launch_multiply_add_2d_fusion");
+
+                            for (std::size_t local_r = 0; local_r < active_rows; ++local_r)
+                            {
+                                const std::size_t r = row_base + local_r;
+                                PhantomCiphertext &row_accum_ntt = row_terms[r];
+                                row_accum_ntt.resize(context_, query_chain_index, 2, stream);
+                                row_accum_ntt.set_ntt_form(true);
+                                row_accum_ntt.set_scale(fused_scale);
+                                row_accum_ntt.set_correction_factor(fused_correction_factor);
+                                row_accum_ntt.SetNoiseScaleDeg(fused_noise_scale_deg);
+
+                                const uint64_t *src = ans_tile.get() + local_r * cipher_coeff_count;
+                                throw_cuda_error(
+                                    cudaMemcpyAsync(
+                                        row_accum_ntt.data(), src, cipher_coeff_count * sizeof(uint64_t),
+                                        cudaMemcpyDeviceToDevice, stream),
+                                    "unpack ans_tile");
+
+                                phantom::transform_from_ntt_inplace(context_, row_accum_ntt);
+                                if (options_.enable_ct_ct_fusion)
+                                {
+                                    phantom::multiply_and_relin_inplace(
+                                        context_, row_accum_ntt, row_selectors[r], relin_keys_);
+                                }
+                                else
+                                {
+                                    phantom::multiply_inplace(context_, row_accum_ntt, row_selectors[r]);
+                                    phantom::relinearize_inplace(context_, row_accum_ntt, relin_keys_);
+                                }
+                            }
+                        }
+                        phantom::add_many(context_, row_terms, t_layer2[k]);
+                    }
+                }
+                else
+                {
+                    PhantomCiphertext accum_ntt;
+                    for (std::size_t k = 0; k < chunk_count; ++k)
+                    {
+                        for (std::size_t r = 0; r < row_count; ++r)
+                        {
+                            for (std::size_t c = 0; c < block_count; ++c)
+                            {
+                                plain_terms[c] = &db_plain.at(r, c, k);
+                            }
+
+                            phantom::multiply_plain_ntt_many_ptrs(context_, expanded_x_ntt, plain_terms, accum_ntt);
+
+                            phantom::transform_from_ntt_inplace(context_, accum_ntt);
+
+                            if (options_.enable_ct_ct_fusion)
+                            {
+                                phantom::multiply_and_relin_inplace(context_, accum_ntt, row_selectors[r], relin_keys_);
+                            }
+                            else
+                            {
+                                phantom::multiply_inplace(context_, accum_ntt, row_selectors[r]);
+                                phantom::relinearize_inplace(context_, accum_ntt, relin_keys_);
+                            }
+
+                            // Keep zero-copy ownership transfer but avoid reusing a moved-from
+                            // ciphertext object whose metadata may stay non-zero.
+                            std::swap(row_terms[r], accum_ntt);
+                        }
+                        phantom::add_many(context_, row_terms, t_layer2[k]);
+                    }
                 }
             },
             true, "T_Compute_MulAddLazyINTT");
@@ -413,6 +536,27 @@ int run_test_pir_gpu_interactive()
         }
         return std::string(env) != "0";
     }();
+    exec_options.enable_ct_pt_2d_fusion = [&]() {
+        const char *env = std::getenv("PIR_CT_PT_2D_FUSION");
+        if (env == nullptr)
+        {
+            return false;
+        }
+        return std::string(env) != "0";
+    }();
+    exec_options.ct_pt_2d_tile_rows = [&]() {
+        const char *env = std::getenv("PIR_CT_PT_2D_TILE_ROWS");
+        if (env == nullptr)
+        {
+            return std::size_t{ 32 };
+        }
+        const std::size_t parsed = static_cast<std::size_t>(std::stoull(env));
+        if (parsed == 0)
+        {
+            throw std::invalid_argument("PIR_CT_PT_2D_TILE_ROWS must be positive.");
+        }
+        return parsed;
+    }();
     exec_options.enable_ct_ct_fusion = true;
     exec_options.capture_chunk_answers = true;
 
@@ -468,6 +612,7 @@ int run_test_pir_gpu_interactive()
         std::cout << "T_Encrypt_Batch:  " << latency.t_encrypt_ms << std::endl;
         std::cout << "T_ExpandX_Batch:  " << latency.t_expand_ms << std::endl;
         std::cout << "ct_pt_fusion:     " << (exec_options.enable_ct_pt_fusion ? "ON" : "OFF") << std::endl;
+        std::cout << "ct_pt_2d_fusion:  " << "N/A(single-query only)" << std::endl;
         std::cout << "T_Compute_MulAdd: " << latency.t_compute_muladd_ms << std::endl;
         std::cout << "T_Compute_Rot:    " << latency.t_compute_rot_ms << std::endl;
         std::cout << "RESULT:           " << (ok ? "PASS" : "FAIL") << std::endl;
@@ -514,6 +659,8 @@ int run_test_pir_gpu_interactive()
     std::cout << "T_Encrypt:        " << latency.t_encrypt_ms << std::endl;
     std::cout << "T_ExpandX:        " << latency.t_expand_ms << std::endl;
     std::cout << "ct_pt_fusion:     " << (exec_options.enable_ct_pt_fusion ? "ON" : "OFF") << std::endl;
+    std::cout << "ct_pt_2d_fusion:  " << (exec_options.enable_ct_pt_2d_fusion ? "ON" : "OFF")
+              << " (tile_rows=" << exec_options.ct_pt_2d_tile_rows << ")" << std::endl;
     std::cout << "T_Compute_MulAdd: " << latency.t_compute_muladd_ms << std::endl;
     std::cout << "T_Compute_Rot:    " << latency.t_compute_rot_ms << std::endl;
     std::cout << "T_Decrypt:        " << latency.t_decrypt_ms << std::endl;
