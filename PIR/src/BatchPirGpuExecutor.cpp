@@ -1,7 +1,6 @@
 #include "PIR/PirGpuApps.h"
 
 #include "PIR/PirAnswerGenerator.h"
-#include "PIR/PirCiphertextOps.h"
 #include "PIR/PirDatabaseGenerator.h"
 #include "PIR/PirQueryGenerator.h"
 #include "PIR/PirRuntime.h"
@@ -17,7 +16,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <exception>
-#include <future>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -131,10 +129,8 @@ public:
         const double t_compute_muladd_ms = time_phase(
             [&]() {
                 std::vector<PhantomCiphertext> row_accum_ntt(batch_size);
-                std::vector<PhantomCiphertext> scratch_prod_ntt(batch_size);
-                std::vector<uint8_t> row_initialized(batch_size, 0U);
-                std::vector<const PhantomPlaintext *> row_plain_ntt_ptrs(block_count, nullptr);
                 std::vector<std::vector<PhantomCiphertext>> row_terms(batch_size, std::vector<PhantomCiphertext>(row_count));
+                std::vector<const PhantomPlaintext *> plain_terms(block_count, nullptr);
 
                 for (std::size_t r = 0; r < row_count; ++r)
                 {
@@ -159,50 +155,15 @@ public:
                 {
                     for (std::size_t r = 0; r < row_count; ++r)
                     {
-                        if (options_.enable_ct_pt_fusion)
+                        for (std::size_t c = 0; c < block_count; ++c)
                         {
-                            for (std::size_t c = 0; c < block_count; ++c)
-                            {
-                                row_plain_ntt_ptrs[c] = &db_plain.at(r, c, k);
-                            }
-
-                            for (std::size_t b = 0; b < batch_size; ++b)
-                            {
-                                phantom::multiply_plain_ntt_many_ptrs(
-                                    context_, batch_expanded_x[b], row_plain_ntt_ptrs, row_accum_ntt[b]);
-                            }
+                            plain_terms[c] = &db_plain.at(r, c, k);
                         }
-                        else
+
+                        for (std::size_t b = 0; b < batch_size; ++b)
                         {
-                            std::fill(row_initialized.begin(), row_initialized.end(), 0U);
-
-                            for (std::size_t c = 0; c < block_count; ++c)
-                            {
-                                const PhantomPlaintext &plain_ntt = db_plain.at(r, c, k);
-
-                                for (std::size_t b = 0; b < batch_size; ++b)
-                                {
-                                    if (!row_initialized[b])
-                                    {
-                                        copy_ciphertext_device_fast(batch_expanded_x[b][c], row_accum_ntt[b]);
-                                        phantom::multiply_plain_ntt_inplace(context_, row_accum_ntt[b], plain_ntt);
-                                        row_initialized[b] = 1U;
-                                    }
-                                    else
-                                    {
-                                        copy_ciphertext_device_fast(batch_expanded_x[b][c], scratch_prod_ntt[b]);
-                                        phantom::multiply_plain_ntt_inplace(context_, scratch_prod_ntt[b], plain_ntt);
-                                        phantom::add_inplace(context_, row_accum_ntt[b], scratch_prod_ntt[b]);
-                                    }
-                                }
-                            }
-                            for (std::size_t b = 0; b < batch_size; ++b)
-                            {
-                                if (!row_initialized[b])
-                                {
-                                    throw std::logic_error("row_accum is uninitialized.");
-                                }
-                            }
+                            phantom::multiply_plain_ntt_many_ptrs(
+                                context_, batch_expanded_x[b], plain_terms, row_accum_ntt[b]);
                         }
 
                         for (std::size_t b = 0; b < batch_size; ++b)
@@ -218,7 +179,9 @@ public:
                                 phantom::multiply_inplace(context_, row_accum_ntt[b], batch_row_selectors[b][r]);
                                 phantom::relinearize_inplace(context_, row_accum_ntt[b], relin_keys_);
                             }
-                            copy_ciphertext_device_fast(row_accum_ntt[b], row_terms[b][r]);
+                            // Keep zero-copy ownership transfer but avoid reusing a moved-from
+                            // ciphertext object whose metadata may stay non-zero.
+                            std::swap(row_terms[b][r], row_accum_ntt[b]);
                         }
                     }
 
@@ -251,35 +214,12 @@ public:
                     return;
                 }
 
-                int current_device = 0;
-                cudaError_t device_err = cudaGetDevice(&current_device);
-                if (device_err != cudaSuccess)
-                {
-                    throw std::runtime_error(
-                        "cudaGetDevice failed before async rotate: " + std::string(cudaGetErrorString(device_err)));
-                }
-
-                std::vector<std::future<void>> rotate_jobs;
-                rotate_jobs.reserve(chunk_count - 1);
                 for (std::size_t k = 1; k < chunk_count; ++k)
                 {
-                    rotate_jobs.emplace_back(std::async(std::launch::async, [&, k, current_device]() {
-                        cudaError_t set_err = cudaSetDevice(current_device);
-                        if (set_err != cudaSuccess)
-                        {
-                            throw std::runtime_error(
-                                "cudaSetDevice failed in async rotate worker: " + std::string(cudaGetErrorString(set_err)));
-                        }
-                        for (std::size_t b = 0; b < batch_size; ++b)
-                        {
-                            phantom::rotate_inplace(context_, t_layer2[b][k], static_cast<int>(k), galois_keys_);
-                        }
-                    }));
-                }
-
-                for (auto &job : rotate_jobs)
-                {
-                    job.get();
+                    for (std::size_t b = 0; b < batch_size; ++b)
+                    {
+                        phantom::rotate_inplace(context_, t_layer2[b][k], static_cast<int>(k), galois_keys_);
+                    }
                 }
 
                 for (std::size_t b = 0; b < batch_size; ++b)
@@ -293,7 +233,10 @@ public:
                     }
                 }
             },
-            true, options_.fuse_rotate_and_reduce ? "Batch_T_Compute_RotReduceAsync" : "Batch_T_Compute_RotAsync");
+            true,
+            options_.fuse_rotate_and_reduce
+                ? "Batch_T_Compute_RotReduce"
+                : "Batch_T_Compute_Rot");
 
         for (std::size_t b = 0; b < batch_size; ++b)
         {

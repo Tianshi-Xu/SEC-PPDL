@@ -5,6 +5,8 @@
 #include "uintmodmath.cuh"
 #include "util.cuh"
 
+#include <limits>
+
 using namespace std;
 using namespace phantom;
 using namespace phantom::util;
@@ -1317,6 +1319,46 @@ Returns (f, e1, e2) such that
         encrypted.set_scale(new_scale);
     }
 
+    void multiply_plain_ntt_inplace(
+        const PhantomContext &context, BatchCipherView encrypteds,
+        const PhantomPlaintext &plain) {
+        const auto &s = cudaStreamPerThread;
+
+        if (!encrypteds.is_ntt_form() || !plain.is_ntt_form()) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_inplace(batch) expects NTT-form operands");
+        }
+        if (encrypteds.chain_index() != plain.chain_index() ||
+            encrypteds.coeff_modulus_size() != plain.coeff_modulus_size()) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_inplace(batch): encrypted and plain parameter mismatch");
+        }
+
+        // Extract encryption parameters.
+        auto &context_data = context.get_context_data(encrypteds.chain_index());
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        const auto coeff_mod_size = coeff_modulus.size();
+        const auto poly_degree = parms.poly_modulus_degree();
+        const auto rns_coeff_count = poly_degree * coeff_mod_size;
+
+        if (encrypteds.poly_modulus_degree() != poly_degree ||
+            encrypteds.coeff_modulus_size() != coeff_mod_size) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_inplace(batch): encrypted metadata mismatch");
+        }
+
+        const std::size_t poly_batch = encrypteds.batch_size() * encrypteds.size();
+        const dim3 gridDimCtxt(
+            static_cast<unsigned int>((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x),
+            static_cast<unsigned int>(poly_batch));
+
+        // Pointwise multiplication over [batch * ciphertext_size] rows.
+        multiply_rns_poly_ct_pt<<<gridDimCtxt, blockDimGlb, 0, s>>>(
+            encrypteds.data(), plain.data(), context.gpu_rns_tables().modulus(),
+            encrypteds.data(), poly_degree, coeff_mod_size);
+    }
+
     void multiply_plain_ntt_and_add_inplace(
         const PhantomContext &context, const PhantomCiphertext &encrypted,
         const PhantomPlaintext &plain, PhantomCiphertext &destination) {
@@ -1354,6 +1396,74 @@ Returns (f, e1, e2) such that
         }
     }
 
+    __global__ static void multiply_and_add_rns_poly_batch(
+        const uint64_t *operand1, const uint64_t *operand2, const uint64_t *operand3,
+        const DModulus *modulus, uint64_t *result, const uint64_t poly_degree,
+        const uint64_t coeff_mod_size, const uint64_t rns_coeff_count)
+    {
+        const std::size_t poly_index = blockIdx.y;
+        const std::size_t base = poly_index * rns_coeff_count;
+        for (std::size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+             tid < rns_coeff_count; tid += blockDim.x * gridDim.x) {
+            const std::size_t twr = tid / poly_degree;
+            const DModulus mod = modulus[twr];
+
+            uint128_t prod = multiply_uint64_uint64(operand1[base + tid], operand2[tid]);
+            uint128_t sum = add_uint128_uint64(prod, operand3[base + tid]);
+            result[base + tid] =
+                barrett_reduce_uint128_uint64(sum, mod.value(), mod.const_ratio());
+        }
+    }
+
+    void multiply_plain_ntt_and_add_inplace(
+        const PhantomContext &context, ConstBatchCipherView encrypteds,
+        const PhantomPlaintext &plain, BatchCipherView destination)
+    {
+        const auto &s = cudaStreamPerThread;
+
+        if (!encrypteds.is_ntt_form() || !plain.is_ntt_form() ||
+            !destination.is_ntt_form()) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_and_add_inplace(batch) expects NTT-form operands");
+        }
+        if (encrypteds.chain_index() != plain.chain_index() ||
+            encrypteds.coeff_modulus_size() != plain.coeff_modulus_size()) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_and_add_inplace(batch): encrypted and plain mismatch");
+        }
+        if (destination.chain_index() != encrypteds.chain_index() ||
+            destination.batch_size() != encrypteds.batch_size() ||
+            destination.size() != encrypteds.size() ||
+            destination.poly_modulus_degree() != encrypteds.poly_modulus_degree() ||
+            destination.coeff_modulus_size() != encrypteds.coeff_modulus_size()) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_and_add_inplace(batch): destination mismatch");
+        }
+
+        // Extract encryption parameters.
+        auto &context_data = context.get_context_data(encrypteds.chain_index());
+        auto &parms = context_data.parms();
+        auto &coeff_modulus = parms.coeff_modulus();
+        const auto coeff_mod_size = coeff_modulus.size();
+        const auto poly_degree = parms.poly_modulus_degree();
+        const auto rns_coeff_count = poly_degree * coeff_mod_size;
+
+        if (encrypteds.poly_modulus_degree() != poly_degree ||
+            encrypteds.coeff_modulus_size() != coeff_mod_size) {
+            throw std::invalid_argument(
+                "multiply_plain_ntt_and_add_inplace(batch): encrypted metadata mismatch");
+        }
+
+        const std::size_t poly_batch = encrypteds.batch_size() * encrypteds.size();
+        const dim3 grid(
+            static_cast<unsigned int>((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x),
+            static_cast<unsigned int>(poly_batch));
+        multiply_and_add_rns_poly_batch<<<grid, blockDimGlb, 0, s>>>(
+            encrypteds.data(), plain.data(), destination.data(),
+            context.gpu_rns_tables().modulus(), destination.data(), poly_degree,
+            coeff_mod_size, rns_coeff_count);
+    }
+
     __global__ static void multiply_rns_poly_ct_pt_many_reduce(
         uint64_t *destination, const uint64_t *const *encrypted_terms, const uint64_t *const *plain_terms,
         const DModulus *modulus, const uint64_t poly_degree, const uint64_t rns_coeff_count,
@@ -1382,6 +1492,121 @@ Returns (f, e1, e2) such that
             barrett_reduce_uint128_uint64(accum, mod.value(), mod.const_ratio());
     }
 
+    __global__ static void multiply_add_2d_fusion_kernel(
+        const uint64_t *pt_matrix, const uint64_t *ct_terms, uint64_t *ans, const DModulus *modulus,
+        const uint64_t row_count, const uint64_t col_count, const uint64_t poly_degree,
+        const uint64_t rns_coeff_count, const uint64_t pt_row_stride, const uint64_t pt_col_stride,
+        const uint64_t ct_stride, const uint64_t ans_stride)
+    {
+        const uint64_t row_idx = blockIdx.y;
+        const uint64_t coeff_idx = static_cast<uint64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+        if (row_idx >= row_count || coeff_idx >= rns_coeff_count)
+        {
+            return;
+        }
+
+        const uint64_t mod_idx = coeff_idx / poly_degree;
+        const DModulus mod = modulus[mod_idx];
+
+        uint128_t acc_c0{0, 0};
+        uint128_t acc_c1{0, 0};
+        const uint64_t c1_offset = rns_coeff_count;
+
+        const uint64_t row_plain_base = row_idx * pt_row_stride;
+        for (uint64_t col_idx = 0; col_idx < col_count; ++col_idx)
+        {
+            const uint64_t *pt_ptr = pt_matrix + row_plain_base + col_idx * pt_col_stride;
+            const uint64_t *ct_ptr = ct_terms + col_idx * ct_stride;
+            const uint64_t pt_coeff = pt_ptr[coeff_idx];
+
+            const uint128_t prod_c0 = multiply_uint64_uint64(ct_ptr[coeff_idx], pt_coeff);
+            const uint128_t prod_c1 = multiply_uint64_uint64(ct_ptr[c1_offset + coeff_idx], pt_coeff);
+            add_uint128_uint128(prod_c0, acc_c0, acc_c0);
+            add_uint128_uint128(prod_c1, acc_c1, acc_c1);
+        }
+
+        uint64_t *ans_ptr = ans + row_idx * ans_stride;
+        const uint128_t sum_c0 = add_uint128_uint64(acc_c0, ans_ptr[coeff_idx]);
+        const uint128_t sum_c1 = add_uint128_uint64(acc_c1, ans_ptr[c1_offset + coeff_idx]);
+
+        ans_ptr[coeff_idx] = barrett_reduce_uint128_uint64(sum_c0, mod.value(), mod.const_ratio());
+        ans_ptr[c1_offset + coeff_idx] = barrett_reduce_uint128_uint64(sum_c1, mod.value(), mod.const_ratio());
+    }
+
+    void launch_multiply_add_2d_fusion(
+        const PhantomContext &context, const uint64_t *pt_matrix, const uint64_t *ct_terms, uint64_t *ans,
+        std::size_t row_count, std::size_t col_count, std::size_t chain_index,
+        std::size_t pt_row_stride, std::size_t pt_col_stride, std::size_t ct_stride,
+        std::size_t ans_stride, const cudaStream_t &stream)
+    {
+        if (row_count == 0 || col_count == 0)
+        {
+            return;
+        }
+        if (pt_matrix == nullptr || ct_terms == nullptr || ans == nullptr)
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: null input pointer");
+        }
+
+        auto &context_data = context.get_context_data(chain_index);
+        auto &parms = context_data.parms();
+        const auto poly_degree = parms.poly_modulus_degree();
+        const auto coeff_modulus_size = parms.coeff_modulus().size();
+        const std::size_t rns_coeff_count = poly_degree * coeff_modulus_size;
+        const std::size_t cipher_coeff_count = 2 * rns_coeff_count;
+
+        if (pt_col_stride == 0)
+        {
+            pt_col_stride = rns_coeff_count;
+        }
+        if (pt_row_stride == 0)
+        {
+            pt_row_stride = col_count * pt_col_stride;
+        }
+        if (ct_stride == 0)
+        {
+            ct_stride = cipher_coeff_count;
+        }
+        if (ans_stride == 0)
+        {
+            ans_stride = cipher_coeff_count;
+        }
+
+        if (pt_col_stride < rns_coeff_count)
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: pt_col_stride is too small");
+        }
+        const std::size_t min_row_span = (col_count - 1) * pt_col_stride + rns_coeff_count;
+        if (pt_row_stride < min_row_span)
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: pt_row_stride is too small");
+        }
+        if (ct_stride < cipher_coeff_count)
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: ct_stride is too small");
+        }
+        if (ans_stride < cipher_coeff_count)
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: ans_stride is too small");
+        }
+
+        if (row_count > static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()))
+        {
+            throw std::invalid_argument("launch_multiply_add_2d_fusion: row_count exceeds CUDA grid.y range");
+        }
+
+        const dim3 grid(
+            static_cast<unsigned int>((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x),
+            static_cast<unsigned int>(row_count));
+
+        multiply_add_2d_fusion_kernel<<<grid, blockDimGlb, 0, stream>>>(
+            pt_matrix, ct_terms, ans, context.gpu_rns_tables().modulus(),
+            static_cast<uint64_t>(row_count), static_cast<uint64_t>(col_count),
+            static_cast<uint64_t>(poly_degree), static_cast<uint64_t>(rns_coeff_count),
+            static_cast<uint64_t>(pt_row_stride), static_cast<uint64_t>(pt_col_stride),
+            static_cast<uint64_t>(ct_stride), static_cast<uint64_t>(ans_stride));
+    }
+
     struct MultiplyPlainNttManyWorkspace
     {
         std::vector<const uint64_t *> host_encrypted_terms;
@@ -1391,26 +1616,22 @@ Returns (f, e1, e2) such that
         std::size_t capacity = 0;
     };
 
-    template <typename PlainAccessor>
-    static void multiply_plain_ntt_many_impl(
-        const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds, std::size_t plain_count,
-        PlainAccessor plain_at, PhantomCiphertext &destination)
+    template <typename CipherAccessor, typename PlainAccessor>
+    static void multiply_plain_ntt_many_generic(
+        const PhantomContext &context, std::size_t term_count, CipherAccessor cipher_at, PlainAccessor plain_at,
+        PhantomCiphertext &destination, const char *api_name)
     {
         const auto &s = cudaStreamPerThread;
-        if (encrypteds.empty())
+        if (term_count == 0)
         {
-            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds is empty");
-        }
-        if (encrypteds.size() != plain_count)
-        {
-            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds/plains size mismatch");
+            throw std::invalid_argument(std::string(api_name) + ": empty terms");
         }
 
-        const PhantomCiphertext &first_ct = encrypteds.front();
+        const PhantomCiphertext &first_ct = cipher_at(0);
         const PhantomPlaintext &first_pt = plain_at(0);
         if (!first_ct.is_ntt_form() || !first_pt.is_ntt_form())
         {
-            throw std::invalid_argument("multiply_plain_ntt_many expects NTT-form operands");
+            throw std::invalid_argument(std::string(api_name) + " expects NTT-form operands");
         }
 
         const std::size_t chain_index = first_ct.chain_index();
@@ -1420,37 +1641,37 @@ Returns (f, e1, e2) such that
         const std::size_t rns_coeff_count = coeff_modulus_size * poly_degree;
         const uint64_t correction_factor = first_ct.correction_factor();
 
-        for (std::size_t i = 0; i < encrypteds.size(); ++i)
+        for (std::size_t i = 0; i < term_count; ++i)
         {
-            const PhantomCiphertext &ct = encrypteds[i];
+            const PhantomCiphertext &ct = cipher_at(i);
             const PhantomPlaintext &pt = plain_at(i);
             if (!ct.is_ntt_form() || !pt.is_ntt_form())
             {
-                throw std::invalid_argument("multiply_plain_ntt_many expects NTT-form operands");
+                throw std::invalid_argument(std::string(api_name) + " expects NTT-form operands");
             }
             if (ct.chain_index() != chain_index || pt.chain_index() != chain_index)
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: chain index mismatch");
+                throw std::invalid_argument(std::string(api_name) + ": chain index mismatch");
             }
             if (ct.coeff_modulus_size() != coeff_modulus_size || pt.coeff_modulus_size() != coeff_modulus_size)
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: coeff_modulus_size mismatch");
+                throw std::invalid_argument(std::string(api_name) + ": coeff_modulus_size mismatch");
             }
             if (ct.poly_modulus_degree() != poly_degree || pt.coeff_count() != rns_coeff_count)
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: poly degree mismatch");
+                throw std::invalid_argument(std::string(api_name) + ": poly degree mismatch");
             }
             if (ct.size() != ct_size)
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: ciphertext size mismatch");
+                throw std::invalid_argument(std::string(api_name) + ": ciphertext size mismatch");
             }
             if (ct.correction_factor() != correction_factor)
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: correction factor mismatch");
+                throw std::invalid_argument(std::string(api_name) + ": correction factor mismatch");
             }
             if (!are_same_scale(ct, first_ct) || !are_same_scale(pt, first_pt))
             {
-                throw std::invalid_argument("multiply_plain_ntt_many: scale mismatch across terms");
+                throw std::invalid_argument(std::string(api_name) + ": scale mismatch across terms");
             }
         }
 
@@ -1458,19 +1679,33 @@ Returns (f, e1, e2) such that
 
         destination.resize(context, chain_index, ct_size, s);
 
-        static thread_local MultiplyPlainNttManyWorkspace workspace;
-        if (workspace.capacity < encrypteds.size())
+        if (term_count == 1)
         {
-            workspace.device_encrypted_terms = make_cuda_auto_ptr<const uint64_t *>(encrypteds.size(), s);
-            workspace.device_plain_terms = make_cuda_auto_ptr<const uint64_t *>(encrypteds.size(), s);
-            workspace.capacity = encrypteds.size();
-        }
-        workspace.host_encrypted_terms.resize(encrypteds.size());
-        workspace.host_plain_terms.resize(encrypteds.size());
+            dim3 grid((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x, ct_size);
+            multiply_rns_poly_ct_pt<<<grid, blockDimGlb, 0, s>>>(
+                first_ct.data(), first_pt.data(), base_rns, destination.data(),
+                poly_degree, coeff_modulus_size);
 
-        for (std::size_t i = 0; i < encrypteds.size(); ++i)
+            destination.set_ntt_form(true);
+            destination.set_scale(first_ct.scale() * first_pt.scale());
+            destination.set_correction_factor(correction_factor);
+            destination.SetNoiseScaleDeg(first_ct.GetNoiseScaleDeg());
+            return;
+        }
+
+        static thread_local MultiplyPlainNttManyWorkspace workspace;
+        if (workspace.capacity < term_count)
         {
-            workspace.host_encrypted_terms[i] = encrypteds[i].data();
+            workspace.device_encrypted_terms = make_cuda_auto_ptr<const uint64_t *>(term_count, s);
+            workspace.device_plain_terms = make_cuda_auto_ptr<const uint64_t *>(term_count, s);
+            workspace.capacity = term_count;
+        }
+        workspace.host_encrypted_terms.resize(term_count);
+        workspace.host_plain_terms.resize(term_count);
+
+        for (std::size_t i = 0; i < term_count; ++i)
+        {
+            workspace.host_encrypted_terms[i] = cipher_at(i).data();
             workspace.host_plain_terms[i] = plain_at(i).data();
         }
 
@@ -1486,7 +1721,7 @@ Returns (f, e1, e2) such that
         multiply_rns_poly_ct_pt_many_reduce<<<grid, blockDimGlb, 0, s>>>(
             destination.data(), workspace.device_encrypted_terms.get(), workspace.device_plain_terms.get(), base_rns,
             poly_degree,
-            rns_coeff_count, encrypteds.size());
+            rns_coeff_count, term_count);
 
         destination.set_ntt_form(true);
         destination.set_scale(first_ct.scale() * first_pt.scale());
@@ -1498,17 +1733,36 @@ Returns (f, e1, e2) such that
         const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
         const std::vector<PhantomPlaintext> &plains, PhantomCiphertext &destination)
     {
-        multiply_plain_ntt_many_impl(
-            context, encrypteds, plains.size(),
-            [&](std::size_t i) -> const PhantomPlaintext & { return plains[i]; }, destination);
+        if (encrypteds.empty())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds is empty");
+        }
+        if (encrypteds.size() != plains.size())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many: encrypteds/plains size mismatch");
+        }
+        multiply_plain_ntt_many_generic(
+            context, encrypteds.size(),
+            [&](std::size_t i) -> const PhantomCiphertext & { return encrypteds[i]; },
+            [&](std::size_t i) -> const PhantomPlaintext & { return plains[i]; },
+            destination, "multiply_plain_ntt_many");
     }
 
     void multiply_plain_ntt_many_ptrs(
         const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
         const std::vector<const PhantomPlaintext *> &plains, PhantomCiphertext &destination)
     {
-        multiply_plain_ntt_many_impl(
-            context, encrypteds, plains.size(),
+        if (encrypteds.empty())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many_ptrs: encrypteds is empty");
+        }
+        if (encrypteds.size() != plains.size())
+        {
+            throw std::invalid_argument("multiply_plain_ntt_many_ptrs: encrypteds/plains size mismatch");
+        }
+        multiply_plain_ntt_many_generic(
+            context, encrypteds.size(),
+            [&](std::size_t i) -> const PhantomCiphertext & { return encrypteds[i]; },
             [&](std::size_t i) -> const PhantomPlaintext & {
                 if (plains[i] == nullptr)
                 {
@@ -1516,7 +1770,7 @@ Returns (f, e1, e2) such that
                 }
                 return *plains[i];
             },
-            destination);
+            destination, "multiply_plain_ntt_many_ptrs");
     }
 
     void multiply_plain_and_add_inplace(

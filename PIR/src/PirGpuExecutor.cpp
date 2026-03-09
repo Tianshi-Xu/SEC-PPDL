@@ -1,7 +1,6 @@
 #include "PIR/PirGpuApps.h"
 
 #include "PIR/PirAnswerGenerator.h"
-#include "PIR/PirCiphertextOps.h"
 #include "PIR/PirDatabaseGenerator.h"
 #include "PIR/PirQueryGenerator.h"
 #include "PIR/PirRuntime.h"
@@ -14,7 +13,6 @@
 #include <phantom/phantom_memory_pool.cuh>
 #include <phantom/secretkey.h>
 
-#include <future>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -43,10 +41,6 @@ public:
         PirExecutionOptions options)
         : context_(context), relin_keys_(relin_keys), galois_keys_(galois_keys), options_(options)
     {
-        if (options_.query_batch_size != 1)
-        {
-            throw std::invalid_argument("query_batch_size > 1 is reserved for next batch-enabled version.");
-        }
         (void)phantom_device_allocator();
     }
 
@@ -94,8 +88,7 @@ public:
 
                 std::vector<PhantomCiphertext> row_terms(row_count);
                 PhantomCiphertext accum_ntt;
-                PhantomCiphertext scratch_prod_ntt;
-                std::vector<const PhantomPlaintext *> row_plain_ntt_ptrs(block_count, nullptr);
+                std::vector<const PhantomPlaintext *> plain_terms(block_count, nullptr);
 
                 for (std::size_t r = 0; r < row_count; ++r)
                 {
@@ -119,40 +112,12 @@ public:
                 {
                     for (std::size_t r = 0; r < row_count; ++r)
                     {
-                        if (options_.enable_ct_pt_fusion)
+                        for (std::size_t c = 0; c < block_count; ++c)
                         {
-                            for (std::size_t c = 0; c < block_count; ++c)
-                            {
-                                row_plain_ntt_ptrs[c] = &db_plain.at(r, c, k);
-                            }
-
-                            phantom::multiply_plain_ntt_many_ptrs(context_, expanded_x_ntt, row_plain_ntt_ptrs, accum_ntt);
+                            plain_terms[c] = &db_plain.at(r, c, k);
                         }
-                        else
-                        {
-                            bool initialized = false;
-                            for (std::size_t c = 0; c < block_count; ++c)
-                            {
-                                const PhantomPlaintext &plain_ntt = db_plain.at(r, c, k);
 
-                                if (!initialized)
-                                {
-                                    copy_ciphertext_device_fast(expanded_x_ntt[c], accum_ntt);
-                                    phantom::multiply_plain_ntt_inplace(context_, accum_ntt, plain_ntt);
-                                    initialized = true;
-                                }
-                                else
-                                {
-                                    copy_ciphertext_device_fast(expanded_x_ntt[c], scratch_prod_ntt);
-                                    phantom::multiply_plain_ntt_inplace(context_, scratch_prod_ntt, plain_ntt);
-                                    phantom::add_inplace(context_, accum_ntt, scratch_prod_ntt);
-                                }
-                            }
-                            if (!initialized)
-                            {
-                                throw std::logic_error("accum_ntt is uninitialized.");
-                            }
-                        }
+                        phantom::multiply_plain_ntt_many_ptrs(context_, expanded_x_ntt, plain_terms, accum_ntt);
 
                         phantom::transform_from_ntt_inplace(context_, accum_ntt);
 
@@ -166,7 +131,9 @@ public:
                             phantom::relinearize_inplace(context_, accum_ntt, relin_keys_);
                         }
 
-                        copy_ciphertext_device_fast(accum_ntt, row_terms[r]);
+                        // Keep zero-copy ownership transfer but avoid reusing a moved-from
+                        // ciphertext object whose metadata may stay non-zero.
+                        std::swap(row_terms[r], accum_ntt);
                     }
                     phantom::add_many(context_, row_terms, t_layer2[k]);
                 }
@@ -186,31 +153,9 @@ public:
                     return;
                 }
 
-                int current_device = 0;
-                cudaError_t device_err = cudaGetDevice(&current_device);
-                if (device_err != cudaSuccess)
-                {
-                    throw std::runtime_error(
-                        "cudaGetDevice failed before async rotate: " + std::string(cudaGetErrorString(device_err)));
-                }
-
-                std::vector<std::future<void>> rotate_jobs;
-                rotate_jobs.reserve(chunk_count - 1);
                 for (std::size_t k = 1; k < chunk_count; ++k)
                 {
-                    rotate_jobs.emplace_back(std::async(std::launch::async, [&, k, current_device]() {
-                        cudaError_t set_err = cudaSetDevice(current_device);
-                        if (set_err != cudaSuccess)
-                        {
-                            throw std::runtime_error(
-                                "cudaSetDevice failed in async rotate worker: " + std::string(cudaGetErrorString(set_err)));
-                        }
-                        phantom::rotate_inplace(context_, t_layer2[k], static_cast<int>(k), galois_keys_);
-                    }));
-                }
-                for (auto &job : rotate_jobs)
-                {
-                    job.get();
+                    phantom::rotate_inplace(context_, t_layer2[k], static_cast<int>(k), galois_keys_);
                 }
 
                 for (std::size_t k = 1; k < chunk_count; ++k)
@@ -218,10 +163,175 @@ public:
                     phantom::add_inplace(context_, result.answer, t_layer2[k]);
                 }
             },
-            true, "T_Compute_RotReduceAsync");
+            true, "T_Compute_RotReduce");
 
         gpu_sync_or_throw("T_Compute_FinalAdd");
         return result;
+    }
+
+    std::vector<PirGpuComputeResult> run_batch(
+        Tensor3D<PhantomPlaintext> &db_plain, const std::vector<std::vector<PhantomCiphertext>> &batch_expanded_x,
+        const std::vector<std::vector<PhantomCiphertext>> &batch_row_selectors, std::size_t row_count,
+        std::size_t block_count, std::size_t chunk_count) const
+    {
+        const std::size_t batch_size = batch_expanded_x.size();
+        if (batch_size == 0)
+        {
+            return {};
+        }
+        if (batch_row_selectors.size() != batch_size)
+        {
+            throw std::invalid_argument("batch_row_selectors size mismatch.");
+        }
+        if (row_count == 0 || block_count == 0 || chunk_count == 0)
+        {
+            throw std::invalid_argument("row_count, block_count, and chunk_count must be positive.");
+        }
+
+        for (std::size_t b = 0; b < batch_size; ++b)
+        {
+            if (batch_expanded_x[b].size() != block_count)
+            {
+                throw std::invalid_argument("batch_expanded_x[b] block_count mismatch.");
+            }
+            if (batch_row_selectors[b].size() != row_count)
+            {
+                throw std::invalid_argument("batch_row_selectors[b] row_count mismatch.");
+            }
+        }
+
+        std::vector<PirGpuComputeResult> results(batch_size);
+        std::vector<std::vector<PhantomCiphertext>> t_layer2(batch_size, std::vector<PhantomCiphertext>(chunk_count));
+
+        const double t_compute_muladd_ms = time_phase(
+            [&]() {
+                if (batch_expanded_x.front().empty())
+                {
+                    throw std::invalid_argument("batch_expanded_x is empty.");
+                }
+                const std::size_t query_chain_index = batch_expanded_x.front().front().chain_index();
+                std::vector<std::vector<PhantomCiphertext>> batch_expanded_x_ntt = batch_expanded_x;
+
+                for (std::size_t b = 0; b < batch_size; ++b)
+                {
+                    for (std::size_t c = 0; c < block_count; ++c)
+                    {
+                        if (!batch_expanded_x_ntt[b][c].is_ntt_form())
+                        {
+                            phantom::transform_to_ntt_inplace(context_, batch_expanded_x_ntt[b][c]);
+                        }
+                        if (batch_expanded_x_ntt[b][c].chain_index() != query_chain_index)
+                        {
+                            throw std::logic_error("expanded_x chain index mismatch in lazy-INTT path.");
+                        }
+                    }
+                }
+
+                for (std::size_t r = 0; r < row_count; ++r)
+                {
+                    for (std::size_t c = 0; c < block_count; ++c)
+                    {
+                        for (std::size_t k = 0; k < chunk_count; ++k)
+                        {
+                            PhantomPlaintext &plain_ntt = db_plain.at(r, c, k);
+                            if (!plain_ntt.is_ntt_form())
+                            {
+                                phantom::transform_to_ntt_inplace(context_, plain_ntt, query_chain_index);
+                            }
+                            else if (plain_ntt.chain_index() != query_chain_index)
+                            {
+                                throw std::logic_error("plain_ntt chain index mismatch in lazy-INTT path.");
+                            }
+                        }
+                    }
+                }
+
+                std::vector<PhantomCiphertext> row_accum_ntt(batch_size);
+                std::vector<std::vector<PhantomCiphertext>> row_terms(batch_size, std::vector<PhantomCiphertext>(row_count));
+                std::vector<const PhantomPlaintext *> plain_terms(block_count, nullptr);
+
+                for (std::size_t k = 0; k < chunk_count; ++k)
+                {
+                    for (std::size_t r = 0; r < row_count; ++r)
+                    {
+                        for (std::size_t c = 0; c < block_count; ++c)
+                        {
+                            plain_terms[c] = &db_plain.at(r, c, k);
+                        }
+
+                        for (std::size_t b = 0; b < batch_size; ++b)
+                        {
+                            phantom::multiply_plain_ntt_many_ptrs(
+                                context_, batch_expanded_x_ntt[b], plain_terms, row_accum_ntt[b]);
+                        }
+
+                        for (std::size_t b = 0; b < batch_size; ++b)
+                        {
+                            phantom::transform_from_ntt_inplace(context_, row_accum_ntt[b]);
+                            if (options_.enable_ct_ct_fusion)
+                            {
+                                phantom::multiply_and_relin_inplace(
+                                    context_, row_accum_ntt[b], batch_row_selectors[b][r], relin_keys_);
+                            }
+                            else
+                            {
+                                phantom::multiply_inplace(context_, row_accum_ntt[b], batch_row_selectors[b][r]);
+                                phantom::relinearize_inplace(context_, row_accum_ntt[b], relin_keys_);
+                            }
+                            std::swap(row_terms[b][r], row_accum_ntt[b]);
+                        }
+                    }
+                    for (std::size_t b = 0; b < batch_size; ++b)
+                    {
+                        phantom::add_many(context_, row_terms[b], t_layer2[b][k]);
+                    }
+                }
+            },
+            true, "T_Compute_MulAddLazyINTT(Batch)");
+
+        std::vector<PhantomCiphertext> answers(batch_size);
+        const double t_compute_rot_ms = time_phase(
+            [&]() {
+                for (std::size_t b = 0; b < batch_size; ++b)
+                {
+                    answers[b] = t_layer2[b][0];
+                }
+
+                if (chunk_count <= 1)
+                {
+                    return;
+                }
+
+                for (std::size_t k = 1; k < chunk_count; ++k)
+                {
+                    for (std::size_t b = 0; b < batch_size; ++b)
+                    {
+                        phantom::rotate_inplace(context_, t_layer2[b][k], static_cast<int>(k), galois_keys_);
+                    }
+                }
+                for (std::size_t b = 0; b < batch_size; ++b)
+                {
+                    for (std::size_t k = 1; k < chunk_count; ++k)
+                    {
+                        phantom::add_inplace(context_, answers[b], t_layer2[b][k]);
+                    }
+                }
+            },
+            true, "T_Compute_RotReduce(Batch)");
+
+        for (std::size_t b = 0; b < batch_size; ++b)
+        {
+            if (options_.capture_chunk_answers)
+            {
+                results[b].chunk_answers_before_rotation = t_layer2[b];
+            }
+            results[b].answer = std::move(answers[b]);
+            results[b].t_compute_muladd_ms = t_compute_muladd_ms;
+            results[b].t_compute_rot_ms = t_compute_rot_ms;
+        }
+
+        gpu_sync_or_throw("T_Compute_FinalAdd(Batch)");
+        return results;
     }
 
 private:
@@ -281,6 +391,89 @@ int run_test_pir_gpu_interactive()
         },
         true, "T_Encode");
 
+    PirExecutionOptions exec_options;
+    exec_options.query_batch_size = [&]() {
+        const char *env = std::getenv("PIR_QUERY_BATCH_SIZE");
+        if (env == nullptr)
+        {
+            return std::size_t{ 1 };
+        }
+        const std::size_t parsed = static_cast<std::size_t>(std::stoull(env));
+        if (parsed == 0)
+        {
+            throw std::invalid_argument("PIR_QUERY_BATCH_SIZE must be positive.");
+        }
+        return parsed;
+    }();
+    exec_options.enable_ct_pt_fusion = [&]() {
+        const char *env = std::getenv("PIR_CT_PT_FUSION");
+        if (env == nullptr)
+        {
+            return true;
+        }
+        return std::string(env) != "0";
+    }();
+    exec_options.enable_ct_ct_fusion = true;
+    exec_options.capture_chunk_answers = true;
+
+    PirGpuExecutor executor(context, relin_keys, galois_keys, exec_options);
+    if (exec_options.query_batch_size > 1)
+    {
+        std::vector<QueryIndex> query_indices(exec_options.query_batch_size);
+        query_indices[0] = map_query(input.query_id, shape);
+        std::random_device rd_batch;
+        std::mt19937_64 gen_batch(rd_batch());
+        std::uniform_int_distribution<std::size_t> qdist(0, input.num - 1);
+        for (std::size_t b = 1; b < exec_options.query_batch_size; ++b)
+        {
+            query_indices[b] = map_query(qdist(gen_batch), shape);
+        }
+
+        BatchQueryBundle batch_query_bundle;
+        latency.t_encrypt_ms = time_phase(
+            [&]() {
+                batch_query_bundle =
+                    generate_batch_query_bundle(shape, query_indices, plain_mod, context, public_key, batch_encoder);
+            },
+            true, "T_Encrypt_Batch");
+
+        std::vector<std::vector<PhantomCiphertext>> batch_expanded_x(exec_options.query_batch_size);
+        latency.t_expand_ms = time_phase(
+            [&]() {
+                for (std::size_t b = 0; b < exec_options.query_batch_size; ++b)
+                {
+                    batch_expanded_x[b] = expand_query_sealpir_device(
+                        batch_query_bundle.batch_compressed_x[b], static_cast<uint32_t>(shape.blocks_per_row), context,
+                        galois_keys);
+                }
+            },
+            true, "T_ExpandX_Batch");
+
+        std::vector<PirGpuComputeResult> batch_results = executor.run_batch(
+            db_plain, batch_expanded_x, batch_query_bundle.batch_row_selectors, shape.h, shape.blocks_per_row,
+            shape.chunks);
+        if (!batch_results.empty())
+        {
+            latency.t_compute_muladd_ms = batch_results[0].t_compute_muladd_ms;
+            latency.t_compute_rot_ms = batch_results[0].t_compute_rot_ms;
+        }
+
+        const bool ok = verify_batch_results(
+            batch_results, query_indices, db_values, shape, context, secret_key, batch_encoder);
+
+        std::cout << "\n===== Phase Latency (ms) - Batch =====" << std::endl;
+        std::cout << std::fixed << std::setprecision(3);
+        std::cout << "batch_size:       " << exec_options.query_batch_size << std::endl;
+        std::cout << "T_Encode:         " << latency.t_encode_ms << std::endl;
+        std::cout << "T_Encrypt_Batch:  " << latency.t_encrypt_ms << std::endl;
+        std::cout << "T_ExpandX_Batch:  " << latency.t_expand_ms << std::endl;
+        std::cout << "ct_pt_fusion:     " << (exec_options.enable_ct_pt_fusion ? "ON" : "OFF") << std::endl;
+        std::cout << "T_Compute_MulAdd: " << latency.t_compute_muladd_ms << std::endl;
+        std::cout << "T_Compute_Rot:    " << latency.t_compute_rot_ms << std::endl;
+        std::cout << "RESULT:           " << (ok ? "PASS" : "FAIL") << std::endl;
+        return ok ? 0 : 1;
+    }
+
     PirQueryBundle query_bundle;
     latency.t_encrypt_ms = time_phase(
         [&]() {
@@ -296,20 +489,6 @@ int run_test_pir_gpu_interactive()
         },
         true, "T_ExpandX");
 
-    PirExecutionOptions exec_options;
-    exec_options.query_batch_size = 1;
-    exec_options.enable_ct_pt_fusion = [&]() {
-        const char *env = std::getenv("PIR_CT_PT_FUSION");
-        if (env == nullptr)
-        {
-            return true;
-        }
-        return std::string(env) != "0";
-    }();
-    exec_options.enable_ct_ct_fusion = true;
-    exec_options.capture_chunk_answers = true;
-
-    PirGpuExecutor executor(context, relin_keys, galois_keys, exec_options);
     PirGpuComputeResult compute_result_baseline =
         executor.run(db_plain, expanded_x, query_bundle.row_selectors, shape.h, shape.blocks_per_row, shape.chunks);
     latency.t_compute_muladd_ms = compute_result_baseline.t_compute_muladd_ms;

@@ -6,6 +6,7 @@
 #include "secretkey.h"
 #include "evaluate.cuh"
 #include "ckks.h"
+#include "batch_view.h"
 
 #include "host/encryptionparams.h"
 #include "host/modulus.h"
