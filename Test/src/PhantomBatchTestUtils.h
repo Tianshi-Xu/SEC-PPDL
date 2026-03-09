@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -141,6 +142,39 @@ inline void expect_device_buffer_eq(
     const auto lhs_h = copy_device_to_host(lhs, count);
     const auto rhs_h = copy_device_to_host(rhs, count);
     EXPECT_EQ(lhs_h, rhs_h);
+}
+
+template <typename Fn>
+inline float measure_cuda_average_ms(
+    std::size_t warmup_iters, std::size_t iters, Fn &&work,
+    const cudaStream_t &stream = cudaStreamPerThread) {
+    if (iters == 0) {
+        throw std::invalid_argument("measure_cuda_average_ms: iters must be > 0");
+    }
+
+    for (std::size_t i = 0; i < warmup_iters; ++i) {
+        work();
+    }
+    check_cuda(cudaStreamSynchronize(stream), "cudaStreamSynchronize warmup");
+
+    cudaEvent_t start{};
+    cudaEvent_t stop{};
+    check_cuda(cudaEventCreate(&start), "cudaEventCreate start");
+    check_cuda(cudaEventCreate(&stop), "cudaEventCreate stop");
+
+    check_cuda(cudaEventRecord(start, stream), "cudaEventRecord start");
+    for (std::size_t i = 0; i < iters; ++i) {
+        work();
+    }
+    check_cuda(cudaEventRecord(stop, stream), "cudaEventRecord stop");
+    check_cuda(cudaEventSynchronize(stop), "cudaEventSynchronize stop");
+
+    float elapsed_ms = 0.0f;
+    check_cuda(cudaEventElapsedTime(&elapsed_ms, start, stop), "cudaEventElapsedTime");
+    check_cuda(cudaEventDestroy(start), "cudaEventDestroy start");
+    check_cuda(cudaEventDestroy(stop), "cudaEventDestroy stop");
+
+    return elapsed_ms / static_cast<float>(iters);
 }
 
 } // namespace phantom_batch_test

@@ -97,6 +97,77 @@ namespace phantom {
         }
     }
 
+    __global__ void key_switch_inner_prod_c2_and_evk_batch(
+        uint64_t *dst, const uint64_t *c2, const uint64_t *const *evks,
+        const DModulus *modulus, size_t n, size_t size_QP, size_t size_QP_n,
+        size_t size_QlP, size_t size_QlP_n, size_t size_Q, size_t size_Ql,
+        size_t beta, size_t reduction_threshold, size_t c2_batch_stride,
+        size_t dst_batch_stride) {
+        const size_t batch_idx = blockIdx.y;
+        const uint64_t *c2_batch = c2 + batch_idx * c2_batch_stride;
+        uint64_t *dst_batch = dst + batch_idx * dst_batch_stride;
+
+        for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < size_QlP_n; tid += blockDim.x * gridDim.x) {
+            size_t cnt = reduction_threshold;
+            size_t nid = tid / n;
+            size_t twr = (nid >= size_Ql ? size_Q + (nid - size_Ql) : nid);
+            DModulus mod = modulus[twr];
+            uint64_t evk_id = (tid % n) + twr * n;
+            uint64_t c2_id = (tid % n) + nid * n;
+
+            uint128_t prod0, prod1;
+            uint128_t acc0, acc1;
+
+            acc0 = multiply_uint64_uint64_fp64(c2_batch[c2_id], evks[0][evk_id]);
+            acc1 = multiply_uint64_uint64_fp64(c2_batch[c2_id], evks[0][evk_id + size_QP_n]);
+
+            for (uint64_t i = 1; i < beta; i++) {
+                if (i && cnt == 0) {
+#ifdef FP64_MM_ARITH
+                    acc0 = adjust_accum_int64_to_fp64(acc0);
+                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
+                    acc0.hi = 0;
+
+                    acc1 = adjust_accum_int64_to_fp64(acc1);
+                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
+                    acc1.hi = 0;
+#else
+                    acc0.lo = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
+                    acc0.hi = 0;
+
+                    acc1.lo = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
+                    acc1.hi = 0;
+#endif
+                    cnt = reduction_threshold;
+                }
+
+                prod0 = multiply_uint64_uint64_fp64(c2_batch[c2_id + i * size_QlP_n], evks[i][evk_id]);
+                add_uint128_uint128(acc0, prod0, acc0);
+
+                prod1 = multiply_uint64_uint64_fp64(c2_batch[c2_id + i * size_QlP_n], evks[i][evk_id + size_QP_n]);
+                add_uint128_uint128(acc1, prod1, acc1);
+
+                cnt--;
+            }
+
+#ifdef FP64_MM_ARITH
+            acc0 = adjust_accum_int64_to_fp64(acc0);
+            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio_fp64());
+            dst_batch[tid] = res0;
+
+            acc1 = adjust_accum_int64_to_fp64(acc1);
+            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio_fp64());
+            dst_batch[tid + size_QlP_n] = res1;
+#else
+            uint64_t res0 = barrett_reduce_uint128_uint64_fp64(acc0, mod.value(), mod.const_ratio());
+            dst_batch[tid] = res0;
+
+            uint64_t res1 = barrett_reduce_uint128_uint64_fp64(acc1, mod.value(), mod.const_ratio());
+            dst_batch[tid + size_QlP_n] = res1;
+#endif
+        }
+    }
+
     void
     key_switch_inner_prod(uint64_t *p_cx, const uint64_t *p_t_mod_up, const uint64_t *const *rlk,
                           const DRNSTool &rns_tool,
@@ -118,6 +189,30 @@ namespace phantom {
         key_switch_inner_prod_c2_and_evk<<<size_QlP_n / blockDimGlb.x, blockDimGlb, 0, stream>>>(
                 p_cx, p_t_mod_up, rlk, modulus_QP, n, size_QP, size_QP_n, size_QlP, size_QlP_n, size_Q, size_Ql, beta,
                 reduction_threshold);
+    }
+
+    __global__ static void add_to_ct_kernel_pair_batch(
+        uint64_t *ct, const uint64_t *cx, const DModulus *modulus, size_t n,
+        size_t dst_size_limb, size_t src_size_limb, size_t ct_poly_count,
+        size_t batch_size) {
+        const size_t batch_idx = blockIdx.y;
+        const size_t component_idx = blockIdx.z;
+        if (batch_idx >= batch_size || component_idx >= 2) {
+            return;
+        }
+
+        const size_t src_batch_idx = batch_idx * 2 + component_idx;
+        const size_t src_batch_offset = src_batch_idx * src_size_limb * n;
+        const size_t dst_batch_offset =
+            (batch_idx * ct_poly_count + component_idx) * dst_size_limb * n;
+
+        for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < n * dst_size_limb;
+             tid += blockDim.x * gridDim.x) {
+            size_t twr = tid / n;
+            DModulus mod = modulus[twr];
+            ct[dst_batch_offset + tid] = add_uint64_uint64_mod(
+                ct[dst_batch_offset + tid], cx[src_batch_offset + tid], mod.value());
+        }
     }
 
 // cks refers to cipher to be key-switched
@@ -233,4 +328,107 @@ namespace phantom {
     template void keyswitch_inplace<true>(
         const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
         const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
+
+    void keyswitch_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypted,
+                           const PhantomRelinKey &relin_keys, bool is_relin,
+                           const cudaStream_t &stream) {
+        const auto &s = stream;
+        const size_t batch_size = encrypted.batch_size();
+        if (batch_size == 0) {
+            return;
+        }
+        if (encrypted.size() != 3) {
+            throw invalid_argument("keyswitch_inplace(batch): ciphertext size must be 3");
+        }
+
+        auto &key_context_data = context.get_context_data(0);
+        auto &key_parms = key_context_data.parms();
+        auto scheme = key_parms.scheme();
+        auto n = key_parms.poly_modulus_degree();
+        auto mul_tech = key_parms.mul_tech();
+        auto &key_modulus = key_parms.coeff_modulus();
+        size_t size_P = key_parms.special_modulus_size();
+        size_t size_QP = key_modulus.size();
+
+        uint32_t levelsDropped;
+        if (scheme == scheme_type::bfv) {
+            levelsDropped = 0;
+            if (mul_tech == mul_tech_type::hps_overq_leveled) {
+                size_t depth = encrypted.noiseScaleDeg();
+                bool isKeySwitch = !is_relin;
+                bool is_Asymmetric = encrypted.is_asymmetric();
+                size_t levels = depth - 1;
+                auto dcrtBits =
+                    static_cast<double>(context.get_context_data(1).gpu_rns_tool().qMSB());
+                levelsDropped =
+                    FindLevelsToDrop(context, levels, dcrtBits, isKeySwitch, is_Asymmetric);
+            }
+        } else if (scheme == scheme_type::bgv || scheme == scheme_type::ckks) {
+            levelsDropped = encrypted.chain_index() - 1;
+        } else {
+            throw invalid_argument("unsupported scheme in keyswitch_inplace(batch)");
+        }
+
+        auto &rns_tool = context.get_context_data(1 + levelsDropped).gpu_rns_tool();
+        auto modulus_QP = context.gpu_rns_tables().modulus();
+
+        const size_t size_Ql = rns_tool.base_Ql().size();
+        const size_t size_Q = size_QP - size_P;
+        const size_t size_QlP = size_Ql + size_P;
+
+        const size_t size_Ql_n = size_Ql * n;
+        const size_t size_Q_n = size_Q * n;
+        const size_t size_QlP_n = size_QlP * n;
+        const size_t beta = rns_tool.v_base_part_Ql_to_compl_part_QlP_conv().size();
+
+        const size_t item_words = encrypted.item_data_count();
+        const size_t coeff_words = encrypted.coeff_count();
+        const size_t c2_offset = 2 * coeff_words;
+
+        auto c2_ql = make_cuda_auto_ptr<uint64_t>(batch_size * size_Ql_n, s);
+        for (size_t b = 0; b < batch_size; ++b) {
+            const uint64_t *c2_src = encrypted.data() + b * item_words + c2_offset;
+            uint64_t *c2_dst = c2_ql.get() + b * size_Ql_n;
+            if (mul_tech == mul_tech_type::hps_overq_leveled && levelsDropped) {
+                rns_tool.scaleAndRound_HPS_Q_Ql(c2_dst, c2_src, s);
+            } else {
+                cudaMemcpyAsync(c2_dst, c2_src, size_Ql_n * sizeof(uint64_t),
+                                cudaMemcpyDeviceToDevice, s);
+            }
+        }
+
+        auto t_mod_up =
+            make_cuda_auto_ptr<uint64_t>(batch_size * beta * size_QlP_n, s);
+        rns_tool.modup_batch(
+            t_mod_up.get(), c2_ql.get(), context.gpu_rns_tables(),
+            batch_size, scheme, s);
+
+        auto cx = make_cuda_auto_ptr<uint64_t>(batch_size * 2 * size_QlP_n, s);
+        auto reduction_threshold =
+            (1 << (bits_per_uint64 -
+                   static_cast<uint64_t>(log2(key_modulus.front().value())) - 1)) -
+            1;
+        dim3 gridDimGlb(size_QlP_n / blockDimGlb.x, batch_size);
+        key_switch_inner_prod_c2_and_evk_batch<<<gridDimGlb, blockDimGlb, 0, s>>>(
+            cx.get(), t_mod_up.get(), relin_keys.public_keys_ptr(), modulus_QP, n,
+            size_QP, size_QP * n, size_QlP, size_QlP_n, size_Q, size_Ql, beta,
+            reduction_threshold, beta * size_QlP_n, 2 * size_QlP_n);
+
+        rns_tool.moddown_from_NTT_batch(cx.get(), cx.get(), context.gpu_rns_tables(),
+                                        2 * batch_size, scheme, s);
+
+        if (mul_tech == mul_tech_type::hps_overq_leveled && levelsDropped) {
+            auto t_cx = make_cuda_auto_ptr<uint64_t>(batch_size * 2 * size_Q_n, s);
+            rns_tool.ExpandCRTBasis_Ql_Q_batch(t_cx.get(), cx.get(), 2 * batch_size, s);
+            dim3 addGrid(size_Q_n / blockDimGlb.x, batch_size, 2);
+            add_to_ct_kernel_pair_batch<<<addGrid, blockDimGlb, 0, s>>>(
+                encrypted.data(), t_cx.get(), rns_tool.base_Q().base(), n, size_Q,
+                size_Q, encrypted.size(), batch_size);
+        } else {
+            dim3 addGrid(size_Ql_n / blockDimGlb.x, batch_size, 2);
+            add_to_ct_kernel_pair_batch<<<addGrid, blockDimGlb, 0, s>>>(
+                encrypted.data(), cx.get(), rns_tool.base_Ql().base(), n, size_Ql,
+                size_QlP, encrypted.size(), batch_size);
+        }
+    }
 }

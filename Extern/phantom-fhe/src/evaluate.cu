@@ -112,6 +112,68 @@ Returns (f, e1, e2) such that
         return are_close<double>(value1.scale(), value2.scale());
     }
 
+    static PhantomCiphertext extract_batch_item(
+        const PhantomContext &context, ConstBatchCipherView batch, std::size_t index,
+        const cudaStream_t &stream) {
+        if (index >= batch.batch_size()) {
+            throw std::out_of_range("extract_batch_item: index out of range");
+        }
+
+        PhantomCiphertext out;
+        out.resize(context, batch.chain_index(), batch.size(), stream);
+        out.set_ntt_form(batch.is_ntt_form());
+        out.set_scale(batch.scale());
+        out.set_correction_factor(batch.correction_factor());
+        out.SetNoiseScaleDeg(batch.noiseScaleDeg());
+        out.set_asymmetric(batch.is_asymmetric());
+
+        const std::size_t item_words = batch.item_data_count();
+        PHANTOM_CHECK_CUDA(cudaMemcpyAsync(
+            out.data(), batch.data() + index * item_words,
+            item_words * sizeof(uint64_t), cudaMemcpyDeviceToDevice, stream));
+        return out;
+    }
+
+    static void copy_to_batch_item(
+        const PhantomCiphertext &src, BatchCipherView destination, std::size_t index,
+        const cudaStream_t &stream) {
+        if (index >= destination.batch_size()) {
+            throw std::out_of_range("copy_to_batch_item: index out of range");
+        }
+        if (src.size() != destination.size() ||
+            src.poly_modulus_degree() != destination.poly_modulus_degree() ||
+            src.coeff_modulus_size() != destination.coeff_modulus_size()) {
+            throw std::invalid_argument("copy_to_batch_item: shape mismatch");
+        }
+
+        const std::size_t item_words = destination.item_data_count();
+        PHANTOM_CHECK_CUDA(cudaMemcpyAsync(
+            destination.data() + index * item_words, src.data(),
+            item_words * sizeof(uint64_t), cudaMemcpyDeviceToDevice, stream));
+    }
+
+    __global__ static void copy_cipher_poly_prefix_batch(
+        uint64_t *dst, const uint64_t *src, size_t coeff_words_per_poly,
+        size_t src_poly_count, size_t dst_poly_count, size_t batch_size) {
+        const size_t batch_idx = blockIdx.y;
+        const size_t poly_idx = blockIdx.z;
+        if (batch_idx >= batch_size || poly_idx >= dst_poly_count) {
+            return;
+        }
+
+        const size_t src_item_stride = src_poly_count * coeff_words_per_poly;
+        const size_t dst_item_stride = dst_poly_count * coeff_words_per_poly;
+        const size_t src_base =
+            batch_idx * src_item_stride + poly_idx * coeff_words_per_poly;
+        const size_t dst_base =
+            batch_idx * dst_item_stride + poly_idx * coeff_words_per_poly;
+
+        for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+             tid < coeff_words_per_poly; tid += blockDim.x * gridDim.x) {
+            dst[dst_base + tid] = src[src_base + tid];
+        }
+    }
+
     static void
     negate_internal(const PhantomContext &context, PhantomCiphertext &encrypted, const cudaStream_t &stream) {
         // Extract encryption parameters.
@@ -1086,6 +1148,115 @@ Returns (f, e1, e2) such that
         }
     }
 
+    void multiply_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted1,
+        const PhantomBatchCiphertext &encrypted2) {
+        if (encrypted1.batch_size() != encrypted2.batch_size()) {
+            throw std::invalid_argument("multiply_inplace(batch): batch_size mismatch");
+        }
+        if (encrypted1.batch_size() == 0) {
+            return;
+        }
+        if (encrypted1.chain_index() != encrypted2.chain_index()) {
+            throw std::invalid_argument("multiply_inplace(batch): chain index mismatch");
+        }
+        if (encrypted1.size() != encrypted2.size()) {
+            throw std::invalid_argument("multiply_inplace(batch): ciphertext size mismatch");
+        }
+        if (encrypted1.poly_modulus_degree() != encrypted2.poly_modulus_degree() ||
+            encrypted1.coeff_modulus_size() != encrypted2.coeff_modulus_size()) {
+            throw std::invalid_argument("multiply_inplace(batch): metadata mismatch");
+        }
+        if (encrypted1.is_ntt_form() != encrypted2.is_ntt_form()) {
+            throw std::invalid_argument("multiply_inplace(batch): NTT form mismatch");
+        }
+
+        const auto &s = cudaStreamPerThread;
+        auto &context_data = context.get_context_data(encrypted1.chain_index());
+        auto &parms = context_data.parms();
+        const auto scheme = parms.scheme();
+
+        const auto lhs = encrypted1.view();
+        const auto rhs = encrypted2.view();
+        const std::size_t batch_size = lhs.batch_size();
+        const std::size_t dest_size = lhs.size() + rhs.size() - 1;
+
+        if ((scheme == scheme_type::ckks || scheme == scheme_type::bgv) &&
+            lhs.is_ntt_form()) {
+            const std::size_t rns_coeff_count =
+                lhs.poly_modulus_degree() * lhs.coeff_modulus_size();
+            const dim3 grid(
+                static_cast<unsigned int>((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x),
+                static_cast<unsigned int>(batch_size));
+
+            PhantomBatchCiphertext out;
+            out.resize(context, lhs.chain_index(), dest_size, batch_size, s);
+
+            if (lhs.size() == 2 && rhs.size() == 2 && dest_size == 3) {
+                if (&encrypted1 == &encrypted2) {
+                    tensor_square_2x2_rns_poly_batch<<<grid, blockDimGlb, 0, s>>>(
+                        lhs.data(), context.gpu_rns_tables().modulus(), out.data(),
+                        static_cast<uint32_t>(lhs.poly_modulus_degree()),
+                        static_cast<uint32_t>(lhs.coeff_modulus_size()));
+                } else {
+                    tensor_prod_2x2_rns_poly_batch<<<grid, blockDimGlb, 0, s>>>(
+                        lhs.data(), rhs.data(), context.gpu_rns_tables().modulus(), out.data(),
+                        static_cast<uint32_t>(lhs.poly_modulus_degree()),
+                        static_cast<uint32_t>(lhs.coeff_modulus_size()));
+                }
+            } else {
+                tensor_prod_mxn_rns_poly_batch<<<grid, blockDimGlb, 0, s>>>(
+                    lhs.data(), static_cast<uint32_t>(lhs.size()),
+                    rhs.data(), static_cast<uint32_t>(rhs.size()),
+                    context.gpu_rns_tables().modulus(), out.data(),
+                    static_cast<uint64_t>(dest_size),
+                    static_cast<uint32_t>(lhs.poly_modulus_degree()),
+                    static_cast<uint32_t>(lhs.coeff_modulus_size()));
+            }
+
+            out.set_ntt_form(true);
+            out.set_noiseScaleDeg(lhs.noiseScaleDeg());
+            out.set_asymmetric(lhs.is_asymmetric() || rhs.is_asymmetric());
+            if (scheme == scheme_type::ckks) {
+                out.set_scale(lhs.scale() * rhs.scale());
+                out.set_correction_factor(lhs.correction_factor());
+            } else {
+                out.set_scale(lhs.scale());
+                out.set_correction_factor(
+                    multiply_uint_mod(lhs.correction_factor(), rhs.correction_factor(),
+                                      parms.plain_modulus()));
+            }
+
+            encrypted1 = std::move(out);
+            return;
+        }
+
+        // Fallback path for schemes/layouts without a dedicated batch kernel.
+        ConstBatchCipherView lhs_view(encrypted1.view());
+        ConstBatchCipherView rhs_view(encrypted2.view());
+        PhantomCiphertext first_lhs = extract_batch_item(context, lhs_view, 0, s);
+        PhantomCiphertext first_rhs = extract_batch_item(context, rhs_view, 0, s);
+        multiply_inplace(context, first_lhs, first_rhs);
+
+        PhantomBatchCiphertext out;
+        out.resize(context, first_lhs.chain_index(), first_lhs.size(), batch_size, s);
+        out.set_ntt_form(first_lhs.is_ntt_form());
+        out.set_scale(first_lhs.scale());
+        out.set_correction_factor(first_lhs.correction_factor());
+        out.set_noiseScaleDeg(first_lhs.GetNoiseScaleDeg());
+        out.set_asymmetric(first_lhs.is_asymmetric());
+
+        copy_to_batch_item(first_lhs, out.view(), 0, s);
+        for (std::size_t b = 1; b < batch_size; ++b) {
+            PhantomCiphertext lhs_item = extract_batch_item(context, lhs_view, b, s);
+            PhantomCiphertext rhs_item = extract_batch_item(context, rhs_view, b, s);
+            multiply_inplace(context, lhs_item, rhs_item);
+            copy_to_batch_item(lhs_item, out.view(), b, s);
+        }
+
+        encrypted1 = std::move(out);
+    }
+
 // encrypted1 = encrypted1 * encrypted2
 // relin(encrypted1)
     void multiply_and_relin_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1,
@@ -1131,6 +1302,32 @@ Returns (f, e1, e2) such that
             default:
                 throw invalid_argument("unsupported scheme");
         }
+    }
+
+    void multiply_and_relin_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted1,
+        const PhantomBatchCiphertext &encrypted2, const PhantomRelinKey &relin_keys) {
+        if (encrypted1.batch_size() != encrypted2.batch_size()) {
+            throw std::invalid_argument("multiply_and_relin_inplace(batch): batch_size mismatch");
+        }
+        if (encrypted1.batch_size() == 0) {
+            return;
+        }
+        if (encrypted1.chain_index() != encrypted2.chain_index()) {
+            throw std::invalid_argument("multiply_and_relin_inplace(batch): chain index mismatch");
+        }
+        if (encrypted1.size() != encrypted2.size()) {
+            throw std::invalid_argument("multiply_and_relin_inplace(batch): ciphertext size mismatch");
+        }
+        if (encrypted1.is_ntt_form() != encrypted2.is_ntt_form()) {
+            throw std::invalid_argument("multiply_and_relin_inplace(batch): NTT form mismatch");
+        }
+        if (!are_same_scale(encrypted1, encrypted2)) {
+            throw std::invalid_argument("multiply_and_relin_inplace(batch): scale mismatch");
+        }
+
+        multiply_inplace(context, encrypted1, encrypted2);
+        relinearize_inplace(context, encrypted1, relin_keys);
     }
 
     void add_plain_inplace(const PhantomContext &context, PhantomCiphertext &encrypted, const PhantomPlaintext &plain) {
@@ -1960,6 +2157,38 @@ Returns (f, e1, e2) such that
         encrypted.resize(2, decomp_modulus_size, n, s);
     }
 
+    void relinearize_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted,
+        const PhantomRelinKey &relin_keys) {
+        if (encrypted.batch_size() == 0) {
+            return;
+        }
+        if (encrypted.size() != 3) {
+            throw std::invalid_argument("relinearize_inplace(batch): ciphertext size must be 3");
+        }
+
+        const auto &s = cudaStreamPerThread;
+        keyswitch_inplace(context, encrypted, relin_keys, true, s);
+
+        PhantomBatchCiphertext out;
+        out.resize(context, encrypted.chain_index(), 2, encrypted.batch_size(), s);
+        out.set_ntt_form(encrypted.is_ntt_form());
+        out.set_scale(encrypted.scale());
+        out.set_correction_factor(encrypted.correction_factor());
+        out.set_noiseScaleDeg(encrypted.noiseScaleDeg());
+        out.set_asymmetric(encrypted.is_asymmetric());
+
+        const std::size_t coeff_words_per_poly = encrypted.coeff_count();
+        dim3 gridDimGlb(
+            static_cast<unsigned int>(coeff_words_per_poly / blockDimGlb.x),
+            static_cast<unsigned int>(encrypted.batch_size()), 2U);
+        copy_cipher_poly_prefix_batch<<<gridDimGlb, blockDimGlb, 0, s>>>(
+            out.data(), encrypted.data(), coeff_words_per_poly, encrypted.size(),
+            out.size(), encrypted.batch_size());
+
+        encrypted = std::move(out);
+    }
+
     static void mod_switch_scale_to_next(const PhantomContext &context, const PhantomCiphertext &encrypted,
                                          PhantomCiphertext &destination, const cudaStream_t &stream) {
         // Assuming at this point encrypted is already validated.
@@ -2523,6 +2752,30 @@ Returns (f, e1, e2) such that
         encrypted.set_ntt_form(true);
     }
 
+    void transform_to_ntt_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypteds) {
+        if (encrypteds.is_ntt_form()) {
+            throw invalid_argument("encrypteds are already in NTT form");
+        }
+
+        const auto &s = cudaStreamPerThread;
+        auto &context_data = context.get_context_data(encrypteds.chain_index());
+        auto &parms = context_data.parms();
+        auto coeff_mod_size = parms.coeff_modulus().size();
+        auto rns_coeff_count = parms.poly_modulus_degree() * coeff_mod_size;
+        const std::size_t poly_batch = encrypteds.batch_size() * encrypteds.size();
+
+#ifdef RNS_POLY_BATCH
+        nwt_2d_radix8_forward_inplace(
+            encrypteds.data(), context.gpu_rns_tables(), coeff_mod_size, 0, poly_batch, s);
+#else
+        for (std::size_t i = 0; i < poly_batch; ++i) {
+            uint64_t *ci = encrypteds.data() + i * rns_coeff_count;
+            nwt_2d_radix8_forward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, s);
+        }
+#endif
+        encrypteds.set_ntt_form(true);
+    }
+
     void transform_from_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted) {
         if (!encrypted.is_ntt_form()) {
             throw invalid_argument("encrypted_ntt is not in NTT form");
@@ -2549,5 +2802,29 @@ Returns (f, e1, e2) such that
         }
 #endif
         encrypted.set_ntt_form(false);
+    }
+
+    void transform_from_ntt_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypteds) {
+        if (!encrypteds.is_ntt_form()) {
+            throw invalid_argument("encrypteds are not in NTT form");
+        }
+
+        const auto &s = cudaStreamPerThread;
+        auto &context_data = context.get_context_data(encrypteds.chain_index());
+        auto &parms = context_data.parms();
+        auto coeff_mod_size = parms.coeff_modulus().size();
+        auto rns_coeff_count = parms.poly_modulus_degree() * coeff_mod_size;
+        const std::size_t poly_batch = encrypteds.batch_size() * encrypteds.size();
+
+#ifdef RNS_POLY_BATCH
+        nwt_2d_radix8_backward_inplace(
+            encrypteds.data(), context.gpu_rns_tables(), coeff_mod_size, 0, poly_batch, s);
+#else
+        for (std::size_t i = 0; i < poly_batch; ++i) {
+            uint64_t *ci = encrypteds.data() + i * rns_coeff_count;
+            nwt_2d_radix8_backward_inplace(ci, context.gpu_rns_tables(), coeff_mod_size, 0, s);
+        }
+#endif
+        encrypteds.set_ntt_form(false);
     }
 }

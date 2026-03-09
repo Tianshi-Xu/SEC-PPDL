@@ -29,6 +29,17 @@ using phantom::scheme_type;
 using phantom::arith::CoeffModulus;
 using phantom::arith::PlainModulus;
 
+namespace phantom
+{
+// Compatibility declaration for builds where <phantom/evaluate.cuh>
+// does not export this API in namespace phantom.
+__host__ void launch_multiply_add_2d_fusion(
+    const PhantomContext &context, const uint64_t *pt_matrix, const uint64_t *ct_terms,
+    uint64_t *ans, std::size_t row_count, std::size_t col_count, std::size_t chain_index,
+    std::size_t pt_row_stride, std::size_t pt_col_stride, std::size_t ct_stride,
+    std::size_t ans_stride, const cudaStream_t &stream);
+}
+
 namespace secppdl::pir
 {
 namespace
@@ -372,6 +383,13 @@ public:
                 std::vector<PhantomCiphertext> row_accum_ntt(batch_size);
                 std::vector<std::vector<PhantomCiphertext>> row_terms(batch_size, std::vector<PhantomCiphertext>(row_count));
                 std::vector<const PhantomPlaintext *> plain_terms(block_count, nullptr);
+                const auto throw_cuda_error = [](const cudaError_t err, const char *op_name) {
+                    if (err == cudaSuccess)
+                    {
+                        return;
+                    }
+                    throw std::runtime_error(std::string(op_name) + " failed: " + cudaGetErrorString(err));
+                };
 
                 for (std::size_t k = 0; k < chunk_count; ++k)
                 {
@@ -388,20 +406,48 @@ public:
                                 context_, batch_expanded_x_ntt[b], plain_terms, row_accum_ntt[b]);
                         }
 
+                        PhantomBatchCiphertext accum_batch;
+                        accum_batch.resize_like(context_, row_accum_ntt[0], batch_size);
                         for (std::size_t b = 0; b < batch_size; ++b)
                         {
                             phantom::transform_from_ntt_inplace(context_, row_accum_ntt[b]);
-                            if (options_.enable_ct_ct_fusion)
-                            {
-                                phantom::multiply_and_relin_inplace(
-                                    context_, row_accum_ntt[b], batch_row_selectors[b][r], relin_keys_);
-                            }
-                            else
-                            {
-                                phantom::multiply_inplace(context_, row_accum_ntt[b], batch_row_selectors[b][r]);
-                                phantom::relinearize_inplace(context_, row_accum_ntt[b], relin_keys_);
-                            }
-                            std::swap(row_terms[b][r], row_accum_ntt[b]);
+                            accum_batch.copy_from(b, row_accum_ntt[b]);
+                        }
+
+                        PhantomBatchCiphertext selector_batch;
+                        selector_batch.resize_like(context_, batch_row_selectors[0][r], batch_size);
+                        for (std::size_t b = 0; b < batch_size; ++b)
+                        {
+                            selector_batch.copy_from(b, batch_row_selectors[b][r]);
+                        }
+
+                        if (options_.enable_ct_ct_fusion)
+                        {
+                            phantom::multiply_and_relin_inplace(
+                                context_, accum_batch, selector_batch, relin_keys_);
+                        }
+                        else
+                        {
+                            phantom::multiply_inplace(context_, accum_batch, selector_batch);
+                            phantom::relinearize_inplace(context_, accum_batch, relin_keys_);
+                        }
+
+                        const std::size_t item_words = accum_batch.item_data_count();
+                        for (std::size_t b = 0; b < batch_size; ++b)
+                        {
+                            row_terms[b][r].resize(
+                                context_, accum_batch.chain_index(), accum_batch.size(), cudaStreamPerThread);
+                            row_terms[b][r].set_ntt_form(accum_batch.is_ntt_form());
+                            row_terms[b][r].set_scale(accum_batch.scale());
+                            row_terms[b][r].set_correction_factor(accum_batch.correction_factor());
+                            row_terms[b][r].SetNoiseScaleDeg(accum_batch.noiseScaleDeg());
+                            row_terms[b][r].set_asymmetric(accum_batch.is_asymmetric());
+                            const uint64_t *src = accum_batch.data() + b * item_words;
+                            throw_cuda_error(
+                                cudaMemcpyAsync(
+                                    row_terms[b][r].data(), src, item_words * sizeof(uint64_t),
+                                    cudaMemcpyDeviceToDevice, cudaStreamPerThread),
+                                "unpack accum_batch");
                         }
                     }
                     for (std::size_t b = 0; b < batch_size; ++b)

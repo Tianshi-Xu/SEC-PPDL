@@ -42,6 +42,7 @@ if(USE_HE_GPU)
     add_executable(test_phantom_batch_gtest
         ${CMAKE_CURRENT_LIST_DIR}/src/TestBatchViewGTest.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/TestBatchOpsGTest.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/TestBatchCtCtGTest.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/TestBsgsMacGTest.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/TestMultiplyAdd2dFusionGTest.cpp)
     target_include_directories(test_phantom_batch_gtest BEFORE PRIVATE

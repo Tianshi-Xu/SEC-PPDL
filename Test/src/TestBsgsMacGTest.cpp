@@ -1,8 +1,12 @@
 #include "PhantomBatchTestUtils.h"
 
 #include "evaluate.cuh"
+#include "batchencoder.h"
+#include "secretkey.h"
 
 #include <algorithm>
+#include <iostream>
+#include <random>
 #include <vector>
 
 namespace {
@@ -116,6 +120,145 @@ TEST(BsgsMacGTest, BsgsMacValidatesInputShape) {
     EXPECT_THROW(
         phantom::multiply_plain_ntt_bsgs_mac_ptrs(context, baby_ctxts, plain_ptrs, 2, 3, outputs),
         std::invalid_argument);
+}
+
+TEST(BsgsMacGTest, BsgsMacDecryptMatchesExpectedSlots) {
+    PhantomContext context = make_test_context();
+    const std::size_t chain = data_chain_index(context);
+    const auto &parms = context.get_context_data(chain).parms();
+    const std::size_t plain_modulus = parms.plain_modulus().value();
+
+    PhantomSecretKey secret_key(context);
+    PhantomBatchEncoder encoder(context);
+    const std::size_t slot_count = encoder.slot_count();
+
+    constexpr std::size_t kBabyStep = 4;
+    constexpr std::size_t kTotalDiagonals = 11;
+
+    std::vector<PhantomCiphertext> baby_ctxts;
+    std::vector<PhantomPlaintext> plains;
+    std::vector<std::vector<uint64_t>> baby_slots(kBabyStep);
+    std::vector<std::vector<uint64_t>> plain_slots(kTotalDiagonals);
+    baby_ctxts.reserve(kBabyStep);
+    plains.reserve(kTotalDiagonals);
+
+    std::mt19937_64 rng(10901);
+    std::uniform_int_distribution<uint64_t> dist(0ULL, plain_modulus - 1ULL);
+    auto random_slot_vector = [&]() {
+        std::vector<uint64_t> out(slot_count, 0ULL);
+        for (std::size_t i = 0; i < slot_count; ++i) {
+            out[i] = dist(rng);
+        }
+        return out;
+    };
+
+    for (std::size_t i = 0; i < kBabyStep; ++i) {
+        baby_slots[i] = random_slot_vector();
+        PhantomPlaintext plain = encoder.encode(context, baby_slots[i]);
+        PhantomCiphertext ct;
+        secret_key.encrypt_symmetric(context, plain, ct);
+        phantom::transform_to_ntt_inplace(context, ct);
+        baby_ctxts.emplace_back(std::move(ct));
+    }
+
+    for (std::size_t i = 0; i < kTotalDiagonals; ++i) {
+        plain_slots[i] = random_slot_vector();
+        PhantomPlaintext pt = encoder.encode(context, plain_slots[i]);
+        phantom::transform_to_ntt_inplace(context, pt, chain);
+        plains.emplace_back(std::move(pt));
+    }
+
+    std::vector<PhantomCiphertext> fused;
+    phantom::multiply_plain_ntt_bsgs_mac(
+        context, baby_ctxts, plains, kBabyStep, kTotalDiagonals, fused);
+    sync_stream();
+
+    const auto refs = build_reference_bsgs_outputs(
+        context, baby_ctxts, plains, kBabyStep, kTotalDiagonals);
+
+    auto decrypt_slots = [&](const PhantomCiphertext &ntt_ct) {
+        PhantomCiphertext coeff_ct = ntt_ct;
+        phantom::transform_from_ntt_inplace(context, coeff_ct);
+        PhantomPlaintext plain;
+        secret_key.decrypt(context, coeff_ct, plain);
+        return encoder.decode(context, plain);
+    };
+
+    ASSERT_EQ(fused.size(), refs.size());
+    for (std::size_t giant_idx = 0; giant_idx < fused.size(); ++giant_idx) {
+        const std::size_t base = giant_idx * kBabyStep;
+        const std::size_t term_count =
+            std::min<std::size_t>(kBabyStep, kTotalDiagonals - base);
+
+        std::vector<uint64_t> expected(slot_count, 0ULL);
+        for (std::size_t s = 0; s < slot_count; ++s) {
+            unsigned __int128 acc = 0;
+            for (std::size_t t = 0; t < term_count; ++t) {
+                acc += static_cast<unsigned __int128>(baby_slots[t][s]) *
+                       plain_slots[base + t][s];
+            }
+            expected[s] = static_cast<uint64_t>(acc % plain_modulus);
+        }
+
+        const auto fused_slots = decrypt_slots(fused[giant_idx]);
+        const auto ref_slots = decrypt_slots(refs[giant_idx]);
+        EXPECT_EQ(fused_slots, expected);
+        EXPECT_EQ(ref_slots, expected);
+        EXPECT_EQ(fused_slots, ref_slots);
+    }
+}
+
+TEST(BsgsMacGTest, BsgsMacPerformanceVsReferenceReduction) {
+    PhantomContext context = make_test_context();
+    const std::size_t chain = data_chain_index(context);
+
+    constexpr std::size_t kBabyStep = 8;
+    constexpr std::size_t kTotalDiagonals = 64;
+    constexpr std::size_t kWarmup = 5;
+    constexpr std::size_t kIters = 20;
+
+    std::vector<PhantomCiphertext> baby_ctxts;
+    baby_ctxts.reserve(kBabyStep);
+    for (std::size_t i = 0; i < kBabyStep; ++i) {
+        baby_ctxts.emplace_back(make_random_ntt_cipher(context, chain, 2, 12001 + i, 5.0));
+    }
+
+    std::vector<PhantomPlaintext> plains;
+    plains.reserve(kTotalDiagonals);
+    for (std::size_t i = 0; i < kTotalDiagonals; ++i) {
+        plains.emplace_back(make_random_ntt_plain(context, chain, 12101 + i, 3.0));
+    }
+
+    std::vector<PhantomCiphertext> baseline_out;
+    std::vector<PhantomCiphertext> fused_out;
+    auto run_baseline = [&]() {
+        baseline_out = build_reference_bsgs_outputs(
+            context, baby_ctxts, plains, kBabyStep, kTotalDiagonals);
+    };
+    auto run_fused = [&]() {
+        phantom::multiply_plain_ntt_bsgs_mac(
+            context, baby_ctxts, plains, kBabyStep, kTotalDiagonals, fused_out);
+    };
+
+    const float baseline_ms = measure_cuda_average_ms(kWarmup, kIters, run_baseline);
+    const float fused_ms = measure_cuda_average_ms(kWarmup, kIters, run_fused);
+    sync_stream();
+
+    ASSERT_EQ(fused_out.size(), baseline_out.size());
+    for (std::size_t i = 0; i < fused_out.size(); ++i) {
+        const std::size_t data_count =
+            fused_out[i].size() * fused_out[i].coeff_modulus_size() *
+            fused_out[i].poly_modulus_degree();
+        expect_device_buffer_eq(fused_out[i].data(), baseline_out[i].data(), data_count);
+    }
+
+    const float speedup = baseline_ms / fused_ms;
+    std::cout << "[Perf][BsgsMac] baseline_ms=" << baseline_ms
+              << ", fused_ms=" << fused_ms << ", speedup=" << speedup << std::endl;
+
+    EXPECT_GT(baseline_ms, 0.0f);
+    EXPECT_GT(fused_ms, 0.0f);
+    EXPECT_GE(speedup, 0.75f);
 }
 
 } // namespace

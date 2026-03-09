@@ -19,18 +19,3 @@ cmake --install build
 ```
 . ./build-ot.sh
 ```
-#### phantom-fhe
-- If you don't use GPU, you can skip this step and set `-DUSE_HE_GPU=OFF` when building the project.
-```
-git clone https://github.com/encryptorion-lab/phantom-fhe.git
-cd phantom-fhe
-git apply ../patch/phantom.patch
-cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_INSTALL_PREFIX=build_phantom
-cmake --build build --target install --parallel
-```
-You may need to add the following line to the `~/.bashrc` file and run `source ~/.bashrc`:
-```
-export CUDA_HOME=/usr/local/cuda
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
-export PATH=$PATH:$CUDA_HOME/bin
-```

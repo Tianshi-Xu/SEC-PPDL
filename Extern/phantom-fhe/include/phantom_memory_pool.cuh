@@ -102,20 +102,23 @@ namespace phantom::util {
         rmm::mr::device_memory_resource *resource_for_device_unlocked(int device_id) {
             auto it = resources_.find(device_id);
             if (it != resources_.end()) {
-                return it->second.get();
+                return it->second;
             }
 
             const rmm::cuda_set_device_raii set_device(rmm::cuda_device_id{device_id});
-            auto resource = std::make_unique<rmm::mr::cuda_async_memory_resource>(
-                    std::nullopt,
-                    std::optional<std::size_t>{std::numeric_limits<std::size_t>::max()});
-            auto *resource_ptr = resource.get();
-            resources_.emplace(device_id, std::move(resource));
-            return resource_ptr;
+            // Intentionally leak per-device CUDA memory pools.
+            // RMM's cuda_async_memory_resource destroys the underlying pool in
+            // its destructor; during process teardown this can run after CUDART
+            // unload and trip an assert on cudaErrorCudartUnloading.
+            auto *resource = new rmm::mr::cuda_async_memory_resource(
+                std::nullopt,
+                std::optional<std::size_t>{std::numeric_limits<std::size_t>::max()});
+            resources_.emplace(device_id, resource);
+            return resource;
         }
 
         std::mutex mutex_{};
-        std::unordered_map<int, std::unique_ptr<rmm::mr::cuda_async_memory_resource>> resources_{};
+        std::unordered_map<int, rmm::mr::cuda_async_memory_resource *> resources_{};
         std::unordered_map<void *, rmm_allocation_record> allocations_{};
     };
 

@@ -34,6 +34,10 @@ namespace phantom {
                            bool is_relin, // false
                            const cudaStream_t &stream);
 
+    void keyswitch_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypted,
+                           const PhantomRelinKey &relin_keys, bool is_relin,
+                           const cudaStream_t &stream);
+
 /***************************************************** Core APIs ******************************************************/
 
     // encrypted = -encrypted
@@ -252,6 +256,11 @@ namespace phantom {
     void
     multiply_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1, const PhantomCiphertext &encrypted2);
 
+    // Batch ciphertext multiply: encrypted1[i] *= encrypted2[i].
+    void multiply_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted1,
+        const PhantomBatchCiphertext &encrypted2);
+
     inline auto
     multiply(const PhantomContext &context, const PhantomCiphertext &encrypted1, const PhantomCiphertext &encrypted2) {
         PhantomCiphertext destination = encrypted1;
@@ -259,9 +268,23 @@ namespace phantom {
         return destination;
     }
 
+    inline auto
+    multiply(
+        const PhantomContext &context, const PhantomBatchCiphertext &encrypted1,
+        const PhantomBatchCiphertext &encrypted2) {
+        PhantomBatchCiphertext destination = encrypted1;
+        multiply_inplace(context, destination, encrypted2);
+        return destination;
+    }
+
     // encrypted1 *= encrypted2
     void multiply_and_relin_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1,
                                     const PhantomCiphertext &encrypted2, const PhantomRelinKey &relin_keys);
+
+    // Batch ciphertext fused multiply+relinearize: encrypted1[i] = relin(encrypted1[i] * encrypted2[i]).
+    void multiply_and_relin_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted1,
+        const PhantomBatchCiphertext &encrypted2, const PhantomRelinKey &relin_keys);
 
     inline auto multiply_and_relin(const PhantomContext &context, const PhantomCiphertext &encrypted1,
                                    const PhantomCiphertext &encrypted2, const PhantomRelinKey &relin_keys) {
@@ -272,6 +295,11 @@ namespace phantom {
 
     void relinearize_inplace(const PhantomContext &context, PhantomCiphertext &encrypted,
                              const PhantomRelinKey &relin_keys);
+
+    // Batch ciphertext relinearize: encrypted[i] = relin(encrypted[i]).
+    void relinearize_inplace(
+        const PhantomContext &context, PhantomBatchCiphertext &encrypted,
+        const PhantomRelinKey &relin_keys);
 
     inline auto relinearize(const PhantomContext &context, const PhantomCiphertext &encrypted,
                             const PhantomRelinKey &relin_keys) {
@@ -390,6 +418,9 @@ namespace phantom {
 
     void transform_to_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted);
 
+    // Batch ciphertext NTT transform over all [batch * ciphertext_size] polys.
+    void transform_to_ntt_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypteds);
+
     inline auto transform_to_ntt(const PhantomContext &context, const PhantomCiphertext &encrypted) {
         PhantomCiphertext destination = encrypted;
         transform_to_ntt_inplace(context, destination);
@@ -397,6 +428,9 @@ namespace phantom {
     }
 
     void transform_from_ntt_inplace(const PhantomContext &context, PhantomCiphertext &encrypted);
+
+    // Batch ciphertext inverse NTT transform over all [batch * ciphertext_size] polys.
+    void transform_from_ntt_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypteds);
 
     inline auto transform_from_ntt(const PhantomContext &context, const PhantomCiphertext &encrypted) {
         PhantomCiphertext destination = encrypted;

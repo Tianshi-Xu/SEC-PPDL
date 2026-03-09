@@ -298,6 +298,14 @@ __global__ void tensor_prod_2x2_rns_poly(const uint64_t* operand1,
                                          uint32_t poly_degree,
                                          uint32_t coeff_mod_size);
 
+// Batch variant: each grid.y lane handles one ciphertext pair.
+__global__ void tensor_prod_2x2_rns_poly_batch(const uint64_t* operand1,
+                                               const uint64_t* operand2,
+                                               const DModulus* modulus,
+                                               uint64_t* result,
+                                               uint32_t poly_degree,
+                                               uint32_t coeff_mod_size);
+
 __global__ void tensor_prod_2x2_rns_poly_lazy(const uint64_t* operand1,
                                               const uint64_t* operand2,
                                               uint64_t* result,
@@ -309,6 +317,13 @@ __global__ void tensor_square_2x2_rns_poly(const uint64_t* operand,
                                            uint64_t* result,
                                            const uint32_t poly_degree,
                                            const uint32_t coeff_mod_size);
+
+// Batch variant: each grid.y lane handles one ciphertext.
+__global__ void tensor_square_2x2_rns_poly_batch(const uint64_t* operand,
+                                                 const DModulus* modulus,
+                                                 uint64_t* result,
+                                                 const uint32_t poly_degree,
+                                                 const uint32_t coeff_mod_size);
 
 /** Compute the ciphertext product for BFV and CKKS multiplication, in general case
  *  The multiplication of individual polynomials is done using a dyadic product where the inputs are already in NTT form.
@@ -327,3 +342,10 @@ __global__ void tensor_prod_mxn_rns_poly(const uint64_t* operand1, uint32_t op1_
                                          const DModulus* modulus,
                                          uint64_t* result, uint64_t res_size,
                                          uint32_t poly_degree, uint32_t coeff_mod_size);
+
+// Batch variant: each grid.y lane handles one ciphertext pair.
+__global__ void tensor_prod_mxn_rns_poly_batch(const uint64_t* operand1, uint32_t op1_size,
+                                               const uint64_t* operand2, uint32_t op2_size,
+                                               const DModulus* modulus,
+                                               uint64_t* result, uint64_t res_size,
+                                               uint32_t poly_degree, uint32_t coeff_mod_size);

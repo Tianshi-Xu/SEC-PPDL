@@ -461,6 +461,36 @@ __global__ static void modup_bconv_single_p_kernel(uint64_t *dst, const uint64_t
     }
 }
 
+__global__ static void modup_bconv_single_p_kernel_batch(
+    uint64_t *dst, const uint64_t *src_raw, const uint64_t *src_normal_form,
+    size_t in_prime_idx, size_t n, const DModulus *base_QlP, uint64_t size_QlP,
+    size_t size_QlP_n, size_t src_batch_stride, size_t dst_batch_stride,
+    size_t beta_idx) {
+    const size_t batch_idx = blockIdx.y;
+    const uint64_t *src_raw_batch = src_raw + batch_idx * src_batch_stride;
+    const uint64_t *src_normal_batch = src_normal_form + batch_idx * src_batch_stride;
+    uint64_t *dst_batch = dst + batch_idx * dst_batch_stride + beta_idx * size_QlP_n;
+
+    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < n * size_QlP; tid += blockDim.x * gridDim.x) {
+        const size_t out_prime_idx = tid / n;
+        const size_t coeff_idx = tid % n;
+        if (out_prime_idx != in_prime_idx) {
+            const uint64_t in_prime = base_QlP[in_prime_idx].value();
+            const uint64_t out_prime = base_QlP[out_prime_idx].value();
+            const uint64_t barret_ratio = base_QlP[out_prime_idx].const_ratio()[1];
+            const uint64_t coeff = src_normal_batch[coeff_idx];
+            uint64_t result;
+            if (in_prime > out_prime)
+                result = barrett_reduce_uint64_uint64(coeff, out_prime, barret_ratio);
+            else
+                result = coeff;
+            dst_batch[tid] = result;
+        } else {
+            dst_batch[tid] = src_raw_batch[coeff_idx];
+        }
+    }
+}
+
 __global__ static void bconv_matmul_padded_unroll2_kernel(uint64_t *dst, const uint64_t *xi_qiHatInv_mod_qi,
                                                           const uint64_t *qiHat_mod_pj, const DModulus *ibase,
                                                           uint64_t ibase_size, const DModulus *obase,
@@ -537,6 +567,19 @@ __global__ static void modup_copy_partQl_kernel(uint64_t *t_mod_up, const uint64
     for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < size_Ql_n; tid += blockDim.x * gridDim.x) {
         const size_t beta_idx = tid / size_alpha_n;
         t_mod_up[beta_idx * size_QlP_n + tid] = cks[tid];
+    }
+}
+
+[[maybe_unused]] __global__ static void modup_copy_partQl_kernel_batch(
+    uint64_t *t_mod_up, const uint64_t *cks, size_t size_Ql_n, size_t size_QlP_n,
+    size_t size_alpha_n, size_t cks_batch_stride, size_t dst_batch_stride) {
+    const size_t batch_idx = blockIdx.y;
+    const uint64_t *cks_batch = cks + batch_idx * cks_batch_stride;
+    uint64_t *dst_batch = t_mod_up + batch_idx * dst_batch_stride;
+
+    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < size_Ql_n; tid += blockDim.x * gridDim.x) {
+        const size_t beta_idx = tid / size_alpha_n;
+        dst_batch[beta_idx * size_QlP_n + tid] = cks_batch[tid];
     }
 }
 
@@ -636,6 +679,85 @@ void DRNSTool::modup(uint64_t *dst, const uint64_t *cks, const DNTTTable &ntt_ta
                     t_modup_part_i, ntt_tables, size_QlP, 0, size_QP, size_P, stream);
         } else {
             throw invalid_argument("unsupported scheme");
+        }
+    }
+}
+
+void DRNSTool::modup_batch(uint64_t *dst, const uint64_t *cks, const DNTTTable &ntt_tables,
+                           size_t batch_num, const scheme_type &scheme, const cudaStream_t &stream) const {
+    if (batch_num == 0) {
+        return;
+    }
+
+    size_t n = n_;
+    size_t size_Ql = base_Ql_.size();
+    size_t size_P = size_P_;
+    size_t size_QlP = size_Ql + size_P_;
+    size_t size_QP = size_QP_;
+
+    const size_t size_Ql_n = size_Ql * n;
+    const size_t size_QlP_n = size_QlP * n;
+
+    size_t alpha = size_P;
+    size_t beta = v_base_part_Ql_to_compl_part_QlP_conv_.size();
+    const size_t cks_batch_stride = size_Ql_n;
+    const size_t dst_batch_stride = beta * size_QlP_n;
+
+    // Keep the generic alpha>1 path on the proven scalar implementation.
+    if (alpha != 1) {
+        for (size_t b = 0; b < batch_num; ++b) {
+            modup(dst + b * dst_batch_stride, cks + b * cks_batch_stride, ntt_tables, scheme, stream);
+        }
+        return;
+    }
+
+    auto t_cks = make_cuda_auto_ptr<uint64_t>(size_Ql_n * batch_num, stream);
+    if (scheme == scheme_type::ckks || scheme == scheme_type::bgv) {
+#ifdef RNS_POLY_BATCH
+        cudaMemcpyAsync(t_cks.get(), cks, size_Ql_n * batch_num * sizeof(uint64_t),
+                        cudaMemcpyDeviceToDevice, stream);
+        nwt_2d_radix8_backward_inplace(
+            t_cks.get(), ntt_tables, size_Ql, 0, batch_num, stream);
+#else
+        for (size_t b = 0; b < batch_num; ++b) {
+            nwt_2d_radix8_backward(
+                t_cks.get() + b * size_Ql_n, cks + b * cks_batch_stride,
+                ntt_tables, size_Ql, 0, stream);
+        }
+#endif
+    }
+
+    for (size_t beta_idx = 0; beta_idx < beta; ++beta_idx) {
+        const size_t startPartIdx = alpha * beta_idx;
+        const size_t size_PartQl = 1;
+        const size_t endPartIdx = startPartIdx + size_PartQl;
+
+        const uint64_t *cks_part_i = cks + startPartIdx * n;
+        const uint64_t *t_cks_part_i = t_cks.get() + startPartIdx * n;
+
+        dim3 gridDimGlb(n * size_QlP / blockDimGlb.x, batch_num);
+        if (scheme == scheme_type::ckks || scheme == scheme_type::bgv) {
+            modup_bconv_single_p_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(
+                dst, cks_part_i, t_cks_part_i, startPartIdx, n, base_QlP_.base(),
+                size_QlP, size_QlP_n, cks_batch_stride, dst_batch_stride, beta_idx);
+        } else if (scheme == scheme_type::bfv) {
+            modup_bconv_single_p_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(
+                dst, cks_part_i, cks_part_i, startPartIdx, n, base_QlP_.base(),
+                size_QlP, size_QlP_n, cks_batch_stride, dst_batch_stride, beta_idx);
+        } else {
+            throw invalid_argument("unsupported scheme");
+        }
+
+        for (size_t b = 0; b < batch_num; ++b) {
+            uint64_t *t_modup_part_i = dst + b * dst_batch_stride + beta_idx * size_QlP_n;
+            if (scheme == scheme_type::ckks || scheme == scheme_type::bgv) {
+                nwt_2d_radix8_forward_inplace_include_special_mod_exclude_range(
+                    t_modup_part_i, ntt_tables, size_QlP, 0, size_QP, size_P,
+                    startPartIdx, endPartIdx, stream);
+            } else {
+                nwt_2d_radix8_forward_inplace_include_special_mod(
+                    t_modup_part_i, ntt_tables, size_QlP, 0, size_QP, size_P, stream);
+            }
         }
     }
 }
@@ -891,6 +1013,20 @@ void DRNSTool::moddown_from_NTT_batch(uint64_t *ct_i, uint64_t *cx_i, const DNTT
     size_t alpha = size_P_;
     size_t size_Ql_n = size_Ql * n;
 
+    // Fallback for paths that currently have no native batched implementation.
+    if (batch_num == 0) {
+        return;
+    }
+    if (scheme == scheme_type::ckks || scheme == scheme_type::bgv || alpha != 1) {
+        const std::size_t cx_stride = size_QlP * n;
+        const std::size_t ct_stride = size_Ql_n;
+        for (std::size_t b = 0; b < batch_num; ++b) {
+            moddown_from_NTT(
+                ct_i + b * ct_stride, cx_i + b * cx_stride, ntt_tables, scheme, stream);
+        }
+        return;
+    }
+
     auto delta = make_cuda_auto_ptr<uint64_t>(size_Ql_n * batch_num, stream);
 
     if (scheme == scheme_type::ckks) {
@@ -907,32 +1043,9 @@ void DRNSTool::moddown_from_NTT_batch(uint64_t *ct_i, uint64_t *cx_i, const DNTT
         dim3 gridDimGlb(size_Ql_n / blockDimGlb.x, batch_num);
         moddown_bconv_single_p_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(
                 delta.get(), cx_i + size_Ql_n, n, base_QlP_.base(), size_QlP);
-    } else {
-        throw invalid_argument("unsupport batch");
-        base_P_to_Ql_conv_.bConv_BEHZ(delta.get(), cx_i + size_Ql_n, n, stream);
     }
 
-    if (scheme == scheme_type::bgv) {
-        throw invalid_argument("unsupport batch");
-        auto temp_t = make_cuda_auto_ptr<uint64_t>(n, stream);
-
-        base_P_to_t_conv_.bConv_BEHZ(temp_t.get(), cx_i + size_Ql_n, n, stream);
-
-        // delta = [Cp + [-Cp * pInv]_t * p]_qi
-        // ci' = [(ci - delta) * pInv]_qi
-        bgv_moddown_kernel<<<size_Ql_n / blockDimGlb.x, blockDimGlb, 0, stream>>>(
-                ct_i, cx_i, delta.get(), temp_t.get(), bigP_mod_q(), bigP_mod_q_shoup(), bigPInv_mod_q(),
-                bigPInv_mod_q_shoup(), bigPInv_mod_t_, bigPInv_mod_t_shoup_, ntt_tables.modulus(), size_Ql, t_.value(),
-                n);
-
-        nwt_2d_radix8_forward_inplace(ct_i, ntt_tables, size_Ql, 0, stream);
-    } else if (scheme == scheme_type::ckks) {
-        throw invalid_argument("unsupport batch");
-        // CKKS can compute the last step in NTT domain
-        // ct_i += (cxi - delta) * factor mod qi
-        nwt_2d_radix8_forward_inplace_fuse_moddown(ct_i, cx_i, bigPInv_mod_q_.get(), bigPInv_mod_q_shoup_.get(),
-                                                   delta.get(), ntt_tables, size_Ql, 0, stream);
-    } else if (scheme == scheme_type::bfv) {
+    if (scheme == scheme_type::bfv) {
         // ct_i += (cxi - delta) * factor mod qi
         dim3 gridDimGlb(size_Ql_n / blockDimGlb.x, batch_num);
         moddown_kernel_batch<<<gridDimGlb, blockDimGlb, 0, stream>>>(

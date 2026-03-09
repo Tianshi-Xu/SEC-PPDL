@@ -122,6 +122,10 @@ public:
         is_ntt_form_ = is_ntt_form;
     }
 
+    void set_asymmetric(bool is_asymmetric) {
+        is_asymmetric_ = is_asymmetric;
+    }
+
     void print_data(int num = 10);
 
     [[nodiscard]] auto &size() const noexcept {

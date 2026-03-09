@@ -156,6 +156,9 @@ namespace phantom {
         void modup(uint64_t *dst, const uint64_t *cks, const DNTTTable &ntt_tables,
                    const scheme_type &scheme, const cudaStream_t &stream) const;
 
+        void modup_batch(uint64_t *dst, const uint64_t *cks, const DNTTTable &ntt_tables,
+                         size_t batch_num, const scheme_type &scheme, const cudaStream_t &stream) const;
+
         void moddown(uint64_t *ct_i, uint64_t *cx_i, const DNTTTable &ntt_tables,
                      const scheme_type &scheme, const cudaStream_t &stream) const;
 

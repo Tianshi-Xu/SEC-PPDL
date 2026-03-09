@@ -574,6 +574,47 @@ __global__ void tensor_prod_2x2_rns_poly(const uint64_t *operand1,
     }
 }
 
+__global__ void tensor_prod_2x2_rns_poly_batch(const uint64_t *operand1,
+                                               const uint64_t *operand2,
+                                               const DModulus *modulus,
+                                               uint64_t *result,
+                                               uint32_t poly_degree,
+                                               uint32_t coeff_mod_size) {
+    const size_t batch_idx = blockIdx.y;
+    const uint64_t rns_coeff_count = static_cast<uint64_t>(poly_degree) * coeff_mod_size;
+    const uint64_t in_stride = 2 * rns_coeff_count;
+    const uint64_t out_stride = 3 * rns_coeff_count;
+    const uint64_t in_base = batch_idx * in_stride;
+    const uint64_t out_base = batch_idx * out_stride;
+
+    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+         tid < rns_coeff_count;
+         tid += blockDim.x * gridDim.x) {
+        size_t twr = tid / poly_degree;
+        DModulus mod = modulus[twr];
+
+        const uint64_t c0_0 = operand1[in_base + tid];
+        const uint64_t c0_1 = operand1[in_base + tid + rns_coeff_count];
+        const uint64_t c1_0 = operand2[in_base + tid];
+        const uint64_t c1_1 = operand2[in_base + tid + rns_coeff_count];
+
+        const uint64_t d0 =
+            multiply_and_barrett_reduce_uint64(c0_0, c1_0, mod.value(), mod.const_ratio());
+        const uint64_t d2 =
+            multiply_and_barrett_reduce_uint64(c0_1, c1_1, mod.value(), mod.const_ratio());
+
+        uint64_t d1 = multiply_and_barrett_reduce_uint64(
+            c0_0 + c0_1, c1_0 + c1_1, mod.value(), mod.const_ratio());
+        d1 = d1 + 2 * mod.value() - d0 - d2;
+        if (d1 >= mod.value()) d1 -= mod.value();
+        if (d1 >= mod.value()) d1 -= mod.value();
+
+        result[out_base + tid] = d0;
+        result[out_base + tid + rns_coeff_count] = d1;
+        result[out_base + tid + 2 * rns_coeff_count] = d2;
+    }
+}
+
 __global__ void tensor_square_2x2_rns_poly(const uint64_t *operand,
                                            const DModulus *modulus,
                                            uint64_t *result,
@@ -605,6 +646,41 @@ __global__ void tensor_square_2x2_rns_poly(const uint64_t *operand,
         result[tid] = d0;
         result[tid + rns_coeff_count] = d1;
         result[tid + 2 * rns_coeff_count] = d2;
+    }
+}
+
+__global__ void tensor_square_2x2_rns_poly_batch(const uint64_t *operand,
+                                                 const DModulus *modulus,
+                                                 uint64_t *result,
+                                                 const uint32_t poly_degree,
+                                                 const uint32_t coeff_mod_size) {
+    const size_t batch_idx = blockIdx.y;
+    const uint64_t rns_coeff_count = static_cast<uint64_t>(poly_degree) * coeff_mod_size;
+    const uint64_t in_stride = 2 * rns_coeff_count;
+    const uint64_t out_stride = 3 * rns_coeff_count;
+    const uint64_t in_base = batch_idx * in_stride;
+    const uint64_t out_base = batch_idx * out_stride;
+
+    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+         tid < rns_coeff_count;
+         tid += blockDim.x * gridDim.x) {
+        size_t twr = tid / poly_degree;
+        DModulus mod = modulus[twr];
+
+        const uint64_t c0 = operand[in_base + tid];
+        const uint64_t c1 = operand[in_base + tid + rns_coeff_count];
+
+        const uint64_t d0 =
+            multiply_and_barrett_reduce_uint64(c0, c0, mod.value(), mod.const_ratio());
+        uint128_t prod = multiply_uint64_uint64(c0, c1);
+        shift_left_uint128(prod, 1, prod);
+        const uint64_t d1 = barrett_reduce_uint128_uint64(prod, mod.value(), mod.const_ratio());
+        const uint64_t d2 =
+            multiply_and_barrett_reduce_uint64(c1, c1, mod.value(), mod.const_ratio());
+
+        result[out_base + tid] = d0;
+        result[out_base + tid + rns_coeff_count] = d1;
+        result[out_base + tid + 2 * rns_coeff_count] = d2;
     }
 }
 
@@ -667,6 +743,48 @@ __global__ void tensor_prod_mxn_rns_poly(const uint64_t *operand1, uint32_t op1_
         }
         delete[] c1;
         delete[] c2;
+    }
+}
+
+__global__ void tensor_prod_mxn_rns_poly_batch(const uint64_t *operand1, uint32_t op1_size,
+                                               const uint64_t *operand2, uint32_t op2_size,
+                                               const DModulus *modulus,
+                                               uint64_t *result, uint64_t res_size,
+                                               uint32_t poly_degree, uint32_t coeff_mod_size) {
+    const size_t batch_idx = blockIdx.y;
+    const uint64_t rns_coeff_count = static_cast<uint64_t>(poly_degree) * coeff_mod_size;
+    const uint64_t op1_stride = static_cast<uint64_t>(op1_size) * rns_coeff_count;
+    const uint64_t op2_stride = static_cast<uint64_t>(op2_size) * rns_coeff_count;
+    const uint64_t out_stride = res_size * rns_coeff_count;
+    const uint64_t op1_base = batch_idx * op1_stride;
+    const uint64_t op2_base = batch_idx * op2_stride;
+    const uint64_t out_base = batch_idx * out_stride;
+
+    for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+         tid < rns_coeff_count;
+         tid += blockDim.x * gridDim.x) {
+        size_t twr = tid / poly_degree;
+        DModulus mod = modulus[twr];
+
+        for (uint32_t j = 0; j < res_size; ++j) {
+            const uint32_t enc1_last = min(j, op1_size - 1);
+            const uint32_t enc2_first = min(j, op2_size - 1);
+            const uint32_t enc1_first = j - enc2_first;
+            const uint32_t prod_count = enc1_last - enc1_first + 1;
+
+            uint128_t temp_acc{0UL, 0UL};
+            for (uint32_t i = 0; i < prod_count; ++i) {
+                const uint64_t lhs =
+                    operand1[op1_base + tid + rns_coeff_count * (enc1_first + i)];
+                const uint64_t rhs =
+                    operand2[op2_base + tid + rns_coeff_count * (enc2_first - i)];
+                const uint128_t temp_prod = multiply_uint64_uint64(lhs, rhs);
+                add_uint128_uint128(temp_prod, temp_acc, temp_acc);
+            }
+
+            result[out_base + tid + rns_coeff_count * j] =
+                barrett_reduce_uint128_uint64(temp_acc, mod.value(), mod.const_ratio());
+        }
     }
 }
 
