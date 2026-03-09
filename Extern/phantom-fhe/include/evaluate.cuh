@@ -149,7 +149,11 @@ namespace phantom {
                                         const PhantomPlaintext &plain, PhantomCiphertext &destination);
 
     // destination = sum_i (encrypteds[i] * plains[i]), all in NTT form.
-    // This fuses the reduction over i into one kernel per ciphertext component.
+    // Fusion flow:
+    //   1) Validate all terms share one layout/metadata configuration.
+    //   2) Build device pointer arrays for ct/plain term lists.
+    //   3) Launch one reduction kernel that accumulates over i per coefficient.
+    // This removes host-side per-term multiply+add dispatch.
     void multiply_plain_ntt_many(
         const PhantomContext &context, const std::vector<PhantomCiphertext> &encrypteds,
         const std::vector<PhantomPlaintext> &plains, PhantomCiphertext &destination);
@@ -163,6 +167,7 @@ namespace phantom {
     // ans[i] += sum_{j=0}^{col_count-1} (pt[i][j] * ct[j]), where ct has 2 polys.
     // All buffers are contiguous and described by base pointers + strides.
     // Strides are in uint64_t elements; pass 0 to use dense defaults.
+    // One launch computes all rows and both ciphertext components in parallel.
     __host__ void launch_multiply_add_2d_fusion(
         const PhantomContext &context, const uint64_t *pt_matrix, const uint64_t *ct_terms, uint64_t *ans,
         std::size_t row_count, std::size_t col_count, std::size_t chain_index,
@@ -281,7 +286,9 @@ namespace phantom {
     void multiply_and_relin_inplace(const PhantomContext &context, PhantomCiphertext &encrypted1,
                                     const PhantomCiphertext &encrypted2, const PhantomRelinKey &relin_keys);
 
-    // Batch ciphertext fused multiply+relinearize: encrypted1[i] = relin(encrypted1[i] * encrypted2[i]).
+    // Batch ciphertext fused multiply+relinearize:
+    //   encrypted1[i] = relin(encrypted1[i] * encrypted2[i]).
+    // Runtime flow is batch multiply (size 2->3) followed by batch keyswitch/relin (size 3->2).
     void multiply_and_relin_inplace(
         const PhantomContext &context, PhantomBatchCiphertext &encrypted1,
         const PhantomBatchCiphertext &encrypted2, const PhantomRelinKey &relin_keys);

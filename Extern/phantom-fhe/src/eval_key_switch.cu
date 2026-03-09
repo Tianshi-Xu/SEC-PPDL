@@ -191,6 +191,11 @@ namespace phantom {
                 reduction_threshold);
     }
 
+    // Add batched key-switch outputs back into ciphertext (c0/c1).
+    // Grid mapping:
+    //   blockIdx.y -> ciphertext index in batch
+    //   blockIdx.z -> output component (0 for c0, 1 for c1)
+    //   blockIdx.x/threadIdx.x -> coefficient index across one component
     __global__ static void add_to_ct_kernel_pair_batch(
         uint64_t *ct, const uint64_t *cx, const DModulus *modulus, size_t n,
         size_t dst_size_limb, size_t src_size_limb, size_t ct_poly_count,
@@ -329,6 +334,14 @@ namespace phantom {
         const PhantomContext &context, PhantomCiphertext &encrypted, uint64_t *c2,
         const PhantomRelinKey &relin_keys, bool is_relin, const cudaStream_t &stream);
 
+    // Batched key-switch / relinearization fusion flow for ciphertext size=3:
+    //   1) Gather c2 from each ciphertext in the batch (optionally level-adjust first).
+    //   2) Run modup_batch to lift c2 from Ql to QlP decomposition basis.
+    //   3) Run one batched inner-product kernel against evaluation keys to produce
+    //      two switched components per ciphertext.
+    //   4) Run batched moddown from QlP to Ql.
+    //   5) Add switched components back to ciphertext c0/c1 in place.
+    // Caller then truncates ciphertext from size 3 to size 2.
     void keyswitch_inplace(const PhantomContext &context, PhantomBatchCiphertext &encrypted,
                            const PhantomRelinKey &relin_keys, bool is_relin,
                            const cudaStream_t &stream) {
@@ -385,6 +398,7 @@ namespace phantom {
         const size_t coeff_words = encrypted.coeff_count();
         const size_t c2_offset = 2 * coeff_words;
 
+        // Step 1: collect c2 from each batch item into contiguous [batch, Ql, n].
         auto c2_ql = make_cuda_auto_ptr<uint64_t>(batch_size * size_Ql_n, s);
         for (size_t b = 0; b < batch_size; ++b) {
             const uint64_t *c2_src = encrypted.data() + b * item_words + c2_offset;
@@ -397,12 +411,14 @@ namespace phantom {
             }
         }
 
+        // Step 2: batched ModUp: Ql -> QlP decomposition blocks.
         auto t_mod_up =
             make_cuda_auto_ptr<uint64_t>(batch_size * beta * size_QlP_n, s);
         rns_tool.modup_batch(
             t_mod_up.get(), c2_ql.get(), context.gpu_rns_tables(),
             batch_size, scheme, s);
 
+        // Step 3: fused batched inner-product with relin key across all ciphertexts.
         auto cx = make_cuda_auto_ptr<uint64_t>(batch_size * 2 * size_QlP_n, s);
         auto reduction_threshold =
             (1 << (bits_per_uint64 -
@@ -414,9 +430,11 @@ namespace phantom {
             size_QP, size_QP * n, size_QlP, size_QlP_n, size_Q, size_Ql, beta,
             reduction_threshold, beta * size_QlP_n, 2 * size_QlP_n);
 
+        // Step 4: batched ModDown: QlP -> Ql (2 outputs per ciphertext).
         rns_tool.moddown_from_NTT_batch(cx.get(), cx.get(), context.gpu_rns_tables(),
                                         2 * batch_size, scheme, s);
 
+        // Step 5: add switched outputs into c0/c1 in place.
         if (mul_tech == mul_tech_type::hps_overq_leveled && levelsDropped) {
             auto t_cx = make_cuda_auto_ptr<uint64_t>(batch_size * 2 * size_Q_n, s);
             rns_tool.ExpandCRTBasis_Ql_Q_batch(t_cx.get(), cx.get(), 2 * batch_size, s);

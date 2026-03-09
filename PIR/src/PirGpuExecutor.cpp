@@ -155,6 +155,14 @@ public:
 
                 if (use_2d_fusion)
                 {
+                    // End-to-end ct-pt 2D fusion flow for each chunk:
+                    //   A) Pack all query ciphertext terms once into ct_terms.
+                    //   B) Iterate row tiles and pack plaintexts into pt_tile.
+                    //   C) Run one fused kernel:
+                    //        ans_tile[row] = sum_col(ct_terms[col] * pt_tile[row][col]).
+                    //   D) Unpack each row result, do INTT, then apply ct-ct stage
+                    //      (mul+relin with row selector, fused or split per option).
+                    //   E) Reduce row_terms into chunk output.
                     const std::size_t tile_rows = std::min(row_count, std::max<std::size_t>(1, options_.ct_pt_2d_tile_rows));
                     auto ct_terms = phantom::util::make_cuda_auto_ptr<uint64_t>(block_count * cipher_coeff_count, stream);
                     auto pt_tile =

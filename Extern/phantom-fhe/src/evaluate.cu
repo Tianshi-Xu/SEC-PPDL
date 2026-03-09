@@ -1181,6 +1181,10 @@ Returns (f, e1, e2) such that
         const std::size_t batch_size = lhs.batch_size();
         const std::size_t dest_size = lhs.size() + rhs.size() - 1;
 
+        // Fast batched fusion path:
+        //   - one kernel launch computes every ciphertext pair in parallel (grid.y=batch),
+        //   - specialized 2x2 kernels cover the common PIR case,
+        //   - generic mxn kernel handles the remaining layouts.
         if ((scheme == scheme_type::ckks || scheme == scheme_type::bgv) &&
             lhs.is_ntt_form()) {
             const std::size_t rns_coeff_count =
@@ -1231,7 +1235,8 @@ Returns (f, e1, e2) such that
             return;
         }
 
-        // Fallback path for schemes/layouts without a dedicated batch kernel.
+        // Fallback path for schemes/layouts without a dedicated batch kernel:
+        // extract each item, run scalar multiply_inplace, then pack back.
         ConstBatchCipherView lhs_view(encrypted1.view());
         ConstBatchCipherView rhs_view(encrypted2.view());
         PhantomCiphertext first_lhs = extract_batch_item(context, lhs_view, 0, s);
@@ -1326,6 +1331,9 @@ Returns (f, e1, e2) such that
             throw std::invalid_argument("multiply_and_relin_inplace(batch): scale mismatch");
         }
 
+        // Batch fused mul+relin flow:
+        //   1) batched ciphertext-ciphertext multiply (size 2 -> size 3)
+        //   2) batched relinearization/key-switch (size 3 -> size 2)
         multiply_inplace(context, encrypted1, encrypted2);
         relinearize_inplace(context, encrypted1, relin_keys);
     }
@@ -1689,6 +1697,23 @@ Returns (f, e1, e2) such that
             barrett_reduce_uint128_uint64(accum, mod.value(), mod.const_ratio());
     }
 
+    // Fused 2D ct-pt MAC in NTT domain.
+    //
+    // Layout assumptions (all in uint64_t words):
+    //   pt_matrix[row][col][rns_coeff]
+    //   ct_terms[col][poly=2][rns_coeff]
+    //   ans[row][poly=2][rns_coeff]    (initialized by caller, can be zero or carry-in)
+    //
+    // Thread mapping:
+    //   - blockIdx.y selects one output row.
+    //   - (blockIdx.x, threadIdx.x) selects one coefficient over the full RNS span.
+    //
+    // Per-thread work:
+    //   1) Walk all columns and accumulate 128-bit products for c0/c1.
+    //   2) Add accumulators to ans carry-in.
+    //   3) Do one Barrett reduction per component.
+    //
+    // This replaces a nested host loop over [row][col] with one kernel launch.
     __global__ static void multiply_add_2d_fusion_kernel(
         const uint64_t *pt_matrix, const uint64_t *ct_terms, uint64_t *ans, const DModulus *modulus,
         const uint64_t row_count, const uint64_t col_count, const uint64_t poly_degree,
@@ -1736,6 +1761,14 @@ Returns (f, e1, e2) such that
         std::size_t pt_row_stride, std::size_t pt_col_stride, std::size_t ct_stride,
         std::size_t ans_stride, const cudaStream_t &stream)
     {
+        // Host-side launch contract for the 2D fused MAC:
+        //   - Accept dense or strided layouts (stride=0 means dense default).
+        //   - Validate that each logical row/column span is addressable.
+        //   - Launch one 2D grid over [coeff, row].
+        //
+        // The kernel computes:
+        //   ans[row] += sum_col( ct_terms[col] * pt_matrix[row][col] )
+        // for both ciphertext components c0/c1 in NTT form.
         if (row_count == 0 || col_count == 0)
         {
             return;
@@ -1806,6 +1839,9 @@ Returns (f, e1, e2) such that
 
     struct MultiplyPlainNttManyWorkspace
     {
+        // Host/device staging buffers for term pointer arrays used by
+        // multiply_rns_poly_ct_pt_many_reduce. Reused per thread to avoid
+        // reallocating pointer buffers on every call.
         std::vector<const uint64_t *> host_encrypted_terms;
         std::vector<const uint64_t *> host_plain_terms;
         cuda_auto_ptr<const uint64_t *> device_encrypted_terms;
@@ -1824,6 +1860,8 @@ Returns (f, e1, e2) such that
             throw std::invalid_argument(std::string(api_name) + ": empty terms");
         }
 
+        // Stage 1: validate all terms share one kernel configuration
+        // (chain/degree/modulus-size/size/NTT-form/scale/correction factor).
         const PhantomCiphertext &first_ct = cipher_at(0);
         const PhantomPlaintext &first_pt = plain_at(0);
         if (!first_ct.is_ntt_form() || !first_pt.is_ntt_form())
@@ -1876,6 +1914,7 @@ Returns (f, e1, e2) such that
 
         destination.resize(context, chain_index, ct_size, s);
 
+        // Stage 2: single-term fast path (no pointer indirection, no reduction loop).
         if (term_count == 1)
         {
             dim3 grid((rns_coeff_count + blockDimGlb.x - 1) / blockDimGlb.x, ct_size);
@@ -1890,6 +1929,9 @@ Returns (f, e1, e2) such that
             return;
         }
 
+        // Stage 3: fused many-term path.
+        // Build pointer arrays once, copy pointers to device, then run one
+        // reduction kernel where each thread accumulates over term_idx.
         static thread_local MultiplyPlainNttManyWorkspace workspace;
         if (workspace.capacity < term_count)
         {
@@ -2168,6 +2210,9 @@ Returns (f, e1, e2) such that
         }
 
         const auto &s = cudaStreamPerThread;
+        // keyswitch_inplace(batch) updates c0/c1 in place while ciphertext still
+        // stores 3 components. After that we compact to 2 components by copying
+        // only the [c0, c1] prefix for each batch item.
         keyswitch_inplace(context, encrypted, relin_keys, true, s);
 
         PhantomBatchCiphertext out;

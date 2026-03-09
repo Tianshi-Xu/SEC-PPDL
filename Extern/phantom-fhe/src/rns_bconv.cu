@@ -703,6 +703,12 @@ void DRNSTool::modup_batch(uint64_t *dst, const uint64_t *cks, const DNTTTable &
     const size_t cks_batch_stride = size_Ql_n;
     const size_t dst_batch_stride = beta * size_QlP_n;
 
+    // Batched ModUp flow (alpha==1 fast path):
+    //   1) Optional INTT to normal domain for CKKS/BGV input.
+    //   2) For each beta decomposition block, expand one Ql-part into QlP
+    //      for every ciphertext in the batch using one kernel launch.
+    //   3) NTT the newly generated QlP block back to evaluation domain.
+    //
     // Keep the generic alpha>1 path on the proven scalar implementation.
     if (alpha != 1) {
         for (size_t b = 0; b < batch_num; ++b) {
@@ -1013,6 +1019,16 @@ void DRNSTool::moddown_from_NTT_batch(uint64_t *ct_i, uint64_t *cx_i, const DNTT
     size_t alpha = size_P_;
     size_t size_Ql_n = size_Ql * n;
 
+    // Batched ModDown-from-NTT flow:
+    //   - Native batched kernel path is currently enabled for BFV alpha==1.
+    //   - CKKS/BGV or alpha!=1 reuse scalar moddown_from_NTT per item to keep
+    //     behavior identical while batched coverage is expanded incrementally.
+    //
+    // BFV alpha==1 path:
+    //   1) INTT [QlP] for each batched input.
+    //   2) Build delta from special-prime component via batched single-p kernel.
+    //   3) Apply ct = (cx - delta) * PInv mod qi via batched moddown kernel.
+    //
     // Fallback for paths that currently have no native batched implementation.
     if (batch_num == 0) {
         return;
