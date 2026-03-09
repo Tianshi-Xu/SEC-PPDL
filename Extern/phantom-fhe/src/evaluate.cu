@@ -1533,7 +1533,7 @@ Returns (f, e1, e2) such that
         ans_ptr[c1_offset + coeff_idx] = barrett_reduce_uint128_uint64(sum_c1, mod.value(), mod.const_ratio());
     }
 
-    void launch_multiply_add_2d_fusion(
+    __host__ void launch_multiply_add_2d_fusion(
         const PhantomContext &context, const uint64_t *pt_matrix, const uint64_t *ct_terms, uint64_t *ans,
         std::size_t row_count, std::size_t col_count, std::size_t chain_index,
         std::size_t pt_row_stride, std::size_t pt_col_stride, std::size_t ct_stride,
