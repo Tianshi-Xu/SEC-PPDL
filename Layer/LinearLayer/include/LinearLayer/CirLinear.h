@@ -1,8 +1,11 @@
 
+#pragma once
 #include <seal/seal.h>
 #include <Datatype/Tensor.h>
 #include <HE/HE.h>
+#include <LinearLayer/Conv.h>
 #include <LinearOperator/Conversion.h>
+#include <optional>
 #include "../../../Layer/Module.h"
 
 using namespace seal;
@@ -87,7 +90,9 @@ public:
     double getMultiplyTimeMs() const { return multiply_time_ms; }
 
 private:
+    std::optional<CirConv2D> pointwise;
     void compute_he_params();
+    void InitPointwise();
     
     /**
      * PackWeight: Encode weight matrix with nested encoding

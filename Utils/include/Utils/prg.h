@@ -3,6 +3,9 @@
 #include "block.h"
 #include <emp-tool/utils/constants.h>
 #include <random>
+#include <algorithm>
+#include <openssl/rand.h>
+#include <stdexcept>
 
 #ifdef EMP_USE_RANDOM_DEVICE
 #else
@@ -15,6 +18,26 @@ using namespace emp;
  */
 namespace Utils
 {
+  inline void RandomFieldElements(uint64_t *data, size_t size, uint64_t modulus)
+  {
+    const auto fill = [](uint64_t *values, size_t count) {
+      if (RAND_bytes(reinterpret_cast<unsigned char *>(values), count * sizeof(uint64_t)) != 1) {
+        throw std::runtime_error("Could not generate random field elements");
+      }
+    };
+    const uint64_t cutoff = (uint64_t(0) - modulus) % modulus;
+    constexpr size_t batch_size = 4096;
+    for (size_t offset = 0; offset < size; offset += batch_size) {
+      const size_t count = std::min(batch_size, size - offset);
+      fill(data + offset, count);
+      for (size_t i = offset; i < offset + count; ++i) {
+        while (data[i] < cutoff) {
+          fill(data + i, 1);
+        }
+        data[i] %= modulus;
+      }
+    }
+  }
 
   class PRG128
   {

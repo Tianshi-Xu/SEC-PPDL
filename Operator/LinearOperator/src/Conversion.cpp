@@ -1,4 +1,5 @@
 #include <LinearOperator/Conversion.h>
+#include <Utils/prg.h>
 
 using namespace HE::unified;
 
@@ -12,8 +13,7 @@ Tensor<UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
     std::vector<uint64_t> tmp_vec(poly_degree,0ULL);
     // encoding
     Tensor<UnifiedPlaintext> ac_pt(poly_shape, HE->server ? HE->Backend() : HOST);
-    Tensor<UnifiedCiphertext> ac_ct(poly_shape,HE->GenerateZeroCiphertext(HE->Backend()));
-    HE->encoder->encode(tmp_vec, ac_pt(0));
+    Tensor<UnifiedCiphertext> ac_ct(poly_shape, HOST);
     for (size_t i = 0; i < ac_pt.size(); i++) {
         for (size_t j = 0; j < poly_degree; j++) {
             tmp_vec[j] = x(i * poly_degree + j);
@@ -48,63 +48,36 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
     std::vector<size_t> scalar_shape = out_ct.shape();
     scalar_shape.push_back(HE->polyModulusDegree);
     Tensor<uint64_t> x(scalar_shape);
-    Tensor<UnifiedPlaintext> out_share(out_ct.shape(), HOST);
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<uint64_t> distrib(0, HE->plain_mod - 1);
-    // mask generation and communication
     if (HE->server) {
-        for (size_t i = 0; i < out_ct.size(); i++){
-            std::vector<uint64_t> pos_mask(HE->polyModulusDegree, 0);
-            std::vector<uint64_t> neg_mask(HE->polyModulusDegree, 0);
-            for (size_t j = 0; j < pos_mask.size(); j++) {
-                pos_mask[j] = distrib(gen);
-                neg_mask[j] = HE->plain_mod - pos_mask[j];
-                if (HE->server) {
-                    x(i * HE->polyModulusDegree + j) = pos_mask[j];
-                }
-            }
-            // TODO: noise flooding (add freshly encrypted zero), refer to Cheetah
-            UnifiedPlaintext tmp_pos(HOST);
-            UnifiedPlaintext tmp_neg(HOST);
-            HE->encoder->encode(pos_mask, tmp_pos);
-            HE->encoder->encode(neg_mask, tmp_neg);
-            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);  // annotate this when testing
-            out_share(i) = tmp_pos;
-        }
-        out_ct.apply([HE](UnifiedCiphertext &ct){
-            if (HE->Backend() == DEVICE) {
-                ct.to_host(*HE->context);
-            }
-        });
-        HE->SendEncVec(out_ct);
-    }
-    else {
-        HE->ReceiveEncVec(out_ct);
-    }
-
-    // decoding and decryption
-    std::vector<uint64_t> tmp_vec(HE->polyModulusDegree);
-    if (HE->server) {
-        // for (size_t i = 0; i < out_share.size(); i++) {
-        //     // HE->batchEncoder->decode(out_share(i), tmp_vec);     * SEAL does not allow adjacent encoding and decoding?
-        //     for (size_t j = 0; j < HE->polyModulusDegree; j++) {
-        //         x(i * HE->polyModulusDegree + j) = tmp_vec[j];
-        //     }
-        // }
-    }
-    else {
+        Utils::RandomFieldElements(x.data().data(), x.size(), HE->plain_mod);
+        std::vector<uint64_t> neg_mask(HE->polyModulusDegree);
         for (size_t i = 0; i < out_ct.size(); i++) {
-            Plaintext out_pt;
-            HE->decryptor->decrypt(out_ct(i), out_pt);
-            HE->encoder->decode(out_pt, tmp_vec);
-            for (size_t j = 0; j < HE->polyModulusDegree; j++) {
-                x(i * HE->polyModulusDegree + j) = tmp_vec[j];
+            for (size_t j = 0; j < neg_mask.size(); j++) {
+                const uint64_t mask = x(i * HE->polyModulusDegree + j);
+                neg_mask[j] = mask == 0 ? 0 : HE->plain_mod - mask;
             }
+            UnifiedPlaintext tmp_neg(HE->Backend());
+            HE->encoder->encode(neg_mask, tmp_neg);
+            HE->evaluator->add_plain_inplace(out_ct(i), tmp_neg);
+        }
+        if (HE->Backend() == DEVICE) {
+            out_ct.apply([HE](UnifiedCiphertext &ct) { ct.to_host(*HE->context); });
+        }
+        HE->SendEncVec(out_ct);
+        return x;
+    }
+
+    HE->ReceiveEncVec(out_ct);
+    std::vector<uint64_t> tmp_vec(HE->polyModulusDegree);
+    for (size_t i = 0; i < out_ct.size(); i++) {
+        Plaintext out_pt;
+        HE->decryptor->decrypt(out_ct(i), out_pt);
+        HE->encoder->decode(out_pt, tmp_vec);
+        for (size_t j = 0; j < HE->polyModulusDegree; j++) {
+            x(i * HE->polyModulusDegree + j) = tmp_vec[j];
         }
     }
 
-    x.reshape(scalar_shape);
     return x;
 };
 
@@ -183,20 +156,15 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE
         // for(int i=0;i<HE->polyModulusDegree;i++){
         //     cout << "out_ct(0)[i]:" << out_ct(0).hcipher().data()[i] << endl;
         // }
-        int64_t mask;
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<int64_t> dist(0, HE->plain_mod - 1);
         // cout << "numPoly:" << numPoly << endl;
         for (size_t i = 0; i < numPoly; i++){
             outShare(i).hplain().resize(HE->polyModulusDegree);
             plainMaskInv.hplain().resize(HE->polyModulusDegree);
+            Utils::RandomFieldElements(outShare(i).hplain().data(), HE->polyModulusDegree, HE->plain_mod);
             for (size_t l = 0; l < HE->polyModulusDegree; l++){
-                mask = dist(gen);
-                *(outShare(i).hplain().data() + l) = mask;
+                const uint64_t mask = outShare(i).hplain().data()[l];
                 tensorShare((i) * HE->polyModulusDegree + l) = mask;
-                mask = HE->plain_mod - mask;
-                *(plainMaskInv.hplain().data() + l) = mask;
+                plainMaskInv.hplain().data()[l] = mask == 0 ? 0 : HE->plain_mod - mask;
                 // cout << "mask:" << *(plainMaskInv.hplain().data() + l) << endl;
             }
             

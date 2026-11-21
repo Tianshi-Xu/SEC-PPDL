@@ -454,8 +454,8 @@ void AuxProtocols::s_extend(int32_t dim, int128_t *inA, int128_t *outB,
 void AuxProtocols::AND(uint8_t *x, uint8_t *y, uint8_t *z, int32_t size) {
   int old_size = size;
   size = ceil(size / 8.0) * 8;
-  uint8_t *tmp_x = new uint8_t[size];
-  uint8_t *tmp_y = new uint8_t[size];
+  uint8_t *tmp_x = new uint8_t[size]();
+  uint8_t *tmp_y = new uint8_t[size]();
   uint8_t *tmp_z = new uint8_t[size];
   memcpy(tmp_x, x, old_size * sizeof(uint8_t));
   memcpy(tmp_y, y, old_size * sizeof(uint8_t));

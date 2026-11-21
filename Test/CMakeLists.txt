@@ -43,6 +43,9 @@ target_link_libraries(test_ntt PUBLIC Utils)
 add_executable(test_fixpoint ${CMAKE_CURRENT_LIST_DIR}/src/TestFixPoint.cpp)
 target_link_libraries(test_fixpoint PUBLIC NonlinearOperator)
 
+add_executable(test_face_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestFaceResNet.cpp)
+target_link_libraries(test_face_resnet PUBLIC Model)
+
 # add_executable(test_resnet ${CMAKE_CURRENT_LIST_DIR}/src/TestResNet.cpp)
 # target_link_libraries(test_resnet PUBLIC Model)
 

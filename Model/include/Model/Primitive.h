@@ -1,3 +1,4 @@
+#pragma once
 #include <OTProtocol/protocol.h>
 #include <HE/HE.h>
 #include <NonlinearLayer/ReLU.h>

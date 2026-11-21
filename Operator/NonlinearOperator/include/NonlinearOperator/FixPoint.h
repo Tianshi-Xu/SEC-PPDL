@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <type_traits>
+#include <array>
+#include <Utils/prg.h>
 #pragma once
 namespace NonlinearOperator {
 
@@ -16,6 +18,7 @@ class FixPoint {
         int num_threads;
         int party;
         FixPoint(TruncationProtocol **truncationProtocol, OTProtocol::AuxProtocols **aux, int num_threads=4){
+            this->party = aux[0]->party;
             this->num_threads = num_threads;
             this->truncationProtocol = truncationProtocol;
             this->aux = aux;
@@ -38,14 +41,15 @@ class FixPoint {
             int dim = x.size();
             T* x_flatten = x.data().data();
             uint8_t* result_flatten = result.data().data();
-            std::thread less_than_threads[num_threads];
-            int chunk_size = dim / num_threads;
-            for (int i = 0; i < num_threads; i++) {
-                int offset = i * chunk_size;
-                less_than_threads[i] = std::thread(less_than_thread, aux[i], x_flatten+offset, result_flatten+offset, chunk_size, bw);
+            const int workers = std::min(dim, num_threads);
+            std::vector<std::thread> less_than_threads;
+            for (int i = 0; i < workers; i++) {
+                const int offset = int64_t(dim) * i / workers;
+                const int end = int64_t(dim) * (i + 1) / workers;
+                less_than_threads.emplace_back(less_than_thread, aux[i], x_flatten+offset, result_flatten+offset, end-offset, bw);
             }
-            for (int i = 0; i < num_threads; i++) {
-                less_than_threads[i].join();
+            for (auto &worker : less_than_threads) {
+                worker.join();
             }
         }
         
@@ -89,29 +93,26 @@ class FixPoint {
 
         // for now, only support uint64_t. TODO: support other types
         void truncate(Tensor<T> &x, int32_t shift, int32_t bw, bool msb_zero=false){
-            uint8_t *msb_x = nullptr;
-            if (msb_zero){
-                msb_x = new uint8_t[x.size()];
-                memset(msb_x, 0, x.size());
+            truncate(x, shift, bw, msb_zero, std::is_signed_v<T>);
+        }
+
+        void truncate(Tensor<T> &x, int32_t shift, int32_t bw, bool msb_zero, bool signed_arithmetic){
+            if (shift == 0) {
+                return;
             }
-            auto shape = x.shape();
             int dim = x.size();
-            x.flatten();
             T* x_flatten = x.data().data();
-            std::thread truncation_threads[num_threads];
-            bool signed_arithmetic = std::is_signed_v<T>;
-            int chunk_size = dim / num_threads;
-            for (int i = 0; i < num_threads; i++) {
-                int offset = i * chunk_size;
-                truncation_threads[i] = std::thread(truncation_thread, truncationProtocol[i], x_flatten+offset, x_flatten+offset, chunk_size, shift, bw, signed_arithmetic, msb_x);
+            std::vector<uint8_t> msb(msb_zero ? dim : 0, 0);
+            const int workers = std::min(dim, num_threads);
+            std::vector<std::thread> truncation_threads;
+            for (int i = 0; i < workers; i++) {
+                const int offset = int64_t(dim) * i / workers;
+                const int end = int64_t(dim) * (i + 1) / workers;
+                truncation_threads.emplace_back(truncation_thread, truncationProtocol[i], x_flatten+offset, x_flatten+offset, end-offset, shift, bw, signed_arithmetic, msb_zero ? msb.data()+offset : nullptr);
             }
-            for (int i = 0; i < num_threads; i++) {
-                truncation_threads[i].join();
+            for (auto &worker : truncation_threads) {
+                worker.join();
             }
-            if (msb_zero) {
-                delete[] msb_x;
-            }
-            x.reshape(shape);
         }
 
         // for now, only support uint64_t
@@ -236,14 +237,16 @@ class FixPoint {
             const bool signed_arithmetic = std::is_signed_v<T>;
             // cout << "bw, log2Q:" << bitwidth << " " << ceil(std::log2(Q)) << endl;
             if constexpr (sizeof(T) == sizeof(uint64_t)) {
-                std::thread field2ring_threads[num_threads];
-                int chunk_size = x.size() / num_threads;
-                for (int i = 0; i < num_threads; i++) {
-                    int offset = i * chunk_size;
-                    field2ring_threads[i] = std::thread(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, chunk_size, bitwidth, Q, signed_arithmetic);
+                const int dim = x.size();
+                const int workers = std::min(dim, num_threads);
+                std::vector<std::thread> field2ring_threads;
+                for (int i = 0; i < workers; i++) {
+                    const int offset = int64_t(dim) * i / workers;
+                    const int end = int64_t(dim) * (i + 1) / workers;
+                    field2ring_threads.emplace_back(field2ring_thread, aux[i], x.data().data()+offset, x.data().data()+offset, end-offset, bitwidth, Q, signed_arithmetic);
                 }
-                for (int i = 0; i < num_threads; i++) {
-                    field2ring_threads[i].join();
+                for (auto &worker : field2ring_threads) {
+                    worker.join();
                 }
             } else if constexpr (std::is_same_v<T, int128_t>) {
                 auto chunk_size = x.size() / num_threads;
@@ -257,21 +260,194 @@ class FixPoint {
                 }
             }
         }
+
+        // The signed input must fit in both the input ring and the centered field.
+        void SignedRing2Field(Tensor<uint64_t> &x, uint64_t modulus, int bitwidth) {
+            if (modulus < 2 || modulus > (uint64_t(1) << 63) || bitwidth < 1 || bitwidth > 64) {
+                throw std::invalid_argument("Invalid signed ring-to-field parameters");
+            }
+            if (x.size() == 0) {
+                return;
+            }
+            const int size = x.size();
+            const uint64_t half_ring = uint64_t(1) << (bitwidth - 1);
+            const uint64_t mask = half_ring + (half_ring - 1);
+            const uint64_t correction = (static_cast<__uint128_t>(half_ring) * 2) % modulus;
+            const uint64_t offset = half_ring % modulus;
+            if (party == ALICE) {
+                for (auto &value : x.data()) {
+                    value += half_ring;
+                }
+            }
+            std::vector<uint8_t> wrap(size);
+            aux[0]->wrap_computation(x.data().data(), wrap.data(), size, bitwidth);
+            std::vector<uint64_t> correction_share(size);
+            if (party == ALICE) {
+                Utils::RandomFieldElements(correction_share.data(), size, modulus);
+                std::vector<std::array<uint64_t, 4>> messages(size);
+                std::vector<uint64_t *> rows(size);
+                for (int i = 0; i < size; ++i) {
+                    for (int choice = 0; choice < 4; ++choice) {
+                        const uint64_t value = (wrap[i] ^ (choice & 1)) * correction;
+                        messages[i][choice] = (value + modulus - correction_share[i]) % modulus;
+                    }
+                    rows[i] = messages[i].data();
+                }
+                aux[0]->lookup_table<uint64_t>(rows.data(), nullptr, nullptr, size, 2, 64);
+            } else {
+                std::vector<uint64_t> choices(wrap.begin(), wrap.end());
+                aux[0]->lookup_table<uint64_t>(nullptr, choices.data(), correction_share.data(), size, 2, 64);
+            }
+            for (int i = 0; i < size; ++i) {
+                uint64_t value = ((x(i) & mask) % modulus + modulus - correction_share[i]) % modulus;
+                x(i) = party == ALICE ? (value + modulus - offset) % modulus : value;
+            }
+        }
+
+        // The reconstructed signed input plus 2^(bitwidth-2) must be in
+        // the lower half of the source ring. Its wrap bit is then the OR
+        // of the two local MSBs.
+        void BoundedRing2Field(Tensor<uint64_t> &x, uint64_t modulus, int bitwidth) {
+            if (modulus < 3 || modulus > (uint64_t(1) << 63) || bitwidth < 2 || bitwidth > 64) {
+                throw std::invalid_argument("Invalid bounded ring-to-field parameters");
+            }
+            if (x.size() == 0) {
+                return;
+            }
+            const int size = x.size();
+            const uint64_t half_ring = uint64_t(1) << (bitwidth - 1);
+            const uint64_t mask = half_ring + (half_ring - 1);
+            const uint64_t offset = half_ring / 2;
+            const uint64_t correction = (static_cast<__uint128_t>(half_ring) * 2) % modulus;
+            std::vector<uint8_t> high(size);
+            for (int i = 0; i < size; ++i) {
+                x(i) = (x(i) + (party == ALICE ? offset : 0)) & mask;
+                high[i] = (x(i) & half_ring) != 0;
+            }
+
+            // A masked 1-out-of-2 OT implements the prime-field correction
+            // using the existing OT interface.
+            auto *ot = aux[0]->otpack->iknp_straight;
+            const int payload_bits = seal::util::get_significant_bit_count(modulus - 1);
+            std::vector<uint64_t> correction_share(size);
+            if (party == ALICE) {
+                Utils::RandomFieldElements(correction_share.data(), size, modulus);
+                std::vector<std::array<uint64_t, 2>> messages(size);
+                std::vector<uint64_t *> rows(size);
+                for (int i = 0; i < size; ++i) {
+                    const uint64_t negative_mask = modulus - correction_share[i];
+                    messages[i] = {(high[i] * correction + negative_mask) % modulus,
+                                   (correction + negative_mask) % modulus};
+                    rows[i] = messages[i].data();
+                }
+                ot->send(rows.data(), size, payload_bits);
+            } else {
+                ot->recv(correction_share.data(), high.data(), size, payload_bits);
+            }
+
+            const uint64_t local_offset = party == ALICE ? offset % modulus : 0;
+            for (int i = 0; i < size; ++i) {
+                const uint64_t unwrapped = (x(i) % modulus + modulus - correction_share[i]) % modulus;
+                x(i) = (unwrapped + modulus - local_offset) % modulus;
+            }
+        }
+
+        // The reconstructed signed input plus floor(modulus/4) must be
+        // in [0, ceil(modulus/2)). A nonzero shift fuses truncation and
+        // can differ from floor(x / 2^shift) by one output unit.
+        void BoundedField2Ring(Tensor<uint64_t> &x, uint64_t modulus, int bitwidth, int shift = 0) {
+            if (modulus < 3 || modulus > (uint64_t(1) << 63) || bitwidth < 1 || bitwidth > 64 ||
+                shift < 0 || shift >= 63) {
+                throw std::invalid_argument("Invalid bounded field-to-ring parameters");
+            }
+            if (x.size() == 0) {
+                return;
+            }
+            const int size = x.size();
+            const uint64_t mask = bitwidth == 64 ? UINT64_MAX : (uint64_t(1) << bitwidth) - 1;
+            const uint64_t offset = party == ALICE ? modulus / 4 : 0;
+            const uint64_t half_field = (modulus + 1) / 2;
+            const uint64_t correction = (modulus >> shift) & mask;
+            const int64_t divisor = int64_t(1) << shift;
+            std::vector<uint8_t> high(size);
+            for (int i = 0; i < size; ++i) {
+                const uint64_t shifted_share = (x(i) % modulus + offset) % modulus;
+                high[i] = shifted_share >= half_field;
+                const int64_t local = static_cast<int64_t>(shifted_share) - static_cast<int64_t>(offset);
+                x(i) = static_cast<uint64_t>(local / divisor - (local % divisor < 0));
+            }
+
+            auto *ot = aux[0]->otpack->iknp_straight;
+            std::vector<uint64_t> correction_share(size);
+            if (party == ALICE) {
+                std::vector<uint64_t> correlation(size);
+                for (int i = 0; i < size; ++i) {
+                    correlation[i] = high[i] ? 0 : correction;
+                }
+                ot->send_cot(correction_share.data(), correlation.data(), size, bitwidth);
+                for (int i = 0; i < size; ++i) {
+                    correction_share[i] = (high[i] ? correction : 0) - correction_share[i];
+                }
+            } else {
+                ot->recv_cot(correction_share.data(), reinterpret_cast<bool *>(high.data()), size, bitwidth);
+            }
+            for (int i = 0; i < size; ++i) {
+                x(i) = (x(i) - correction_share[i]) & mask;
+            }
+        }
+
+        // Multiply additive shares in Z/(2^bitwidth). Each OT lane selects one
+        // party's local multiplier bit, so no carry bits need to be opened.
+        Tensor<uint64_t> Multiply(const Tensor<uint64_t> &x, const Tensor<uint64_t> &y, int bitwidth) {
+            if (x.shape() != y.shape() || x.size() == 0 || bitwidth < 1 || bitwidth > 64) {
+                throw std::invalid_argument("Invalid ring multiplication inputs");
+            }
+            const size_t size = x.size();
+            const size_t count = size * bitwidth;
+            Tensor<uint64_t> input({2 * count});
+            Tensor<uint64_t> product({2 * count});
+            Tensor<uint8_t> select({2 * count});
+            const size_t lane = party == ALICE ? 0 : count;
+            for (size_t i = 0; i < size; ++i) {
+                for (int bit = 0; bit < bitwidth; ++bit) {
+                    const size_t index = i * bitwidth + bit;
+                    input(index) = input(index + count) = x(i);
+                    select(index + lane) = (y(i) >> bit) & 1;
+                }
+            }
+            mux(select, input, product, bitwidth, bitwidth);
+            const uint64_t mask = bitwidth == 64 ? UINT64_MAX : (uint64_t(1) << bitwidth) - 1;
+            Tensor<uint64_t> result(x.shape());
+            for (size_t i = 0; i < size; ++i) {
+                for (int bit = 0; bit < bitwidth; ++bit) {
+                    const size_t index = i * bitwidth + bit;
+                    result(i) += (product(index) + product(index + count)) << bit;
+                }
+                result(i) &= mask;
+            }
+            return result;
+        }
+
+        uint8_t BooleanAnd(uint8_t x, uint8_t y) {
+            uint8_t result = 0;
+            aux[0]->AND(&x, &y, &result, 1);
+            return result;
+        }
         
         // return b*input
         void mux(Tensor<uint8_t> &b, Tensor<T> &input, Tensor<T> &result, int32_t bwA, int32_t bwB){
             int dim = input.size();
-            input.flatten();
             T* input_flatten = input.data().data();
             T* result_flatten = result.data().data();
-            std::thread mux_threads[num_threads];
-            int chunk_size = dim / num_threads;
-            for (int i = 0; i < num_threads; i++) {
-                int offset = i * chunk_size;
-                mux_threads[i] = std::thread(mux_thread, aux[i], b.data().data()+offset, input_flatten+offset, result_flatten+offset, chunk_size, bwA, bwB);
+            const int workers = std::min(dim, num_threads);
+            std::vector<std::thread> mux_threads;
+            for (int i = 0; i < workers; i++) {
+                const int offset = int64_t(dim) * i / workers;
+                const int end = int64_t(dim) * (i + 1) / workers;
+                mux_threads.emplace_back(mux_thread, aux[i], b.data().data()+offset, input_flatten+offset, result_flatten+offset, end-offset, bwA, bwB);
             }
-            for (int i = 0; i < num_threads; i++) {
-                mux_threads[i].join();
+            for (auto &worker : mux_threads) {
+                worker.join();
             }
         }
     

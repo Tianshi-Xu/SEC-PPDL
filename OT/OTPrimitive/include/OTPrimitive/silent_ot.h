@@ -45,6 +45,25 @@ class SilentOT : public OTPrimitive::OT<IO> {
     recv_ot_cm_cc(data, b, length);
   }
 
+  void send(uint64_t **data, int length, int l) override {
+    const uint64_t mask = l == 64 ? UINT64_MAX : (uint64_t(1) << l) - 1;
+    std::vector<block128> zero(length), one(length);
+    for (int i = 0; i < length; ++i) {
+      zero[i] = Utils::makeBlock128(0, data[i][0] & mask);
+      one[i] = Utils::makeBlock128(0, data[i][1] & mask);
+    }
+    send(zero.data(), one.data(), length);
+  }
+
+  void recv(uint64_t *data, uint8_t *choices, int length, int l) override {
+    const uint64_t mask = l == 64 ? UINT64_MAX : (uint64_t(1) << l) - 1;
+    std::vector<block128> selected(length);
+    recv(selected.data(), reinterpret_cast<const bool *>(choices), length);
+    for (int i = 0; i < length; ++i) {
+      data[i] = static_cast<uint64_t>(_mm_extract_epi64(selected[i], 0)) & mask;
+    }
+  }
+
   void send(uint8_t** data, int length, int l) override {
     // std::cout << "in send" << std::endl;
     send_ot_cm_cc(data, length, l);
@@ -76,8 +95,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
   // ('data0').
   void send_ot_cam_cc(uint64_t* data0, const uint64_t* corr, int64_t length,
                       int l) {
-    uint64_t modulo_mask = (1ULL << l) - 1;
-    if (l == 64) modulo_mask = -1;
+    const uint64_t modulo_mask = l == 64 ? UINT64_MAX : (1ULL << l) - 1;
     block* rcm_data = new block[length];
     send_ot_rcm_cc(rcm_data, length);
 
@@ -123,8 +141,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
   // Receiver chooses a choice bit 'b', and
   // receives 'x' if b = 0, and 'x + corr' if b = 1
   void recv_ot_cam_cc(uint64_t* data, const bool* b, int64_t length, int l) {
-    uint64_t modulo_mask = (1ULL << l) - 1;
-    if (l == 64) modulo_mask = -1;
+    const uint64_t modulo_mask = l == 64 ? UINT64_MAX : (1ULL << l) - 1;
 
     block* rcm_data = new block[length];
     recv_ot_rcm_cc(rcm_data, b, length);

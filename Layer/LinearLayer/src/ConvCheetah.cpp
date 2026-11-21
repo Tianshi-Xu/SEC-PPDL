@@ -6,6 +6,16 @@
 using namespace seal;
 using namespace LinearLayer;
 
+namespace {
+
+uint64_t FieldResidue(uint64_t value, uint64_t modulus) {
+    if (value < modulus) {
+        return value;
+    }
+    return value >> 63 ? (modulus - (uint64_t(0) - value) % modulus) % modulus : value % modulus;
+}
+
+} // namespace
 
 // 计算上取整除法
 int Conv2DCheetah::DivUpper(int a, int b) {
@@ -14,9 +24,15 @@ int Conv2DCheetah::DivUpper(int a, int b) {
 
 // 计算计算开销
 int Conv2DCheetah::CalculateCost(int H, int W, int h, int Hw, int Ww, int C, int N) {
-    return (int)ceil((double)C / (N / (Hw * Ww))) *
-           (int)ceil((double)(H - h + 1) / (Hw - h + 1)) *
-           (int)ceil((double)(W - h + 1) / (Ww - h + 1));
+    const int slots = N / (Hw * Ww);
+    const int spatial_tiles = DivUpper(H - h + 1, Hw - h + 1) * DivUpper(W - h + 1, Ww - h + 1);
+    int ciphertexts = DivUpper(C, slots);
+    if (partition_cost == PartitionCost::TotalCiphertexts) {
+        const int input_channels_per_ct = std::min(C, slots);
+        const int output_channels_per_ct = slots / input_channels_per_ct;
+        ciphertexts += DivUpper(out_channels, output_channels_per_ct);
+    }
+    return ciphertexts * spatial_tiles;
 }
 
 // 查找最佳分块方式
@@ -57,8 +73,11 @@ void Conv2DCheetah::compute_he_params(uint64_t in_feature_size) {
 }
 
 
-Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE)
-    : Conv2D(in_feature_size + 2 * padding, stride, padding, weight, bias, HE)
+Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding,
+                             const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE,
+                             PartitionCost partition_cost)
+    : Conv2D(in_feature_size + 2 * padding, stride, padding, weight, bias, HE),
+      partition_cost(partition_cost)
 {
     std::vector<size_t> shape = weight.shape();
     in_channels = shape[1];
@@ -88,7 +107,9 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
     // std::cout << "plain" << plain;
-    weight_pt = this->PackWeight();
+    if (HE->server) {
+        weight_pt = PackWeight();
+    }
     this->fused_bn = false;
     cout << "feature_size:" << this->in_feature_size << endl;
     cout << "Hprime:" << HOut << endl;
@@ -98,8 +119,11 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
     cout << "Conv2DCheetah constructor done" << endl;
 };
 
-Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE)
-    : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE)
+Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels,
+                             uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE,
+                             PartitionCost partition_cost)
+    : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE),
+      partition_cost(partition_cost)
 {
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
@@ -248,8 +272,8 @@ Tensor<uint64_t> Conv2DCheetah::PackActivation(Tensor<uint64_t> &x){
                                         Tsub({ic,jh,kw}) = 0;
                                     }
                                     else{
-                                        int64_t element = padded_x({gama * CW + ic, alpha * (HW - kernel_size + 1) + jh, beta * (WW - kernel_size + 1) + kw});
-                                        Tsub({ic,jh,kw}) = (element >= 0) ? unsigned(element) : unsigned(element + plain);
+                                        const uint64_t element = padded_x({gama * CW + ic, alpha * (HW - kernel_size + 1) + jh, beta * (WW - kernel_size + 1) + kw});
+                                        Tsub({ic,jh,kw}) = FieldResidue(element, plain);
                                     }
                                 }
                             }
@@ -319,6 +343,7 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
     if (!HE->server){
         return Ktg;
     }
+    nonzero_weight.assign(dM * dC, false);
     for (unsigned long theta = 0; theta < dM; theta++){
         for (unsigned long gama = 0; gama < dC; gama++){
             vector<uint64_t> Tsubv (polyModulusDegree,0); 
@@ -333,13 +358,15 @@ Tensor<UnifiedPlaintext> Conv2DCheetah::PackWeight() {
                     }else{
                         for (unsigned hr = 0; hr < kernel_size; hr++){
                             for (unsigned hc = 0; hc < kernel_size; hc++){
-                                int64_t element = this->weight({theta * MW + it, gama * CW + jg, hr, hc});
-                                Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = (element >= 0) ? unsigned(element) : unsigned(element + plain);
+                                const uint64_t element = this->weight({theta * MW + it, gama * CW + jg, hr, hc});
+                                Tsubv[OW - it * CW * HW * WW - jg * HW * WW - hr * WW - hc] = FieldResidue(element, plain);
                             }
                         }
                     }
                 }
             }
+            nonzero_weight[theta * dC + gama] = std::any_of(Tsubv.begin(), Tsubv.end(),
+                [](uint64_t coefficient) { return coefficient != 0; });
             Ktg({theta,gama}).hplain().resize(polyModulusDegree);
             seal::util::modulo_poly_coeffs(Tsubv, len, plain, Ktg({theta, gama}).hplain().data());
             if (len < polyModulusDegree){
@@ -377,21 +404,27 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
     const auto target = HE->server ? HE->Backend() : HOST;
     cout << "target:" << target << endl;
     std::vector<size_t> shapeTab = {dM, dH, dW};
-    Tensor<UnifiedCiphertext> out_ct(shapeTab,HE->GenerateZeroCiphertext(target));
+    Tensor<UnifiedCiphertext> out_ct(shapeTab, target);
     if (!HE->server){
         return out_ct;
     }
 
+    const auto compute = [&](size_t theta, size_t alpha, size_t beta, UnifiedCiphertext &interm) {
+        auto &result = out_ct({theta, alpha, beta});
+        result = HE->GenerateZeroCiphertext(target);
+        for (size_t gama = 0; gama < dC; gama++) {
+            if (nonzero_weight[theta * dC + gama]) {
+                HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), weight_pt({theta, gama}), interm);
+                HE->evaluator->add_inplace(result, interm);
+            }
+        }
+    };
     #ifndef MULTI_STRAEM
     UnifiedCiphertext interm(target);
     for (size_t theta = 0; theta < dM; theta++) {
         for (size_t alpha = 0; alpha < dH; alpha++) {
             for (size_t beta = 0; beta < dW; beta++) {
-                HE->evaluator->multiply_plain(ac_ct({0, alpha, beta}), weight_pt({theta, 0}), out_ct({theta, alpha, beta}));
-                for (size_t gama = 1; gama < dC; gama++) {
-                    HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), weight_pt({theta, gama}), interm);
-                    HE->evaluator->add_inplace(out_ct({theta, alpha, beta}), interm);
-                }
+                compute(theta, alpha, beta, interm);
             }
         }
     }
@@ -402,15 +435,7 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
         for (size_t theta = theta_start; theta < theta_end; theta++) {
             for (size_t alpha = 0; alpha < dH; alpha++) {
                 for (size_t beta = 0; beta < dW; beta++) {
-                    HE->evaluator->multiply_plain(ac_ct({0, alpha, beta}), 
-                                                weight_pt({theta, 0}), 
-                                                out_ct({theta, alpha, beta}));
-                    for (size_t gama = 1; gama < dC; gama++) {
-                        HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), 
-                                                    weight_pt({theta, gama}), 
-                                                    interm);
-                        HE->evaluator->add_inplace(out_ct({theta, alpha, beta}), interm);
-                    }
+                    compute(theta, alpha, beta, interm);
                 }
             }
         }

@@ -54,6 +54,11 @@ CirLinearNest::CirLinearNest(uint64_t dim_0, uint64_t block_size,
     
     num_blocks_1 = dim_1 / block_size;
     num_blocks_2 = dim_2 / block_size;
+
+    if (dim_0 == 1 && block_size == 1) {
+        InitPointwise();
+        return;
+    }
     
     compute_he_params();
     
@@ -83,11 +88,37 @@ CirLinearNest::CirLinearNest(uint64_t dim_0, uint64_t dim_1, uint64_t dim_2, uin
         this->bias.randomize(16);
     }
     
+    if (dim_0 == 1 && block_size == 1) {
+        InitPointwise();
+        return;
+    }
     compute_he_params();
     
     if (HE->server) {
         weight_pt = PackWeight();
     }
+}
+
+void CirLinearNest::InitPointwise() {
+    if (HE->server) {
+        Tensor<uint64_t> kernel({dim_2, dim_1, 1, 1});
+        for (uint64_t out = 0; out < dim_2; ++out) {
+            for (uint64_t in = 0; in < dim_1; ++in) {
+                kernel({out, in, 0, 0}) = weight({in, out});
+            }
+        }
+        Tensor<uint64_t> conv_bias({dim_2});
+        pointwise.emplace(1, 1, 0, 1, kernel, conv_bias, HE);
+    } else {
+        pointwise.emplace(1, dim_1, dim_2, 1, 1, 1, HE);
+    }
+    padded_dim_0 = ntt_size = 1;
+    tile_size = pointwise->tile_size;
+    input_rot = pointwise->input_rot;
+    tiled_blocks_1 = pointwise->tiled_in_channels;
+    tiled_blocks_2 = pointwise->tiled_out_channels;
+    padded_blocks_1 = tiled_blocks_1 * tile_size;
+    padded_blocks_2 = tiled_blocks_2 * tile_size;
 }
 
 void CirLinearNest::compute_he_params() {
@@ -444,6 +475,16 @@ Tensor<uint64_t> CirLinearNest::DepackResult(Tensor<uint64_t> &out_msg) {
 }
 
 Tensor<uint64_t> CirLinearNest::operator()(Tensor<uint64_t> &x) {
+    if (pointwise) {
+        if (x.shape() != std::vector<size_t>{1, dim_1}) {
+            throw std::invalid_argument("CirLinearNest expects a single row of input channels");
+        }
+        auto activation = x;
+        activation.reshape({dim_1, 1, 1});
+        auto output = (*pointwise)(activation);
+        output.reshape({1, dim_2});
+        return output;
+    }
     Tensor<uint64_t> ac_msg = PackActivation(x);
     Tensor<UnifiedCiphertext> ac_ct = Operator::SSToHE(ac_msg, HE);
     Tensor<UnifiedCiphertext> out_ct = HECompute(weight_pt, ac_ct);

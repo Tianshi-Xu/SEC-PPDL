@@ -69,22 +69,30 @@ class Conv2DNest : public Conv2D {
 
 class Conv2DCheetah : public Conv2D {
     public:
+        enum class PartitionCost { InputCiphertexts, TotalCiphertexts };
+
         unsigned long N, HW, WW, CW, MW, dM, dC, dH, dW, OW, HOut, WOut, HWprime, WWprime;
         size_t polyModulusDegree = 8192;
         uint64_t plain;
 
-        Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
+        Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight,
+                      const Tensor<uint64_t>& bias, HE::HEEvaluator* HE,
+                      PartitionCost partition_cost = PartitionCost::InputCiphertexts);
 
         Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE
                             , Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
 
-        Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE);
+        Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels,
+                      uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE,
+                      PartitionCost partition_cost = PartitionCost::InputCiphertexts);
 
         
         Tensor<uint64_t> operator()(Tensor<uint64_t> &x) override;
 
     private:
+        PartitionCost partition_cost;
         int DivUpper(int a, int b);
+        std::vector<bool> nonzero_weight;
         int CalculateCost(int H, int W, int h, int Hw, int Ww, int C, int N);
         void FindOptimalPartition(int H, int W, int h, int C, int N, int* optimal_Hw, int* optimal_Ww);
         Tensor<UnifiedCiphertext> EncryptTensor(Tensor<UnifiedPlaintext> plainTensor);
@@ -116,6 +124,7 @@ class CirConv2D : public Conv2D {
         Tensor<uint64_t> operator()(Tensor<uint64_t> &x) ;
 
     private:
+        Datatype::Tensor<uint8_t> nonzero_weight;
         Tensor<HE::unified::UnifiedPlaintext> PackWeight() ;
         Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) ;
         Tensor<HE::unified::UnifiedCiphertext> HECompute(const Tensor<HE::unified::UnifiedPlaintext> &weight_pt, Tensor<HE::unified::UnifiedCiphertext> &ac_ct) ;

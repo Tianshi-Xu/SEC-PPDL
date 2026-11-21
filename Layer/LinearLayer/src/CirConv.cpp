@@ -19,7 +19,8 @@
 
 #include <LinearLayer/Conv.h>
 #include <Utils/CyclicNTT.h>
-#include <cassert>
+#include <algorithm>
+#include <stdexcept>
 
 using namespace seal;
 using namespace HE;
@@ -54,8 +55,9 @@ CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t in_channels,
 }
 
 void CirConv2D::compute_he_params(uint64_t in_feature_size) {
-    assert(in_channels % block_size == 0 && "in_channels must be divisible by block_size");
-    assert(out_channels % block_size == 0 && "out_channels must be divisible by block_size");
+    if (block_size == 0 || in_channels % block_size != 0 || out_channels % block_size != 0) {
+        throw std::invalid_argument("CirConv2D block size must divide the input and output channels");
+    }
 
     int tmp_size = in_feature_size + 2 * this->padding - 1;
     for (int i = 0; i < 5; i++) {
@@ -70,7 +72,9 @@ void CirConv2D::compute_he_params(uint64_t in_feature_size) {
     num_blocks_out = out_channels / block_size;
 
     tile_size = HE->polyModulusDegree / (2 * ntt_size);
-    if (tile_size < 1) tile_size = 1;
+    if (tile_size == 0) {
+        throw std::invalid_argument("CirConv2D NTT block exceeds the BFV row capacity");
+    }
 
     tiled_in_channels = (num_blocks_in + tile_size - 1) / tile_size;
     tiled_out_channels = (num_blocks_out + tile_size - 1) / tile_size;
@@ -104,6 +108,7 @@ Tensor<UnifiedPlaintext> CirConv2D::PackWeight() {
     uint64_t offset = (kernel_size - 1) * (padded_feature_size + 1);
 
     Tensor<UnifiedPlaintext> wpt({tiled_in_channels, tiled_out_channels, tile_size}, HE->Backend());
+    nonzero_weight = Tensor<uint8_t>(wpt.shape());
 
     for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
         for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
@@ -151,15 +156,10 @@ Tensor<UnifiedPlaintext> CirConv2D::PackWeight() {
                     }
                 }
 
-                bool all_zero = true;
-                for (uint64_t m = 0; m < HE->polyModulusDegree && all_zero; m++) {
-                    all_zero = (poly[m] == 0);
+                if (std::any_of(poly.begin(), poly.end(), [](uint64_t value) { return value != 0; })) {
+                    HE->encoder->encode(poly, wpt({ti, tj, k}));
+                    nonzero_weight({ti, tj, k}) = 1;
                 }
-                if (all_zero) {
-                    poly[HE->polyModulusDegree - 1] = 1;
-                }
-
-                HE->encoder->encode(poly, wpt({ti, tj, k}));
             }
         }
     }
@@ -215,69 +215,36 @@ Tensor<UnifiedCiphertext> CirConv2D::HECompute(
     Tensor<UnifiedCiphertext> &ac_ct)
 {
     const auto target = HE->server ? HE->Backend() : HOST;
-    Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, HE->GenerateZeroCiphertext(target));
-
+    Tensor<UnifiedCiphertext> out_ct({tiled_out_channels}, target);
     if (!HE->server) return out_ct;
 
-    UnifiedGaloisKeys* keys = HE->galoisKeys;
-
-    if (tile_size == 1) {
-        for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
-            bool first = true;
-            for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
-                UnifiedCiphertext tmp(target);
-                HE->evaluator->multiply_plain(ac_ct(ti), wpt({ti, tj, 0}), tmp);
-
-                if (first) {
-                    out_ct(tj) = tmp;
-                    first = false;
-                } else {
-                    HE->evaluator->add_inplace(out_ct(tj), tmp);
-                }
-            }
+    const auto &keys = *HE->galoisKeys;
+    Tensor<UnifiedCiphertext> ac_rot({input_rot, tiled_in_channels}, target);
+    for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
+        ac_rot({0, ti}) = ac_ct(ti);
+        for (uint64_t r = 1; r < input_rot; r++) {
+            HE->evaluator->rotate_rows(ac_rot({r - 1, ti}), ntt_size, keys, ac_rot({r, ti}));
         }
-    } else {
-        Tensor<UnifiedCiphertext> ac_rot({input_rot, tiled_in_channels},
-                                          HE->GenerateZeroCiphertext(target));
-        Tensor<UnifiedCiphertext> int_ct({tiled_out_channels, tile_size},
-                                          HE->GenerateZeroCiphertext(target));
+    }
 
-        for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
-            ac_rot({0, ti}) = ac_ct(ti);
-            for (uint64_t r = 1; r < input_rot; r++) {
-                HE->evaluator->rotate_rows(ac_rot({r-1, ti}), ntt_size, *keys, ac_rot({r, ti}));
+    for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
+        auto &output = out_ct(tj);
+        output = HE->GenerateZeroCiphertext(target);
+        UnifiedCiphertext product(target);
+        // Accumulate one group at a time to avoid storing a ciphertext for
+        // every diagonal, including padded diagonals in 1x1 projections.
+        for (uint64_t group = 0; group < tile_size; group += input_rot) {
+            if (group != 0) {
+                HE->evaluator->rotate_rows(output, ntt_size * input_rot, keys, output);
             }
-        }
-
-        for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
-            for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
-                for (uint64_t k = 0; k < tile_size; k++) {
-                    uint64_t rot_idx = input_rot - 1 - k % input_rot;
-                    UnifiedCiphertext tmp(target);
-                    HE->evaluator->multiply_plain(ac_rot({rot_idx, ti}), wpt({ti, tj, k}), tmp);
-
-                    if (ti == 0) {
-                        int_ct({tj, k}) = tmp;
-                    } else {
-                        HE->evaluator->add_inplace(int_ct({tj, k}), tmp);
+            const uint64_t end = std::min(group + input_rot, tile_size);
+            for (uint64_t k = group; k < end; k++) {
+                const uint64_t rot_idx = input_rot - 1 - (k - group);
+                for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
+                    if (nonzero_weight({ti, tj, k})) {
+                        HE->evaluator->multiply_plain(ac_rot({rot_idx, ti}), wpt({ti, tj, k}), product);
+                        HE->evaluator->add_inplace(output, product);
                     }
-                }
-            }
-        }
-
-        for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
-            for (uint64_t k = 1; k < tile_size; k++) {
-                if (k % input_rot != 0) {
-                    HE->evaluator->add_inplace(int_ct({tj, k - k % input_rot}), int_ct({tj, k}));
-                }
-            }
-
-            out_ct(tj) = int_ct({tj, 0});
-            for (uint64_t g = 1; g < (tile_size + input_rot - 1) / input_rot; g++) {
-                uint64_t k = g * input_rot;
-                if (k < tile_size) {
-                    HE->evaluator->rotate_rows(out_ct(tj), ntt_size * input_rot, *keys, out_ct(tj));
-                    HE->evaluator->add_inplace(out_ct(tj), int_ct({tj, k}));
                 }
             }
         }

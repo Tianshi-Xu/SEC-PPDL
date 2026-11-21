@@ -11,17 +11,7 @@ void pack_ot_messages(basetype *y, basetype **data, Utils::block128 *pad, int ys
   uint64_t start_block = 0;
   uint64_t end_block = 0;
   basetype temp_bl = 0;
-  basetype mask = (1 << bitsize) - 1;
-  if (8 * sizeof(basetype) == 64) {
-    mask = (basetype)((1ULL << bitsize) - 1ULL);
-  }
-  if (8 * sizeof(basetype) == bitsize) {
-    if (bitsize == 64) {
-      mask = (basetype)(-1ULL);
-    } else {
-      mask = (basetype)(-1);
-    }
-  }
+  const basetype mask = static_cast<basetype>(bitsize == 64 ? UINT64_MAX : (1ULL << bitsize) - 1);
   uint64_t carriersize = 8 * (sizeof(basetype));
   for (int i = 0; i < ysize; i++) {
     y[i] = 0;
@@ -81,17 +71,7 @@ void unpack_ot_messages(basetype *data, const uint8_t *r, basetype *recvd,
   uint64_t end_pos = 0;
   uint64_t start_block = 0;
   uint64_t end_block = 0;
-  basetype mask = (1 << bitsize) - 1;
-  if (8 * sizeof(basetype) == 64) {
-    mask = (basetype)((1ULL << bitsize) - 1ULL);
-  }
-  if (8 * sizeof(basetype) == bitsize) {
-    if (bitsize == 64) {
-      mask = (basetype)(-1ULL);
-    } else {
-      mask = (basetype)(-1);
-    }
-  }
+  const basetype mask = static_cast<basetype>(bitsize == 64 ? UINT64_MAX : (1ULL << bitsize) - 1);
   uint64_t carriersize = 8 * (sizeof(basetype));
 
   for (int i = 0; i < bsize; i++) {
@@ -137,9 +117,7 @@ inline void pack_cot_messages(uint64_t *y, uint64_t *corr_data, int ysize,
   uint64_t start_block = 0;
   uint64_t end_block = 0;
   uint64_t temp_bl = 0;
-  uint64_t mask = (1ULL << bitsize) - 1;
-  if (bitsize == 64)
-    mask = -1;
+  const uint64_t mask = bitsize == 64 ? UINT64_MAX : (1ULL << bitsize) - 1;
 
   uint64_t carriersize = 64;
   for (int i = 0; i < ysize; i++) {
@@ -170,9 +148,7 @@ inline void unpack_cot_messages(uint64_t *corr_data, uint64_t *recvd, int bsize,
   uint64_t end_pos = 0;
   uint64_t start_block = 0;
   uint64_t end_block = 0;
-  uint64_t mask = (1ULL << bitsize) - 1;
-  if (bitsize == 64)
-    mask = -1;
+  const uint64_t mask = bitsize == 64 ? UINT64_MAX : (1ULL << bitsize) - 1;
   uint64_t carriersize = 64;
 
   for (int i = 0; i < bsize; i++) {

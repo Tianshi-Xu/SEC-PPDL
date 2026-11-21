@@ -16,6 +16,9 @@ uint64_t CyclicNTT::ModPow(uint64_t base, uint64_t exp, uint64_t mod) {
 }
 
 uint64_t CyclicNTT::FindPrimitiveRoot() {
+    if (n_ == 1) {
+        return 1;
+    }
     // Find a primitive n-th root of unity
     // We need ω such that ω^n = 1 and ω^k ≠ 1 for 0 < k < n
     uint64_t p_minus_1 = p_ - 1;
