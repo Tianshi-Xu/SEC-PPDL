@@ -1,10 +1,19 @@
 #include <Model/FaceResNet.h>
 #include <LinearLayer/CirLinear.h>
+#include <array>
+#include <chrono>
 
 using Model::FaceResNet64;
 using Datatype::Tensor;
 
 namespace {
+
+constexpr int64_t unit = int64_t(1) << FaceResNet64::scale;
+using Clock = std::chrono::steady_clock;
+
+double ElapsedSeconds(Clock::time_point start, Clock::time_point end) {
+    return std::chrono::duration<double>(end - start).count();
+}
 
 template<typename T>
 T Exchange(Utils::NetIO &io, int party, T share) {
@@ -85,11 +94,11 @@ void CheckProtocols(Model::CryptoPrimitive<uint64_t> &crypto) {
     auto &fixpoint = *crypto.fixpoint;
     const uint64_t modulus = crypto.HE->plain_mod;
     Tensor<uint64_t> field({3});
-    const std::array<int64_t, 3> values{-256, 0, 256};
+    const std::array<int64_t, 3> values{-unit, 0, unit};
     for (size_t i = 0; i < values.size(); ++i) {
         field(i) = Share(values[i], i, crypto.party);
     }
-    fixpoint.SignedRing2Field(field, modulus, 16);
+    fixpoint.SignedRing2Field(field, modulus, FaceResNet64::bitwidth);
     for (size_t i = 0; i < values.size(); ++i) {
         const uint64_t expected = static_cast<uint64_t>(static_cast<int64_t>(modulus) + values[i]) % modulus;
         if ((field(i) + Exchange(io, crypto.party, field(i))) % modulus != expected) {
@@ -109,10 +118,10 @@ void CheckProtocols(Model::CryptoPrimitive<uint64_t> &crypto) {
 
     Tensor<uint64_t> x({dim});
     Tensor<uint64_t> y({dim});
-    const std::array<int64_t, 4> second{-256, 0, 128, 256};
+    const std::array<int64_t, 4> second{-unit, 0, unit / 2, unit};
     for (const int64_t component : second) {
         for (size_t i = 0; i < dim; ++i) {
-            x(i) = Share(i == 0 ? 256 : 0, i, crypto.party);
+            x(i) = Share(i == 0 ? unit : 0, i, crypto.party);
             y(i) = Share(i == 0 ? component : 0, i + dim, crypto.party);
         }
         const uint8_t share = FaceResNet64::MatchEmbeddings(x, y, 1.0, fixpoint);
@@ -121,7 +130,8 @@ void CheckProtocols(Model::CryptoPrimitive<uint64_t> &crypto) {
         }
     }
     for (size_t i = 0; i < dim; ++i) {
-        y(i) = Share(i < 2 ? 256 : 0, i + dim, crypto.party);
+        x(i) = Share(i == 0 ? unit : 0, i, crypto.party);
+        y(i) = Share(i < 2 ? unit : 0, i + dim, crypto.party);
     }
     for (double threshold : {0.5, 0.75}) {
         const uint8_t share = FaceResNet64::MatchEmbeddings(x, y, threshold, fixpoint);
@@ -129,32 +139,42 @@ void CheckProtocols(Model::CryptoPrimitive<uint64_t> &crypto) {
             throw std::runtime_error("Private cosine threshold failed");
         }
     }
+    for (size_t i = 0; i < dim; ++i) {
+        x(i) = Share(unit, i, crypto.party);
+        y(i) = Share(unit, i + dim, crypto.party);
+    }
+    const uint8_t share = FaceResNet64::MatchEmbeddings(x, y, 1.0, fixpoint);
+    if ((share ^ Exchange(io, crypto.party, share)) != 1) {
+        throw std::runtime_error("Private cosine match failed at the Q12 norm limit");
+    }
 }
 
-FaceResNet64::Weights MakeWeights() {
-    constexpr size_t input_channels[] = {3, 16, 16, 16, 32, 16, 32, 64, 32, 64};
-    constexpr size_t output_channels[] = {16, 16, 16, 32, 32, 32, 64, 64, 64, 128};
-    constexpr size_t kernels[] = {3, 3, 3, 3, 3, 1, 3, 3, 1, 1};
-    FaceResNet64::Weights weights;
+FaceResNet64::Weights MakeWeights(FaceResNet64::Backbone backbone, bool dense) {
+    const auto shapes = FaceResNet64::ConvolutionShapes(backbone);
+    FaceResNet64::FloatWeights weights(shapes.size());
     for (size_t i = 0; i < weights.size(); ++i) {
-        const size_t kernel = kernels[i];
-        weights[i].weight = Tensor<uint64_t>({output_channels[i], input_channels[i], kernel, kernel});
-        weights[i].bias = Tensor<uint64_t>({output_channels[i]});
+        const auto &shape = shapes[i];
+        const size_t center = shape.kernel / 2;
+        weights[i].weight = Tensor<float>({shape.out_channels, shape.in_channels, shape.kernel, shape.kernel});
+        weights[i].bias = Tensor<float>({shape.out_channels});
+        if (dense) {
+            for (size_t j = 0; j < weights[i].weight.size(); ++j) {
+                weights[i].weight(j) = (j % 2 == 0 ? 1.0f : -1.0f) / unit;
+            }
+        }
+        if (i == 0) {
+            weights[i].weight({0, 0, center, center}) = 1.0f;
+            weights[i].weight({1, 0, center, center}) = -1.0f;
+        } else {
+            const float coefficient = shape.kernel == 1 ? 1.0f : 0.25f;
+            weights[i].weight({0, 0, center, center}) = coefficient;
+            weights[i].weight({1, 1, center, center}) = coefficient;
+        }
     }
-    weights[0].weight({0, 0, 1, 1}) = 256;
-    weights[0].weight({1, 0, 1, 1}) = uint64_t(-256);
-    for (size_t i : {3, 4, 6, 7}) {
-        weights[i].weight({0, 0, 1, 1}) = 128;
-        weights[i].weight({1, 1, 1, 1}) = 128;
-    }
-    for (size_t i : {5, 8, 9}) {
-        weights[i].weight({0, 0, 0, 0}) = 256;
-        weights[i].weight({1, 1, 0, 0}) = 256;
-    }
-    return weights;
+    return FaceResNet64::EncodeWeights(weights);
 }
 
-void CheckProjection(Model::CryptoPrimitive<uint64_t> &crypto) {
+void CheckProjection(Model::CryptoPrimitive<uint64_t> &crypto, size_t he_threads) {
     constexpr size_t in_channels = 64, out_channels = FaceResNet64::embedding_size;
     const uint64_t modulus = crypto.HE->plain_mod;
     auto &io = *crypto.HE->IO;
@@ -175,8 +195,9 @@ void CheckProjection(Model::CryptoPrimitive<uint64_t> &crypto) {
         }
     }
 
-    LinearLayer::Conv2DCheetah cheetah(1, 1, 0, kernel, conv_bias, crypto.HE);
-    LinearLayer::CirConv2D circonv(1, 1, 0, 1, kernel, conv_bias, crypto.HE);
+    LinearLayer::Conv2DCheetah cheetah(1, 1, 0, kernel, conv_bias, crypto.HE,
+        LinearLayer::Conv2DCheetah::PartitionCost::InputCiphertexts, he_threads);
+    LinearLayer::CirConv2D circonv(1, 1, 0, 1, kernel, conv_bias, crypto.HE, he_threads);
     auto cheetah_output = cheetah(input);
     auto conv_output = circonv(input);
     input.reshape({1, in_channels});
@@ -201,7 +222,8 @@ void CheckProjection(Model::CryptoPrimitive<uint64_t> &crypto) {
 } // namespace
 
 int main(int argc, char **argv) {
-    int party = 0, port = 32000, num_threads = 3, full = 0, mm = 0, baseline = 0;
+    int party = 0, port = 32000, num_threads = 3, full = 0, mm = 0, baseline = 0, vole = 0, checks = 1;
+    int backbone_arg = 0, dense = 0, he_threads = FaceResNet64::default_he_threads;
     std::string address = "127.0.0.1";
     ArgMapping arguments;
     arguments.arg("r", party, "Role of party: ALICE = 1; BOB = 2");
@@ -210,39 +232,89 @@ int main(int argc, char **argv) {
     arguments.arg("full", full, "Also verify two 64x64 images");
     arguments.arg("mm", mm, "Enable M&M conversion and fused truncation");
     arguments.arg("baseline", baseline, "Use Cheetah for all convolutions with the original partition cost");
+    arguments.arg("vole", vole, "Use Ferret VOLE-style OT instead of IKNP");
+    arguments.arg("checks", checks, "Run operator checks before the full benchmark");
+    arguments.arg("backbone", backbone_arg, "Backbone: compact = 0, otherwise 18, 20, 32, or 34");
+    arguments.arg("dense", dense, "Use synthetic weights with all kernel coefficients nonzero");
+    arguments.arg("he_threads", he_threads, "CPU workers for server-side hybrid convolutions");
     arguments.parse(argc, argv);
     if (party != ALICE && party != BOB) {
         return 1;
     }
+    if (he_threads < 1) {
+        throw std::invalid_argument("he_threads must be positive");
+    }
+    using Backbone = FaceResNet64::Backbone;
+    Backbone backbone = Backbone::Compact;
+    switch (backbone_arg) {
+        case 0: break;
+        case 18: backbone = Backbone::ResNet18; break;
+        case 20: backbone = Backbone::ResNet20; break;
+        case 32: backbone = Backbone::ResNet32; break;
+        case 34: backbone = Backbone::ResNet34; break;
+        default: throw std::invalid_argument("backbone must be 0, 18, 20, 32, or 34");
+    }
 
-    Model::CryptoPrimitive<uint64_t> crypto(party, num_threads, FaceResNet64::bitwidth, Datatype::IKNP,
+    const auto ot_type = vole ? Datatype::VOLE : Datatype::IKNP;
+    const auto setup_start = Clock::now();
+    Model::CryptoPrimitive<uint64_t> crypto(party, num_threads, FaceResNet64::bitwidth, ot_type,
         8192, 50, Datatype::Cheetah, Datatype::HOST, address, port);
-    CheckProtocols(crypto);
-    CheckBoundedConversion(crypto);
-    CheckProjection(crypto);
+    const auto setup_end = Clock::now();
+    const uint64_t setup_bytes = crypto.get_total_comm();
+    const uint64_t setup_preprocessing_bytes = crypto.get_preprocessing_comm();
+    std::cout << "Session setup seconds: " << ElapsedSeconds(setup_start, setup_end) << std::endl;
+    if (checks) {
+        const auto checks_start = Clock::now();
+        CheckProtocols(crypto);
+        CheckBoundedConversion(crypto);
+        CheckProjection(crypto, he_threads);
+        std::cout << "Operator checks seconds: " << ElapsedSeconds(checks_start, Clock::now()) << std::endl;
+    }
     if (full) {
         const auto mode = baseline ? FaceResNet64::ConvolutionMode::CheetahBaseline
                                    : FaceResNet64::ConvolutionMode::Hybrid;
-        const auto weights = party == ALICE ? MakeWeights() : FaceResNet64::Weights{};
-        FaceResNet64 model(crypto, party == ALICE ? &weights : nullptr, mm != 0, mode);
+        const auto packing_start = Clock::now();
+        const auto weights = party == ALICE ? MakeWeights(backbone, dense != 0) : FaceResNet64::Weights{};
+        FaceResNet64 model(crypto, party == ALICE ? &weights : nullptr, mm != 0, mode, backbone, he_threads);
+        const auto packing_end = Clock::now();
         Tensor<uint64_t> x({3, 64, 64}), y({3, 64, 64});
         for (size_t i = 0; i < x.size(); ++i) {
-            const int64_t value = i < 64 * 64 ? 256 : 0;
+            const int64_t value = i < 64 * 64 ? unit : 0;
             x(i) = Share(value, i, party);
             y(i) = Share(-value, i + x.size(), party);
         }
+        // Start both timers after each party has prepared its model and inputs.
+        Exchange(*crypto.HE->IO, party, uint8_t(0));
         FaceResNet64::CommunicationStats communication;
         const uint64_t before_verify = crypto.get_total_comm();
+        const uint64_t before_preprocessing = crypto.get_preprocessing_comm();
+        const auto verification_start = Clock::now();
         if (model.Verify(x, y, 0.5, &communication)) {
             throw std::runtime_error("End-to-end face verification accepted orthogonal embeddings");
         }
+        const auto first_pair_end = Clock::now();
         if (!model.Verify(x, x, 0.5, &communication)) {
             throw std::runtime_error("End-to-end face verification rejected identical embeddings");
         }
+        const auto second_pair_end = Clock::now();
+        std::cout << "Local model packing seconds: " << ElapsedSeconds(packing_start, packing_end) << std::endl;
+        std::cout << "First verification seconds: " << ElapsedSeconds(verification_start, first_pair_end) << std::endl;
+        std::cout << "Second verification seconds: " << ElapsedSeconds(first_pair_end, second_pair_end) << std::endl;
+        std::cout << "Average forward seconds per image: " << communication.forward_seconds / 4 << std::endl;
         std::cout << "Convolution bytes sent (two pairs): " << communication.convolution_bytes << std::endl;
         std::cout << "Linear-layer bytes sent (two pairs): " << communication.linear_layer_bytes << std::endl;
-        std::cout << "Verification bytes sent (two pairs): "
-                  << crypto.get_total_comm() - before_verify << std::endl;
+        const uint64_t verification_bytes = crypto.get_total_comm() - before_verify;
+        const uint64_t verification_preprocessing = crypto.get_preprocessing_comm() - before_preprocessing;
+        std::cout << "Verification bytes sent (two pairs): " << verification_bytes << std::endl;
+        if (vole) {
+            std::cout << "OT setup and warm-up bytes sent (one session): " << setup_preprocessing_bytes << std::endl;
+            std::cout << "Other setup bytes sent (one session): " << setup_bytes - setup_preprocessing_bytes << std::endl;
+            std::cout << "OT refill bytes sent (two pairs): " << verification_preprocessing << std::endl;
+            std::cout << "Online linear-layer bytes sent (two pairs): "
+                      << communication.linear_layer_bytes - communication.linear_preprocessing_bytes << std::endl;
+            std::cout << "Online verification bytes sent (two pairs): "
+                      << verification_bytes - verification_preprocessing << std::endl;
+        }
     }
     std::cout << "FaceResNet64 checks passed" << std::endl;
     return 0;

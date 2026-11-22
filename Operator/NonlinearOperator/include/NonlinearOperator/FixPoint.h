@@ -137,15 +137,16 @@ class FixPoint {
         void extend(Tensor<T> &x, int32_t bwA, int32_t bwB, bool msb_zero=false){
             int dim = x.size();
             T* x_flatten = x.data().data();
-            std::thread extend_threads[num_threads];
-            int chunk_size = dim / num_threads;
+            const int workers = std::min(dim, num_threads);
+            std::vector<std::thread> extend_threads;
             const bool signed_arithmetic = std::is_signed_v<T>;
-            for (int i = 0; i < num_threads; i++) {
-                int offset = i * chunk_size;
-                extend_threads[i] = std::thread(extend_thread, aux[i], x_flatten+offset, x_flatten+offset, chunk_size, bwA, bwB, signed_arithmetic, msb_zero);
+            for (int i = 0; i < workers; i++) {
+                const int offset = int64_t(dim) * i / workers;
+                const int end = int64_t(dim) * (i + 1) / workers;
+                extend_threads.emplace_back(extend_thread, aux[i], x_flatten+offset, x_flatten+offset, end-offset, bwA, bwB, signed_arithmetic, msb_zero);
             }
-            for (int i = 0; i < num_threads; i++) {
-                extend_threads[i].join();
+            for (auto &worker : extend_threads) {
+                worker.join();
             }
         }
 

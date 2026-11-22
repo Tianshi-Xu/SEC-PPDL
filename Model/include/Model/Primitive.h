@@ -62,6 +62,13 @@ class CryptoPrimitive{
         uint64_t get_total_rounds(){
             return ioArr[0]->num_rounds;
         }
+        uint64_t get_preprocessing_comm() const {
+            uint64_t bytes = 0;
+            for (int i = 0; i < num_threads; ++i) {
+                bytes += ioArr[i]->preprocessing_counter;
+            }
+            return bytes;
+        }
     private:
         IO *io;
         IO **ioArr;

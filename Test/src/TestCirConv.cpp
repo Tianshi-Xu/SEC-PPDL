@@ -109,11 +109,16 @@ bool verify_result(
 }
 
 int main(int argc, char **argv) {
+    int he_threads = 1;
     ArgMapping amap;
     amap.arg("r", party, "Role of party: ALICE = 1; BOB = 2");
     amap.arg("p", port, "Port Number");
     amap.arg("ip", address, "IP Address of server (ALICE)");
+    amap.arg("he_threads", he_threads, "CPU workers for convolution");
     amap.parse(argc, argv);
+    if (he_threads < 1) {
+        throw std::invalid_argument("he_threads must be positive");
+    }
 
     Utils::NetIO* netio = new Utils::NetIO(party == ALICE ? nullptr : address.c_str(), port);
     HE::HEEvaluator HE(netio, party, 8192, 60, Datatype::HOST);
@@ -163,7 +168,7 @@ int main(int argc, char **argv) {
             Tensor<uint64_t> expected = compute_expected_conv(
                 input, weight, Ci, Co, H, kernelSize, s, pad, HE.plain_mod);
 
-            CirConv2D layer(H, s, pad, block_size, weight, bias, &HE);
+            CirConv2D layer(H, s, pad, block_size, weight, bias, &HE, he_threads);
             Tensor<uint64_t> output = layer(input);
 
             if (party == ALICE) {

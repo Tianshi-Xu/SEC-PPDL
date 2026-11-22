@@ -1,4 +1,5 @@
 #include <LinearLayer/Conv.h>
+#include "ConvWorkers.h"
 #include <seal/util/polyarithsmallmod.h>
 #include <algorithm>
 
@@ -75,9 +76,9 @@ void Conv2DCheetah::compute_he_params(uint64_t in_feature_size) {
 
 Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding,
                              const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE,
-                             PartitionCost partition_cost)
+                             PartitionCost partition_cost, size_t he_threads)
     : Conv2D(in_feature_size + 2 * padding, stride, padding, weight, bias, HE),
-      partition_cost(partition_cost)
+      partition_cost(partition_cost), he_threads(HE->Backend() == HOST ? he_threads : 1)
 {
     std::vector<size_t> shape = weight.shape();
     in_channels = shape[1];
@@ -121,9 +122,9 @@ Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t
 
 Conv2DCheetah::Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels,
                              uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE,
-                             PartitionCost partition_cost)
+                             PartitionCost partition_cost, size_t he_threads)
     : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE),
-      partition_cost(partition_cost)
+      partition_cost(partition_cost), he_threads(HE->Backend() == HOST ? he_threads : 1)
 {
     polyModulusDegree = HE->polyModulusDegree;
     plain = HE->plain_mod;
@@ -398,7 +399,6 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::sumCP(Tensor<UnifiedCiphertext> cipherT
    
 
 // 计算同态卷积
-// #define MULTI_STRAEM
 Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext> &weight_pt, Tensor<UnifiedCiphertext> &ac_ct)
 {
     const auto target = HE->server ? HE->Backend() : HOST;
@@ -409,55 +409,23 @@ Tensor<UnifiedCiphertext> Conv2DCheetah::HECompute(const Tensor<UnifiedPlaintext
         return out_ct;
     }
 
-    const auto compute = [&](size_t theta, size_t alpha, size_t beta, UnifiedCiphertext &interm) {
-        auto &result = out_ct({theta, alpha, beta});
-        result = HE->GenerateZeroCiphertext(target);
-        for (size_t gama = 0; gama < dC; gama++) {
-            if (nonzero_weight[theta * dC + gama]) {
-                HE->evaluator->multiply_plain(ac_ct({gama, alpha, beta}), weight_pt({theta, gama}), interm);
-                HE->evaluator->add_inplace(result, interm);
-            }
-        }
-    };
-    #ifndef MULTI_STRAEM
-    UnifiedCiphertext interm(target);
-    for (size_t theta = 0; theta < dM; theta++) {
-        for (size_t alpha = 0; alpha < dH; alpha++) {
-            for (size_t beta = 0; beta < dW; beta++) {
-                compute(theta, alpha, beta, interm);
-            }
-        }
-    }
-    #else
-    // 定义线程工作函数
-    auto worker = [&](size_t theta_start, size_t theta_end) {
+    RunConvWorkers(out_ct.size(), he_threads, [&](size_t begin, size_t end) {
         UnifiedCiphertext interm(target);
-        for (size_t theta = theta_start; theta < theta_end; theta++) {
-            for (size_t alpha = 0; alpha < dH; alpha++) {
-                for (size_t beta = 0; beta < dW; beta++) {
-                    compute(theta, alpha, beta, interm);
+        const size_t spatial_tiles = dH * dW;
+        for (size_t task = begin; task < end; ++task) {
+            const size_t theta = task / spatial_tiles;
+            const size_t alpha = (task / dW) % dH;
+            const size_t beta = task % dW;
+            auto &result = out_ct(task);
+            result = HE->GenerateZeroCiphertext(target);
+            for (size_t gamma = 0; gamma < dC; ++gamma) {
+                if (nonzero_weight[theta * dC + gamma]) {
+                    HE->evaluator->multiply_plain(ac_ct({gamma, alpha, beta}), weight_pt({theta, gamma}), interm);
+                    HE->evaluator->add_inplace(result, interm);
                 }
             }
         }
-    };
-
-    const size_t num_threads = 4; // [可修改]
-    const size_t theta_per_thread = (dM + num_threads - 1) / num_threads;
-
-    std::vector<std::thread> threads;
-    for (size_t t = 0; t < num_threads; t++) {
-        size_t start = t * theta_per_thread;
-        size_t end = std::min(start + theta_per_thread, dM);
-        if (start < dM) {
-            threads.emplace_back(worker, start, end);
-        }
-    }
-
-    // 等待所有线程完成
-    for (auto& thread : threads) {
-        thread.join();
-    }
-    #endif
+    });
     return out_ct;
 }
 

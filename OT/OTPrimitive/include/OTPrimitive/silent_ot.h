@@ -22,8 +22,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
   SilentOT(int party, int threads, IO** ios, bool malicious = false,
            bool run_setup = true, std::string pre_file = "",
            bool warm_up = true) {
-    // run_setup = false;
-    // warm_up = false;
+    const auto before = ios[0]->counter;
     PrimalLPNParameter param = ferret_b13;
     ferret = new emp::FerretCOT<IO>(party, threads, ios, malicious, run_setup, param, pre_file);
     
@@ -33,6 +32,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
       ferret->rcot(&tmp, 1);
       // std::cout << "warm up done" << std::endl;
     }
+    ios[0]->preprocessing_counter += ios[0]->counter - before;
   }
 
   ~SilentOT() { delete ferret; }
@@ -315,14 +315,33 @@ class SilentOT : public OTPrimitive::OT<IO> {
     delete[] rcm_data;
   }
 
+  // Count input-independent generation separately from choice adjustment.
+  void GenerateRandomCOT(block *data, int64_t length) {
+    const auto before = ferret->io->counter;
+    ferret->rcot(data, length);
+    ferret->io->preprocessing_counter += ferret->io->counter - before;
+  }
+
   // random correlated message, chosen choice
   void send_ot_rcm_cc(block* data0, int64_t length) {
-    ferret->send_cot(data0, length);
+    GenerateRandomCOT(data0, length);
+    auto adjustment = std::make_unique<bool[]>(length);
+    ferret->io->recv_bool(adjustment.get(), length);
+    for (int64_t i = 0; i < length; ++i) {
+      if (adjustment[i]) {
+        data0[i] ^= ferret->Delta;
+      }
+    }
   }
 
   // random correlated message, chosen choice
   void recv_ot_rcm_cc(block* data, const bool* b, int64_t length) {
-    ferret->recv_cot(data, b, length);
+    GenerateRandomCOT(data, length);
+    auto adjustment = std::make_unique<bool[]>(length);
+    for (int64_t i = 0; i < length; ++i) {
+      adjustment[i] = b[i] ^ Utils::getLSB(data[i]);
+    }
+    ferret->io->send_bool(adjustment.get(), length);
   }
 
   // random message, chosen choice
@@ -365,7 +384,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
 
   // random message, random choice
   void send_ot_rm_rc(block* data0, block* data1, int64_t length) {
-    ferret->rcot(data0, length);
+    GenerateRandomCOT(data0, length);
 
     block s;
     ferret->prg.random_block(&s, 1);
@@ -389,7 +408,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
 
   // random message, random choice
   void recv_ot_rm_rc(block* data, bool* r, int64_t length) {
-    ferret->rcot(data, length);
+    GenerateRandomCOT(data, length);
     for (int64_t i = 0; i < length; i++) {
       r[i] = Utils::getLSB(data[i]);
     }
@@ -441,7 +460,8 @@ class SilentOT : public OTPrimitive::OT<IO> {
 
   // chosen message, chosen choice.
   // One-oo-N OT, where each message has l bits. Here, the 2nd dim of data is N.
-  void send_ot_cm_cc(uint8_t** data, int64_t length, int N, int l) {
+  template<typename Word>
+  void send_ot_cm_cc(Word **data, int64_t length, int N, int l) {
     int logN = (int)ceil(log2(N));
 
     block* rm_data0 = new block[length * logN];
@@ -449,10 +469,8 @@ class SilentOT : public OTPrimitive::OT<IO> {
     send_ot_rm_cc(rm_data0, rm_data1, length * logN);
 
     block pad[ot_bsize * N];
-    uint32_t y_size =
-        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(uint8_t) * 8));
-    uint32_t corrected_y_size, corrected_bsize;
-    uint8_t y[y_size];
+    constexpr int word_bits = sizeof(Word) * 8;
+    std::vector<Word> y((ot_bsize * N * l + word_bits - 1) / word_bits);
 
     block* hash_in0 = new block[N - 1];
     block* hash_in1 = new block[N - 1];
@@ -488,14 +506,13 @@ class SilentOT : public OTPrimitive::OT<IO> {
         }
       }
 
-      corrected_y_size = (uint32_t)ceil((std::min(ot_bsize, length - i) * N * l) /
-                                        ((float)sizeof(uint8_t) * 8));
-      corrected_bsize = std::min(ot_bsize, length - i);
+      const int corrected_bsize = std::min(ot_bsize, length - i);
+      const int corrected_y_size = (corrected_bsize * N * l + word_bits - 1) / word_bits;
 
-      OTPrimitive::pack_ot_messages<uint8_t>((uint8_t*)y, data + i, pad, corrected_y_size,
+      OTPrimitive::pack_ot_messages(y.data(), data + i, pad, corrected_y_size,
                                corrected_bsize, l, N);
 
-      ferret->io->send_data(y, sizeof(uint8_t) * (corrected_y_size));
+      ferret->io->send_data(y.data(), sizeof(Word) * corrected_y_size);
     }
 
     delete[] hash_in0;
@@ -508,7 +525,8 @@ class SilentOT : public OTPrimitive::OT<IO> {
   // chosen message, chosen choice
   // One-oo-N OT, where each message has l bits. Here, r[i]'s value is in [0,
   // N).
-  void recv_ot_cm_cc(uint8_t* data, const uint8_t* r, int64_t length, int N, int l) {
+  template<typename Word>
+  void recv_ot_cm_cc(Word *data, const uint8_t* r, int64_t length, int N, int l) {
     int logN = (int)ceil(log2(N));
 
     block* rm_data = new block[length * logN];
@@ -522,20 +540,17 @@ class SilentOT : public OTPrimitive::OT<IO> {
 
     block pad[ot_bsize];
 
-    uint32_t recvd_size =
-        (uint32_t)ceil((ot_bsize * N * l) / ((float)sizeof(uint8_t) * 8));
-    uint32_t corrected_recvd_size, corrected_bsize;
-    uint8_t recvd[recvd_size];
+    constexpr int word_bits = sizeof(Word) * 8;
+    std::vector<Word> recvd((ot_bsize * N * l + word_bits - 1) / word_bits);
 
     block* hash_out = new block[logN];
     block* hash_in = new block[logN];
 
     for (int64_t i = 0; i < length; i += ot_bsize) {
-      corrected_recvd_size = (uint32_t)ceil(
-          (std::min(ot_bsize, length - i) * N * l) / ((float)sizeof(uint8_t) * 8));
-      corrected_bsize = std::min(ot_bsize, length - i);
+      const int corrected_bsize = std::min(ot_bsize, length - i);
+      const int corrected_recvd_size = (corrected_bsize * N * l + word_bits - 1) / word_bits;
 
-      ferret->io->recv_data(recvd, sizeof(uint8_t) * (corrected_recvd_size));
+      ferret->io->recv_data(recvd.data(), sizeof(Word) * corrected_recvd_size);
 
 	  std::memset(pad, 0, sizeof(block) * ot_bsize);
       for (int64_t j = i; j < std::min(i + ot_bsize, length); ++j) {
@@ -549,7 +564,7 @@ class SilentOT : public OTPrimitive::OT<IO> {
         }
       }
 
-      OTPrimitive::unpack_ot_messages<uint8_t>(data + i, r + i, (uint8_t*)recvd, pad,
+      OTPrimitive::unpack_ot_messages(data + i, r + i, recvd.data(), pad,
                                  corrected_bsize, l, N);
     }
     delete[] hash_in;
@@ -597,6 +612,14 @@ class SilentOTN : public OTPrimitive::OT<IO> {
 
   void recv(uint8_t* data, uint8_t* b, int length, int l) {
     silent_ot->recv(data, b, length, N, l);
+  }
+
+  void send(uint64_t **data, int length, int l) override {
+    silent_ot->send_ot_cm_cc(data, length, N, l);
+  }
+
+  void recv(uint64_t *data, uint8_t *b, int length, int l) override {
+    silent_ot->recv_ot_cm_cc(data, b, length, N, l);
   }
 
   void send(const block128* data0, const block128* data1, int length) override {

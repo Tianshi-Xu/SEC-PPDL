@@ -77,20 +77,21 @@ class Conv2DCheetah : public Conv2D {
 
         Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight,
                       const Tensor<uint64_t>& bias, HE::HEEvaluator* HE,
-                      PartitionCost partition_cost = PartitionCost::InputCiphertexts);
+                      PartitionCost partition_cost = PartitionCost::InputCiphertexts, size_t he_threads = 1);
 
         Conv2DCheetah(uint64_t in_feature_size, uint64_t stride, uint64_t padding, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE
                             , Tensor<uint64_t> *gamma, Tensor<uint64_t> *beta);
 
         Conv2DCheetah(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels,
                       uint64_t kernel_size, uint64_t stride, HE::HEEvaluator* HE,
-                      PartitionCost partition_cost = PartitionCost::InputCiphertexts);
+                      PartitionCost partition_cost = PartitionCost::InputCiphertexts, size_t he_threads = 1);
 
         
         Tensor<uint64_t> operator()(Tensor<uint64_t> &x) override;
 
     private:
         PartitionCost partition_cost;
+        size_t he_threads;
         int DivUpper(int a, int b);
         std::vector<bool> nonzero_weight;
         int CalculateCost(int H, int W, int h, int Hw, int Ww, int C, int N);
@@ -119,11 +120,12 @@ class CirConv2D : public Conv2D {
         uint64_t num_blocks_in;
         uint64_t num_blocks_out;
 
-        CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, uint64_t block_size, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE);
-        CirConv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t block_size, HE::HEEvaluator* HE);
+        CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding, uint64_t block_size, const Tensor<uint64_t>& weight, const Tensor<uint64_t>& bias, HE::HEEvaluator* HE, size_t he_threads = 1);
+        CirConv2D(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, uint64_t block_size, HE::HEEvaluator* HE, size_t he_threads = 1);
         Tensor<uint64_t> operator()(Tensor<uint64_t> &x) ;
 
     private:
+        size_t he_threads;
         Datatype::Tensor<uint8_t> nonzero_weight;
         Tensor<HE::unified::UnifiedPlaintext> PackWeight() ;
         Tensor<uint64_t> PackActivation(Tensor<uint64_t> &x) ;

@@ -18,6 +18,7 @@
  */
 
 #include <LinearLayer/Conv.h>
+#include "ConvWorkers.h"
 #include <Utils/CyclicNTT.h>
 #include <algorithm>
 #include <stdexcept>
@@ -32,9 +33,9 @@ namespace LinearLayer {
 
 CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding,
                      uint64_t block_size, const Tensor<uint64_t>& weight,
-                     const Tensor<uint64_t>& bias, HEEvaluator* HE)
+                     const Tensor<uint64_t>& bias, HEEvaluator* HE, size_t he_threads)
     : Conv2D(in_feature_size, stride, padding, weight, bias, HE),
-      block_size(block_size)
+      block_size(block_size), he_threads(HE->Backend() == HOST ? he_threads : 1)
 {
     compute_he_params(in_feature_size);
     if (HE->server) {
@@ -44,9 +45,9 @@ CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t stride, uint64_t padding
 
 CirConv2D::CirConv2D(uint64_t in_feature_size, uint64_t in_channels,
                      uint64_t out_channels, uint64_t kernel_size,
-                     uint64_t stride, uint64_t block_size, HEEvaluator* HE)
+                     uint64_t stride, uint64_t block_size, HEEvaluator* HE, size_t he_threads)
     : Conv2D(in_feature_size, in_channels, out_channels, kernel_size, stride, HE),
-      block_size(block_size)
+      block_size(block_size), he_threads(HE->Backend() == HOST ? he_threads : 1)
 {
     compute_he_params(in_feature_size);
     if (HE->server) {
@@ -220,36 +221,74 @@ Tensor<UnifiedCiphertext> CirConv2D::HECompute(
 
     const auto &keys = *HE->galoisKeys;
     Tensor<UnifiedCiphertext> ac_rot({input_rot, tiled_in_channels}, target);
-    for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
-        ac_rot({0, ti}) = ac_ct(ti);
-        for (uint64_t r = 1; r < input_rot; r++) {
-            HE->evaluator->rotate_rows(ac_rot({r - 1, ti}), ntt_size, keys, ac_rot({r, ti}));
-        }
-    }
-
-    for (uint64_t tj = 0; tj < tiled_out_channels; tj++) {
-        auto &output = out_ct(tj);
-        output = HE->GenerateZeroCiphertext(target);
-        UnifiedCiphertext product(target);
-        // Accumulate one group at a time to avoid storing a ciphertext for
-        // every diagonal, including padded diagonals in 1x1 projections.
-        for (uint64_t group = 0; group < tile_size; group += input_rot) {
-            if (group != 0) {
-                HE->evaluator->rotate_rows(output, ntt_size * input_rot, keys, output);
+    RunConvWorkers(tiled_in_channels, he_threads, [&](size_t begin, size_t end) {
+        for (size_t ti = begin; ti < end; ++ti) {
+            ac_rot({0, ti}) = ac_ct(ti);
+            for (size_t r = 1; r < input_rot; ++r) {
+                HE->evaluator->rotate_rows(ac_rot({r - 1, ti}), ntt_size, keys, ac_rot({r, ti}));
             }
-            const uint64_t end = std::min(group + input_rot, tile_size);
-            for (uint64_t k = group; k < end; k++) {
-                const uint64_t rot_idx = input_rot - 1 - (k - group);
-                for (uint64_t ti = 0; ti < tiled_in_channels; ti++) {
-                    if (nonzero_weight({ti, tj, k})) {
+        }
+    });
+
+    const auto accumulate = [&](size_t tj, size_t group, UnifiedCiphertext &output,
+                                UnifiedCiphertext &product, bool has_product) {
+        const size_t end = std::min(group + input_rot, tile_size);
+        for (size_t k = group; k < end; ++k) {
+            const size_t rot_idx = input_rot - 1 - (k - group);
+            for (size_t ti = 0; ti < tiled_in_channels; ++ti) {
+                if (nonzero_weight({ti, tj, k})) {
+                    if (has_product) {
                         HE->evaluator->multiply_plain(ac_rot({rot_idx, ti}), wpt({ti, tj, k}), product);
                         HE->evaluator->add_inplace(output, product);
+                    } else {
+                        HE->evaluator->multiply_plain(ac_rot({rot_idx, ti}), wpt({ti, tj, k}), output);
+                        has_product = true;
                     }
                 }
             }
         }
+    };
+
+    if (he_threads <= 1) {
+        UnifiedCiphertext product(target);
+        for (size_t tj = 0; tj < tiled_out_channels; ++tj) {
+            auto &output = out_ct(tj);
+            output = HE->GenerateZeroCiphertext(target);
+            for (size_t group = 0; group < tile_size; group += input_rot) {
+                if (group != 0) {
+                    HE->evaluator->rotate_rows(output, ntt_size * input_rot, keys, output);
+                }
+                accumulate(tj, group, output, product, true);
+            }
+        }
+        return out_ct;
     }
 
+    // The products within each giant-step group are independent. Merge the
+    // group sums in the original rotation order, including empty groups.
+    const size_t groups = (tile_size + input_rot - 1) / input_rot;
+    Tensor<UnifiedCiphertext> sums({tiled_out_channels, groups}, target);
+    RunConvWorkers(sums.size(), he_threads, [&](size_t begin, size_t end) {
+        UnifiedCiphertext product(target);
+        for (size_t task = begin; task < end; ++task) {
+            accumulate(task / groups, (task % groups) * input_rot, sums(task), product, false);
+        }
+    });
+    RunConvWorkers(tiled_out_channels, he_threads, [&](size_t begin, size_t end) {
+        for (size_t tj = begin; tj < end; ++tj) {
+            auto &output = out_ct(tj);
+            output = HE->GenerateZeroCiphertext(target);
+            for (size_t group = 0; group < groups; ++group) {
+                if (group != 0) {
+                    HE->evaluator->rotate_rows(output, ntt_size * input_rot, keys, output);
+                }
+                const auto &sum = sums({tj, group});
+                if (sum.hcipher().size() != 0) {
+                    HE->evaluator->add_inplace(output, sum);
+                }
+            }
+        }
+    });
     return out_ct;
 }
 
