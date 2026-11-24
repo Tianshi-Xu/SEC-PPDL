@@ -1,4 +1,5 @@
 project(LinearLayer_test)
+find_package(Threads REQUIRED)
 
 find_package(HEXL 1.2.6 REQUIRED PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../../Extern/hexl/hexl_build" NO_DEFAULT_PATH)
 message(STATUS "HEXL_FOUND: ${HEXL_FOUND}")
@@ -9,6 +10,7 @@ add_library(LinearLayer STATIC ${srcs})
 target_include_directories(LinearLayer PUBLIC include)
 
 target_link_libraries(LinearLayer PUBLIC
+    Threads::Threads
     LinearOperator NonlinearOperator
     Utils
     HEXL::hexl

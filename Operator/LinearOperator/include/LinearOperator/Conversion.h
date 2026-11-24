@@ -13,7 +13,8 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE(const Tensor<uint64_t> &x, HE::HEE
 
 Tensor<uint64_t> HEToSS(Tensor<HE::unified::UnifiedCiphertext> out_ct, HE::HEEvaluator* HE);
 
-Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, HE::HEEvaluator* HE);
+Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, HE::HEEvaluator* HE,
+                                                uint64_t ciphertext_divisor = 1);
 
 Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE::HEEvaluator* HE);
 

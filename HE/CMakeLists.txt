@@ -52,6 +52,13 @@ if(NOT USE_HE_GPU)
     )
 else()
     target_compile_definitions(HE PUBLIC USE_HE_GPU)
+    # CUDA 13 installs libcudacxx under include/cccl; Phantom's public
+    # headers also need it when consumed by an ordinary C++ compiler.
+    foreach(cuda_include IN LISTS CUDAToolkit_INCLUDE_DIRS)
+        if(EXISTS "${cuda_include}/cccl/cuda/std/type_traits")
+            target_include_directories(HE SYSTEM PUBLIC "${cuda_include}/cccl")
+        endif()
+    endforeach()
     target_link_libraries(HE PUBLIC
         SEAL::seal
         phantom::Phantom
