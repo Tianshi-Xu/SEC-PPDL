@@ -31,5 +31,5 @@ add_subdirectory(Test)
 
 option(SEC_PPDL_BUILD_QUANT_EXPERIMENTS "Build two-party quantized ImageNet inference" OFF)
 if(SEC_PPDL_BUILD_QUANT_EXPERIMENTS)
-    add_subdirectory(Experiments/QuantizedResNet18)
+    add_subdirectory(Experiments/OptiPrime)
 endif()

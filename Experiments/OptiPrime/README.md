@@ -1,8 +1,17 @@
-# 量化 ResNet / VGG 两方推理
+# OptiPrime 实验：量化视觉模型的两方推理
 
-本模块的 CPU/GPU 密文卷积采用 **OptiPrime** 论文第三节提出的 **OptiEncode** 协议。研究中使用该协议时，请引用 Jiangrui Yu 等人的 MICRO 2026 论文。本文档中的精确和近似量化是此 SEC-PPDL 集成提供的两种推理模式。[OptiPrime 论文](https://arxiv.org/abs/2609.16898)
+本模块的 CPU/GPU 密文卷积采用 **OptiPrime** 论文第三节提出的 **OptiEncode** 协议。研究中使用该协议时，请引用 Jiangrui Yu 等人的 MICRO 2026 论文。本文档中的精确和近似量化是此 SEC-PPDL 集成提供的两种推理模式。[OptiPrime 论文](https://arxiv.org/abs/2609.16898) · [BibTeX 引用](../../README.md#cite-optiprime)
 
 支持 ImageNet 的 `resnet18`、`resnet34`、`resnet50`、`vgg16` 和 `vgg19`。精确版执行有符号向下截断，再将输出夹到激活范围。近似版执行符号判断、MUX 和已知非负的随机截断，保留超出激活上界的值。两版共用权重、激活尺度和安全 argmax。
+
+## 代码入口
+
+| 用途 | 入口 |
+|---|---|
+| 查看网络结构 | [architecture.py](imagenet/architecture.py) 中的 `topology()` 定义各阶段、残差连接及分类头。 |
+| 运行整网实验 | [evaluate.py](imagenet/evaluate.py) 导出模型，[run.py](run.py) 启动两方推理，[check_secure.py](imagenet/check_secure.py) 核验逐层结果和 logits。 |
+| 在 C++ 中调用整网 | [Model.h](include/QuantExperiment/Model.h) 提供 `QuantizedImageNetModel` 接口。[调用示例](#从-c-调用) |
+| 单独调用卷积算子 | [ConvOptiEncode.h](../../Layer/LinearLayer/include/LinearLayer/ConvOptiEncode.h) 提供 `LinearLayer::Conv2DOptiEncode` 接口。[C++ 示例](../../README.md#optiencode-convolution) |
 
 以下命令从 SEC-PPDL 仓库根目录执行。
 
@@ -11,7 +20,7 @@
 先按[根目录安装说明](../../README.md)准备 C++ 依赖。导出和明文校验还需要 PyTorch、torchvision、Pillow 和 NumPy。在下方的 `$data` 目录准备 `imagenette2-320/{train,val}`、`imagenetv2-matched-frequency-format-val/{0,...,999}` 和 `imagenet_class_index.json`。校准使用 Imagenette 训练集，公开核验图像来自 ImageNetV2。[Imagenette 320](https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-320.tgz) · [ImageNetV2 matched-frequency](https://huggingface.co/datasets/vaishaal/ImageNetV2) · [ImageNet 类别映射](https://storage.googleapis.com/download.tensorflow.org/data/imagenet_class_index.json)
 
 ```bash
-exp=Experiments/QuantizedResNet18
+exp=Experiments/OptiPrime
 assets=build/quant-model-research
 data=build/real-rn18
 bundle=build/rn18-w4a8-k20
