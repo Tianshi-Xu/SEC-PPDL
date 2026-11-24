@@ -378,3 +378,5 @@ auto output_share = conv(input_share);
 ```
 
 Run `ctest --test-dir build --output-on-failure -R optiencode` for the algebra and two-party convolution checks. For GPU builds, configure with `-DUSE_HE_GPU=ON` and use the corresponding build directory.
+
+For exact and approximate quantized ImageNet inference, see the [ResNet and VGG module](Experiments/QuantizedResNet18/README.md).

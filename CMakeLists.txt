@@ -28,3 +28,8 @@ add_subdirectory(Operator)
 add_subdirectory(Layer)
 add_subdirectory(Model)
 add_subdirectory(Test)
+
+option(SEC_PPDL_BUILD_QUANT_EXPERIMENTS "Build two-party quantized ImageNet inference" OFF)
+if(SEC_PPDL_BUILD_QUANT_EXPERIMENTS)
+    add_subdirectory(Experiments/QuantizedResNet18)
+endif()
