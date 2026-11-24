@@ -28,14 +28,11 @@ LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, o
 auto output_share = conv(input_share);
 ```
 
-See the [two-party operator test](Test/src/TestOptiEncodeConv.cpp) for HE setup and input sharing. Run `ctest --test-dir build --output-on-failure -R optiencode` for the algebra and two-party convolution checks. For GPU builds, configure with `-DUSE_HE_GPU=ON` and use the corresponding build directory.
+For HE setup and input sharing, see the [two-party operator test](Test/src/TestOptiEncodeConv.cpp). [Run the OptiEncode tests](#optiencode-tests)
 
 ## Citation
 
-If you use this codebase, please cite both of the following works.
-
-<details>
-<summary>SEC-PPDL framework BibTeX</summary>
+Please cite PrivCirNet and Breaking the Layer Barrier when using SEC-PPDL. If your work uses the OptiEncode convolution protocol, please also cite [OptiPrime (MICRO 2026)](#cite-optiprime).
 
 ```bibtex
 @article{xu2024privcirnet,
@@ -56,11 +53,7 @@ If you use this codebase, please cite both of the following works.
 }
 ```
 
-</details>
-
 ### Cite OptiPrime
-
-If you use the OptiEncode convolution operator, please also cite OptiPrime.
 
 ```bibtex
 @inproceedings{yu2026optiprime,
@@ -86,6 +79,22 @@ cmake --build build -j
 ## 3. Run Tests
 
 Tests use a two-party protocol. Start **Server** (`r=1`) before **Client** (`r=2`) with the same port.
+
+### OptiEncode tests
+
+From the repository root, run the CPU suite after building with `BUILD_TESTING=ON` (the default). It checks the encoding algebra, two-party convolution against a clear reference, default Galois keys, and FaceResNet integration. CTest starts both parties automatically.
+
+```bash
+ctest --test-dir build --output-on-failure -R '^optiencode_'
+```
+
+For the GPU convolution check, first install the [GPU dependency](Extern/README.md#gpu-dependency), then run:
+
+```bash
+cmake -S . -B build-gpu -DUSE_HE_GPU=ON -DBUILD_TESTING=ON
+cmake --build build-gpu --target test_optiencode_conv -j8
+ctest --test-dir build-gpu --output-on-failure -R '^optiencode_gpu_conv$'
+```
 
 ### [PrivCirNet](https://proceedings.neurips.cc/paper_files/paper/2024/file/ca9873918aa72e9033041f76e77b5c15-Paper-Conference.pdf)
 
