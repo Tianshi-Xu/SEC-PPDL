@@ -8,63 +8,6 @@
 
 See [cpp_coding_style.md](cpp_coding_style.md) for C++ coding conventions.
 
-## OptiPrime
-
-OptiPrime (MICRO 2026) introduces OptiEncode, the encrypted convolution protocol implemented here for CPU and GPU. [Paper](https://arxiv.org/abs/2609.16898) · [BibTeX](#cite-optiprime)
-
-For two-party quantized inference with ResNet-18/34/50 or VGG-16/19, see the [experiment guide](Experiments/OptiPrime/README.md) and [network definitions](Experiments/OptiPrime/imagenet/architecture.py).
-
-### OptiEncode convolution
-
-Link the CMake target `LinearLayer` and use `LinearLayer::Conv2DOptiEncode` with the host or GPU HE backend. Both parties supply additive input shares. The server supplies OIHW weights and per-channel bias as residues of the plaintext modulus. The client passes zero tensors with the same shapes. For a power-of-two plaintext modulus, set `options.ciphertext_inverse_normalization = true` on both parties. [Public header](Layer/LinearLayer/include/LinearLayer/ConvOptiEncode.h)
-
-```cpp
-#include <LinearLayer/ConvOptiEncode.h>
-
-he.GenerateNewKey(LinearLayer::Conv2DOptiEncode::GaloisElements(he.polyModulusDegree));
-LinearLayer::OptiEncodeOptions options;
-options.threads = 4;
-LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, options);
-auto output_share = conv(input_share);
-```
-
-For HE setup and input sharing, see the [two-party operator test](Test/src/TestOptiEncodeConv.cpp). [Run the OptiEncode tests](#optiencode-tests)
-
-## Citation
-
-Please cite PrivCirNet and Breaking the Layer Barrier when using SEC-PPDL. If your work uses the OptiEncode convolution protocol, please also cite [OptiPrime (MICRO 2026)](#cite-optiprime).
-
-```bibtex
-@article{xu2024privcirnet,
-  title={Privcirnet: Efficient private inference via block circulant transformation},
-  author={Xu, Tianshi and Wu, Lemeng and Wang, Runsheng and Li, Meng},
-  journal={Advances in Neural Information Processing Systems},
-  volume={37},
-  pages={111802--111831},
-  year={2024}
-}
-
-@inproceedings{xu2025breaking,
-  title={Breaking the layer barrier: Remodeling private transformer inference with hybrid {CKKS} and {MPC}},
-  author={Xu, Tianshi and Lu, Wen-jie and Yu, Jiangrui and Chen, Yi and Lin, Chenqi and Wang, Runsheng and Li, Meng},
-  booktitle={34th USENIX Security Symposium (USENIX Security 25)},
-  pages={2653--2672},
-  year={2025}
-}
-```
-
-### Cite OptiPrime
-
-```bibtex
-@inproceedings{yu2026optiprime,
-  title={{OptiPrime}: Optimizing Private Inference through Protocol-Hardware Co-design},
-  author={Yu, Jiangrui and Yu, Ye and Chen, Si and Lin, Chenqi and Zeng, Wenxuan and Fan, Junfeng and Gao, Mingyu and Li, Meng},
-  booktitle={Proceedings of the 59th IEEE/ACM International Symposium on Microarchitecture (MICRO)},
-  year={2026},
-  url={https://arxiv.org/abs/2609.16898}
-}
-```
-
 ## 1. Install Dependencies
 
 Build the pinned CPU dependencies and, for GPU support, Phantom. [Dependency instructions](Extern/README.md)
@@ -80,22 +23,6 @@ cmake --build build -j
 
 Tests use a two-party protocol. Start **Server** (`r=1`) before **Client** (`r=2`) with the same port.
 
-### OptiEncode tests
-
-From the repository root, run the CPU suite after building with `BUILD_TESTING=ON` (the default). It checks the encoding algebra, two-party convolution against a clear reference, default Galois keys, and FaceResNet integration. CTest starts both parties automatically.
-
-```bash
-ctest --test-dir build --output-on-failure -R '^optiencode_'
-```
-
-For the GPU convolution check, first install the [GPU dependency](Extern/README.md#gpu-dependency), then run:
-
-```bash
-cmake -S . -B build-gpu -DUSE_HE_GPU=ON -DBUILD_TESTING=ON
-cmake --build build-gpu --target test_optiencode_conv -j8
-ctest --test-dir build-gpu --output-on-failure -R '^optiencode_gpu_conv$'
-```
-
 ### [PrivCirNet](https://proceedings.neurips.cc/paper_files/paper/2024/file/ca9873918aa72e9033041f76e77b5c15-Paper-Conference.pdf)
 
 `test_cir_linear` and `test_cir_conv` are reference implementations for [PrivCirNet]([https://arxiv.org/abs/2407.13418]([https://proceedings.neurips.cc/paper_files/paper/2024/hash/ca9873918aa72e9033041f76e77b5c15-Abstract-Conference.html](https://proceedings.neurips.cc/paper_files/paper/2024/file/ca9873918aa72e9033041f76e77b5c15-Paper-Conference.pdf))), testing Block Circulant Linear and Convolution layers respectively. More projects will be added.
@@ -108,6 +35,36 @@ ctest --test-dir build-gpu --output-on-failure -R '^optiencode_gpu_conv$'
 # Block Circulant Convolution
 ./build/Test/test_cir_conv r=1 p=1234     # Terminal 1 (Server)
 ./build/Test/test_cir_conv r=2 p=1234     # Terminal 2 (Client)
+```
+
+### OptiEncode convolution
+
+OptiEncode is the CPU/GPU encrypted convolution protocol from OptiPrime (MICRO 2026). For end-to-end quantized inference on ResNet or VGG, see the [experiment guide](Experiments/OptiPrime/README.md) and [network definitions](Experiments/OptiPrime/imagenet/architecture.py). [Paper](https://arxiv.org/abs/2609.16898) · [Citation](#citation)
+
+From the repository root, run the CPU suite after building with `BUILD_TESTING=ON` (the default). It checks the encoding algebra, two-party convolution against a clear reference, default Galois keys, and FaceResNet integration. CTest starts both parties automatically.
+
+```bash
+ctest --test-dir build --output-on-failure -R '^optiencode_'
+```
+
+For the GPU convolution check, first install the [GPU dependency](Extern/README.md#gpu-dependency) and use the GPU build directory.
+
+```bash
+cmake -S . -B build-gpu -DUSE_HE_GPU=ON -DBUILD_TESTING=ON
+cmake --build build-gpu --target test_optiencode_conv -j8
+ctest --test-dir build-gpu --output-on-failure -R '^optiencode_gpu_conv$'
+```
+
+To call the operator from C++, link the CMake target `LinearLayer`. Each party supplies its additive input share. The server supplies OIHW weights and per-channel bias modulo the plaintext modulus. The client passes zero tensors of the same shapes. For a power-of-two plaintext modulus, set `options.ciphertext_inverse_normalization = true` on both parties. [Public header](Layer/LinearLayer/include/LinearLayer/ConvOptiEncode.h) · [Two-party example](Test/src/TestOptiEncodeConv.cpp)
+
+```cpp
+#include <LinearLayer/ConvOptiEncode.h>
+
+he.GenerateNewKey(LinearLayer::Conv2DOptiEncode::GaloisElements(he.polyModulusDegree));
+LinearLayer::OptiEncodeOptions options;
+options.threads = 4;
+LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, options);
+auto output_share = conv(input_share);
 ```
 
 ### FaceResNet64
@@ -410,3 +367,34 @@ one OT per input value and fuses field-to-ring conversion with truncation
 using one correlated OT per output value. Fused truncation can differ from
 exact truncation by one Q12 unit per convolution. The default path uses
 exact truncation.
+
+## Citation
+
+Please cite PrivCirNet and Breaking the Layer Barrier when using SEC-PPDL. If you use its OptiEncode convolution implementation, please also cite OptiPrime.
+
+```bibtex
+@article{xu2024privcirnet,
+  title={Privcirnet: Efficient private inference via block circulant transformation},
+  author={Xu, Tianshi and Wu, Lemeng and Wang, Runsheng and Li, Meng},
+  journal={Advances in Neural Information Processing Systems},
+  volume={37},
+  pages={111802--111831},
+  year={2024}
+}
+
+@inproceedings{xu2025breaking,
+  title={Breaking the layer barrier: Remodeling private transformer inference with hybrid {CKKS} and {MPC}},
+  author={Xu, Tianshi and Lu, Wen-jie and Yu, Jiangrui and Chen, Yi and Lin, Chenqi and Wang, Runsheng and Li, Meng},
+  booktitle={34th USENIX Security Symposium (USENIX Security 25)},
+  pages={2653--2672},
+  year={2025}
+}
+
+@inproceedings{yu2026optiprime,
+  title={{OptiPrime}: Optimizing Private Inference through Protocol-Hardware Co-design},
+  author={Yu, Jiangrui and Yu, Ye and Chen, Si and Lin, Chenqi and Zeng, Wenxuan and Fan, Junfeng and Gao, Mingyu and Li, Meng},
+  booktitle={Proceedings of the 59th IEEE/ACM International Symposium on Microarchitecture (MICRO)},
+  year={2026},
+  url={https://arxiv.org/abs/2609.16898}
+}
+```
