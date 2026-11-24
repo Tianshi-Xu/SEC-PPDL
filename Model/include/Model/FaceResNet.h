@@ -15,7 +15,7 @@ class FaceResNet64 {
         static constexpr int bitwidth = 37;
         static constexpr int default_he_threads = 16;
 
-        enum class ConvolutionMode { Hybrid, CheetahBaseline };
+        enum class ConvolutionMode { Hybrid, CheetahBaseline, OptiEncode };
         enum class Backbone { Compact, ResNet18, ResNet32, ResNet34, ResNet20 };
 
         struct ConvShape {

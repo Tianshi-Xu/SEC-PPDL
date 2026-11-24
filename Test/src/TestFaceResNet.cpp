@@ -222,6 +222,7 @@ void CheckProjection(Model::CryptoPrimitive<uint64_t> &crypto, size_t he_threads
 } // namespace
 
 int main(int argc, char **argv) {
+    int optiencode = 0;
     int party = 0, port = 32000, num_threads = 3, full = 0, mm = 0, baseline = 0, vole = 0, checks = 1;
     int backbone_arg = 0, dense = 0, he_threads = FaceResNet64::default_he_threads;
     std::string address = "127.0.0.1";
@@ -231,6 +232,7 @@ int main(int argc, char **argv) {
     arguments.arg("ip", address, "IP address of ALICE");
     arguments.arg("full", full, "Also verify two 64x64 images");
     arguments.arg("mm", mm, "Enable M&M conversion and fused truncation");
+    arguments.arg("opti", optiencode, "Use OptiEncode for all convolutions");
     arguments.arg("baseline", baseline, "Use Cheetah for all convolutions with the original partition cost");
     arguments.arg("vole", vole, "Use Ferret VOLE-style OT instead of IKNP");
     arguments.arg("checks", checks, "Run operator checks before the full benchmark");
@@ -255,10 +257,11 @@ int main(int argc, char **argv) {
         default: throw std::invalid_argument("backbone must be 0, 18, 20, 32, or 34");
     }
 
+    if (baseline && optiencode) throw std::invalid_argument("Choose one convolution backend");
     const auto ot_type = vole ? Datatype::VOLE : Datatype::IKNP;
     const auto setup_start = Clock::now();
     Model::CryptoPrimitive<uint64_t> crypto(party, num_threads, FaceResNet64::bitwidth, ot_type,
-        8192, 50, Datatype::Cheetah, Datatype::HOST, address, port);
+        8192, 50, optiencode ? Datatype::OptiEncode : Datatype::Cheetah, Datatype::HOST, address, port);
     const auto setup_end = Clock::now();
     const uint64_t setup_bytes = crypto.get_total_comm();
     const uint64_t setup_preprocessing_bytes = crypto.get_preprocessing_comm();
@@ -271,7 +274,8 @@ int main(int argc, char **argv) {
         std::cout << "Operator checks seconds: " << ElapsedSeconds(checks_start, Clock::now()) << std::endl;
     }
     if (full) {
-        const auto mode = baseline ? FaceResNet64::ConvolutionMode::CheetahBaseline
+        const auto mode = optiencode ? FaceResNet64::ConvolutionMode::OptiEncode
+                        : baseline ? FaceResNet64::ConvolutionMode::CheetahBaseline
                                    : FaceResNet64::ConvolutionMode::Hybrid;
         const auto packing_start = Clock::now();
         const auto weights = party == ALICE ? MakeWeights(backbone, dense != 0) : FaceResNet64::Weights{};

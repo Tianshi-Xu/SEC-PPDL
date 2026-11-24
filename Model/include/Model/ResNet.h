@@ -1,4 +1,5 @@
 #include <LinearLayer/Conv.h>
+#include <LinearLayer/ConvOptiEncode.h>
 #include <NonlinearLayer/ReLU.h>
 #include <NonlinearLayer/Pool.h>
 #include "Primitive.h"
@@ -12,18 +13,26 @@ namespace Model{
 template <typename T, typename IO=Utils::NetIO>
 Conv2D* CreateConv(uint64_t in_feature_size, uint64_t in_channels, uint64_t out_channels, uint64_t kernel_size, uint64_t stride, CryptoPrimitive<T, IO> *cryptoPrimitive){
     Conv2D* conv;
-    if (in_feature_size >=224){
+    if (in_feature_size >=224 && cryptoPrimitive->conv_type != Datatype::OptiEncode){
         conv = new Conv2DCheetah(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
         return conv;
     }
     switch (cryptoPrimitive->conv_type)
     {
+    case Datatype::CONV_TYPE::OptiEncode: {
+        LinearLayer::OptiEncodeOptions options;
+        options.threads = cryptoPrimitive->num_threads;
+        conv = new Conv2DOptiEncode(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE, options);
+        break;
+    }
     case Datatype::CONV_TYPE::Nest:
         conv = new Conv2DNest(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
         break;
     case Datatype::CONV_TYPE::Cheetah:
         conv = new Conv2DCheetah(in_feature_size, in_channels, out_channels, kernel_size, stride, cryptoPrimitive->HE);
         break;
+    default:
+        throw std::invalid_argument("Unsupported convolution type");
     }
     return conv;
 }

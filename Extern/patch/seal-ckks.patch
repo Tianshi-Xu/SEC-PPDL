@@ -215,3 +215,16 @@ index 9af50032..32e2bf57 100644
 -} // namespace seal
 +} // namespace seal
 \ No newline at end of file
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -223,7 +223,7 @@ if(SEAL_USE_INTEL_HEXL)
+         message(STATUS "Intel HEXL: download ...")
+         seal_fetch_thirdparty_content(ExternalIntelHEXL)
+     else()
+-        find_package(HEXL 1.2.4)
++        find_package(HEXL 1.2.6)
+         if (NOT TARGET HEXL::hexl)
+             message(FATAL_ERROR "Intel HEXL: not found")
+         endif()

@@ -10,50 +10,7 @@ See [cpp_coding_style.md](cpp_coding_style.md) for C++ coding conventions.
 
 ## 1. Install Dependencies
 
-### SEAL
-
-```bash
-cd Extern
-git clone https://github.com/microsoft/SEAL.git && cd SEAL
-git apply ../patch/seal-ckks.patch
-cmake -S . -B build -DSEAL_USE_INTEL_HEXL=ON
-cmake --build build -j && cd ../..
-```
-
-### HEXL
-
-```bash
-cd Extern
-git clone https://github.com/intel/hexl.git && cd hexl
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=hexl_build
-cmake --build build -j && cmake --install build && cd ../..
-```
-
-### emp-ot & emp-tool
-
-```bash
-cd Extern && . ./build-ot.sh && cd ..
-```
-
-### phantom-fhe (GPU, optional)
-
-Skip this if GPU is not needed (use `-DUSE_HE_GPU=OFF` when building).
-
-```bash
-cd Extern
-git clone https://github.com/encryptorion-lab/phantom-fhe.git && cd phantom-fhe
-git apply ../patch/phantom.patch
-cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_INSTALL_PREFIX=build_phantom
-cmake --build build --target install --parallel && cd ../..
-```
-
-You may need to add the following to `~/.bashrc` and run `source ~/.bashrc`:
-
-```bash
-export CUDA_HOME=/usr/local/cuda
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
-export PATH=$PATH:$CUDA_HOME/bin
-```
+Build the pinned CPU dependencies and, for GPU support, Phantom. [Dependency instructions](Extern/README.md)
 
 ## 2. Build
 
@@ -403,3 +360,21 @@ If you use this codebase, please cite both of the following:
   year={2025}
 }
 ```
+
+## OptiEncode convolution
+
+OptiEncode is the encrypted convolution protocol from Jiangrui Yu et al., *OptiPrime: Optimizing Private Inference through Protocol-Hardware Co-design*, MICRO 2026. Please cite the paper when using this protocol. [OptiPrime paper](https://arxiv.org/abs/2609.16898)
+
+Use `LinearLayer::Conv2DOptiEncode` with the host or GPU HE backend. Both parties supply additive input shares. The server supplies OIHW weights and per-channel bias as residues of the plaintext modulus.
+
+```cpp
+#include <LinearLayer/ConvOptiEncode.h>
+
+he.GenerateNewKey(LinearLayer::Conv2DOptiEncode::GaloisElements(he.polyModulusDegree));
+LinearLayer::OptiEncodeOptions options;
+options.threads = 4;
+LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, options);
+auto output_share = conv(input_share);
+```
+
+Run `ctest --test-dir build --output-on-failure -R optiencode` for the algebra and two-party convolution checks. For GPU builds, configure with `-DUSE_HE_GPU=ON` and use the corresponding build directory.

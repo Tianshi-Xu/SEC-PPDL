@@ -82,8 +82,11 @@ Tensor<uint64_t> HEToSS(Tensor<UnifiedCiphertext> out_ct, HE::HEEvaluator* HE) {
 };
 
 
-Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, HE::HEEvaluator* HE)
+Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, HE::HEEvaluator* HE,
+                                               uint64_t ciphertext_divisor)
 {
+    if (!ciphertext_divisor || (ciphertext_divisor & (ciphertext_divisor - 1)))
+        throw std::invalid_argument("Ciphertext divisor must be a positive power of two");
     std::vector<size_t> shapeTab = x.shape();
     auto polyModulusDegree = HE->polyModulusDegree;
     auto plain = HE->plain_mod;
@@ -116,6 +119,29 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
     }else{
         //服务器端
         HE->ReceiveEncVec(finalpack);
+        if (ciphertext_divisor != 1) {
+            // Normalize before automorphism/key switching. Post-multiplying
+            // their fresh errors by C^-1 mod q would amplify them instead.
+            seal::Evaluator host_evaluator(HE->context->hcontext());
+            const auto &moduli = HE->context->hcontext().first_context_data()->parms().coeff_modulus();
+            std::vector<uint64_t> inverses(moduli.size());
+            for (size_t limb = 0; limb < moduli.size(); ++limb)
+                if (!seal::util::try_invert_uint_mod(ciphertext_divisor, moduli[limb], inverses[limb]))
+                    throw std::invalid_argument("Ciphertext divisor is not invertible modulo q");
+            for (size_t i = 0; i < numPoly; ++i) {
+                auto &cipher = finalpack(i).hcipher();
+                host_evaluator.add_plain_inplace(cipher, T(i).hplain());
+                for (size_t component = 0; component < cipher.size(); ++component)
+                    for (size_t limb = 0; limb < moduli.size(); ++limb) {
+                        auto *data = cipher.data(component) + limb * polyModulusDegree;
+                        seal::util::multiply_poly_scalar_coeffmod(data, polyModulusDegree,
+                            inverses[limb], moduli[limb], data);
+                    }
+                if (HE->Backend() == DEVICE) finalpack(i).to_device(*HE->context);
+            }
+            if (HE->Backend() == DEVICE) HE->evaluator->sync();
+            return finalpack;
+        }
         if (HE->Backend() == DEVICE){
             finalpack.apply([HE](UnifiedCiphertext &ct){
                 ct.to_device(*HE->context);
@@ -127,6 +153,7 @@ Tensor<HE::unified::UnifiedCiphertext> SSToHE_coeff(const Tensor<uint64_t> &x, H
         for (size_t i = 0; i < numPoly; i++){
             HE->evaluator->add_plain_inplace(finalpack(i), T(i));
         }
+        if (HE->Backend() == DEVICE) HE->evaluator->sync();
     }
     return finalpack;
 }
@@ -187,7 +214,8 @@ Tensor<uint64_t> HEToSS_coeff(Tensor<HE::unified::UnifiedCiphertext> &out_ct, HE
         for (size_t i = 0; i < numPoly; i++){
             HE->decryptor->decrypt(out_ct(i), outShare(i));
             for (size_t j = 0; j < HE->polyModulusDegree; j++){
-                tensorShare(i * HE->polyModulusDegree + j) = *(outShare(i).hplain().data() + j);
+                const auto &plain = outShare(i).hplain();
+                tensorShare(i * HE->polyModulusDegree + j) = j < plain.coeff_count() ? plain[j] : 0;
             }
         }
         return tensorShare;

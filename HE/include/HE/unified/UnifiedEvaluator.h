@@ -293,7 +293,8 @@ namespace HE
 
             inline void sync()
             {
-                cudaDeviceSynchronize();
+                const auto status = cudaDeviceSynchronize();
+                if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
             }
 
             inline auto &device_evaluator() const

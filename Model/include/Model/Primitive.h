@@ -1,6 +1,7 @@
 #pragma once
 #include <OTProtocol/protocol.h>
 #include <HE/HE.h>
+#include <LinearLayer/ConvOptiEncode.h>
 #include <NonlinearLayer/ReLU.h>
 #include <NonlinearOperator/FixPoint.h>
 using namespace NonlinearLayer;
@@ -48,7 +49,14 @@ class CryptoPrimitive{
             cout << "fixpoint generated" << endl;
             this->io = ioArr[0];
             this->HE = new HE::HEEvaluator(io, party, polyModulusDegree, plainWidth, backend);
-            this->HE->GenerateNewKey();
+            std::vector<uint32_t> elements;
+            if (conv_type == Datatype::OptiEncode) {
+                // Mixed models may still use the framework's standard rotations in other layers.
+                elements = this->HE->context->hcontext().key_context_data()->galois_tool()->get_elts_all();
+                auto extra = LinearLayer::Conv2DOptiEncode::GaloisElements(polyModulusDegree);
+                elements.insert(elements.end(), extra.begin(), extra.end());
+            }
+            this->HE->GenerateNewKey(elements);
             // cout << "CryptoPrimitive constructor finished" << endl;
         }
 

@@ -38,7 +38,8 @@ class HEEvaluator {
         size_t polyModulusDegree=8192,
         size_t plainWidth=60,
         LOCATION backend = HOST,
-        vector<int> ct_modulus_bits = {}
+        vector<int> ct_modulus_bits = {},
+        uint64_t explicit_plain_modulus = 0
     ){
         this->IO = IO;
         this->server = party == Datatype::PARTY::SERVER;
@@ -50,16 +51,28 @@ class HEEvaluator {
         this->plainWidth = plainWidth;
         this->polyModulusDegree = polyModulusDegree;
         this->param = new EncryptionParameters(scheme_type::bfv);
-        this->context = new unified::UnifiedContext(polyModulusDegree, plainWidth, ct_modulus_bits, true, backend);
-        this->encoder = new unified::UnifiedBatchEncoder(*context);
+        if (explicit_plain_modulus) {
+            this->param->set_poly_modulus_degree(polyModulusDegree);
+            this->param->set_coeff_modulus(ct_modulus_bits.empty()
+                ? CoeffModulus::BFVDefault(polyModulusDegree)
+                : CoeffModulus::Create(polyModulusDegree, ct_modulus_bits));
+            this->param->set_plain_modulus(explicit_plain_modulus);
+            this->context = new unified::UnifiedContext(*this->param, backend);
+            if (!context->hcontext().parameters_set())
+                throw std::invalid_argument(context->hcontext().parameter_error_message());
+        } else {
+            this->context = new unified::UnifiedContext(polyModulusDegree, plainWidth, ct_modulus_bits, true, backend);
+            this->param->set_plain_modulus(PlainModulus::Batching(polyModulusDegree, plainWidth));
+        }
+        if (context->hcontext().first_context_data()->qualifiers().using_batching)
+            this->encoder = new unified::UnifiedBatchEncoder(*context);
         this->evaluator = new unified::UnifiedEvaluator(*context);
-        this->param->set_plain_modulus(PlainModulus::Batching(polyModulusDegree, plainWidth));
         this->plain_mod = this->param->plain_modulus().value();
     }
 
     ~HEEvaluator() = default;
 
-    void GenerateNewKey() {
+    void GenerateNewKey(const std::vector<uint32_t> &galois_elements = {}) {
         publicKeys = new PublicKey();
         secretKeys = new SecretKey();
         relinKeys  = new RelinKeys();
@@ -95,7 +108,8 @@ class HEEvaluator {
             KeyGenerator keygen(*context);
             *secretKeys = keygen.secret_key();
             keygen.create_relin_keys(*relinKeys);
-            keygen.create_galois_keys(*galoisKeys);
+            if (galois_elements.empty()) keygen.create_galois_keys(*galoisKeys);
+            else keygen.create_galois_keys(galois_elements, *galoisKeys);
             keygen.create_public_key(*publicKeys);
             encryptor = new Encryptor(*context, *publicKeys);
             decryptor = new Decryptor(*context, *secretKeys);
@@ -232,12 +246,8 @@ class HEEvaluator {
     }
 
     unified::UnifiedCiphertext GenerateZeroCiphertext(LOCATION loc=HOST) {
-        unified::UnifiedPlaintext zeros_pt(HOST);
         unified::UnifiedCiphertext zeros_ct(HOST);
-
-        std::vector<uint64_t> zeros(this->polyModulusDegree, 0);
-        this->encoder->encode(zeros, zeros_pt);
-        this->encryptor->encrypt(zeros_pt, zeros_ct);
+        this->encryptor->encrypt_zero(zeros_ct.hcipher());
 
         if (loc == DEVICE) {
             zeros_ct.to_device(*context);

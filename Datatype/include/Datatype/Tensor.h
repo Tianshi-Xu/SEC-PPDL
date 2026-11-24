@@ -15,7 +15,7 @@
 
 namespace Datatype {
 enum OT_TYPE { IKNP = 0, VOLE };
-enum CONV_TYPE { Cheetah = 0, Nest};
+enum CONV_TYPE { Cheetah = 0, Nest, OptiEncode};
 enum PARTY {SERVER = 1, CLIENT = 2 };
 // Tensor类定义
 template <typename T>

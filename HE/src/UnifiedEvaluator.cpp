@@ -72,27 +72,31 @@ void UnifiedEvaluator::relinearize_inplace(UnifiedCiphertext &encrypted, const U
 void UnifiedEvaluator::mod_switch_to_next(const UnifiedCiphertext &encrypted, UnifiedCiphertext &destination) const
 {
     backend_check(encrypted);
+    UnifiedCiphertext result(encrypted.location());
     if (encrypted.on_host())
     {
-        seal_eval_->mod_switch_to_next(encrypted, destination);
+        seal_eval_->mod_switch_to_next(encrypted, result);
     }
     else
     {
-        phantom_eval_->mod_switch_to_next(encrypted, destination);
+        phantom_eval_->mod_switch_to_next(encrypted, result);
     }
+    destination = std::move(result);
 }
 
 void UnifiedEvaluator::rescale_to_next(const UnifiedCiphertext &encrypted, UnifiedCiphertext &destination) const
 {
     backend_check(encrypted);
+    UnifiedCiphertext result(encrypted.location());
     if (encrypted.on_host())
     {
-        seal_eval_->rescale_to_next(encrypted, destination);
+        seal_eval_->rescale_to_next(encrypted, result);
     }
     else
     {
-        phantom_eval_->rescale_to_next(encrypted, destination);
+        phantom_eval_->rescale_to_next(encrypted, result);
     }
+    destination = std::move(result);
 }
 
 void UnifiedEvaluator::add_plain_inplace(UnifiedCiphertext &encrypted, const UnifiedPlaintext &plain) const

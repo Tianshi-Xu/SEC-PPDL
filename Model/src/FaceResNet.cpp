@@ -134,6 +134,24 @@ FaceResNet64::FaceResNet64(CryptoPrimitive<uint64_t> &crypto, const Weights *wei
     const auto cheetah_cost = baseline ? PartitionCost::InputCiphertexts : PartitionCost::TotalCiphertexts;
     for (size_t i = 0; i < convolutions.size(); ++i) {
         const auto &shape = layout.convolutions[i];
+        if (mode == ConvolutionMode::OptiEncode) {
+            LinearLayer::OptiEncodeOptions options;
+            options.threads = he_threads;
+            options.add_bias = false; // Convolve adds the signed bias during share conversion.
+            if (weights) {
+                auto field_weight = (*weights)[i].weight;
+                for (auto &value : field_weight.data())
+                    value = FieldResidue(value, crypto.HE->plain_mod);
+                convolutions[i] = std::make_unique<LinearLayer::Conv2DOptiEncode>(
+                    shape.size, shape.stride, shape.kernel / 2, field_weight, (*weights)[i].bias,
+                    crypto.HE, options);
+            } else {
+                convolutions[i] = std::make_unique<LinearLayer::Conv2DOptiEncode>(
+                    shape.size, shape.in_channels, shape.out_channels, shape.kernel, shape.stride,
+                    crypto.HE, options);
+            }
+            continue;
+        }
         const bool use_cheetah = baseline || shape.size == image_size;
         if (weights) {
             const auto &parameters = (*weights)[i];

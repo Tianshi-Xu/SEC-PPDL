@@ -47,12 +47,8 @@ namespace HE
 #ifdef USE_HE_GPU
                 if (backend == LOCATION::DEVICE)
                 {
-                    phantom::EncryptionParameters parms(phantom::scheme_type::bfv);
-                    parms.set_poly_modulus_degree(poly_modulus_degree);
-                    parms.set_coeff_modulus(phantom::arith::CoeffModulus::BFVDefault(poly_modulus_degree));
-                    parms.set_plain_modulus(
-                        batch ? phantom::arith::PlainModulus::Batching(poly_modulus_degree, bit_size) : 1 << bit_size);
-                    phantom_context_ = std::make_unique<PhantomContext>(parms);
+                    // Use exactly the CPU primes, including custom RNS chains.
+                    phantom_context_ = std::make_unique<PhantomContext>(get_parms(parms));
                 }
 #endif
             }

@@ -6,3 +6,6 @@ build/
 *.tar.gz
 CKKS-MPC-main.zip
 /CKKS-MPC-main/
+build-gpu/
+__pycache__/
+/Extern/phantom-fhe/

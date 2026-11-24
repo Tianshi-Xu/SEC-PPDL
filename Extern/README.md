@@ -1,36 +1,22 @@
-#### SEAL
+## CPU dependencies
+
+Run from the SEC-PPDL repository root with Git, a C++17 compiler, CMake and OpenSSL development headers. Initialize the pinned submodules in a fresh clone, then apply the repository patches once.
+
+```bash
+git submodule update --init
+git -C Extern/emp-tool apply ../patch/emp-tool.patch
+git -C Extern/emp-ot apply ../patch/emp-ot.patch
+git -C Extern/SEAL apply ../patch/seal-ckks.patch
+cmake -S Extern/hexl -B Extern/hexl/build -DHEXL_TESTING=OFF -DHEXL_BENCHMARK=OFF \
+  -DCMAKE_INSTALL_PREFIX="$PWD/Extern/hexl/hexl_build"
+cmake --build Extern/hexl/build -j8
+cmake --install Extern/hexl/build
+cmake -S Extern/SEAL -B Extern/SEAL/build -DSEAL_USE_INTEL_HEXL=ON \
+  -DSEAL_BUILD_DEPS=OFF -DSEAL_USE_MSGSL=OFF -DSEAL_USE_ZLIB=OFF -DSEAL_USE_ZSTD=OFF \
+  -DHEXL_DIR="$PWD/Extern/hexl/hexl_build/lib/cmake/hexl-1.2.6"
+cmake --build Extern/SEAL/build -j8
 ```
-git clone https://github.com/microsoft/SEAL.git
-cd SEAL
-git apply ../patch/seal-ckks.patch
-cmake -S . -B build -DSEAL_USE_INTEL_HEXL=ON
-cmake --build build -j
-```
-#### HEXL
-- HEXL is used for NTT
-```
-git clone https://github.com/intel/hexl.git
-cd hexl
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=hexl_build
-cmake --build build -j
-cmake --install build
-```
-#### emp-ot & emp-tool
-```
-. ./build-ot.sh
-```
-#### phantom-fhe
-- If you don't use GPU, you can skip this step and set `-DUSE_HE_GPU=OFF` when building the project.
-```
-git clone https://github.com/encryptorion-lab/phantom-fhe.git
-cd phantom-fhe
-git apply ../patch/phantom.patch
-cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_INSTALL_PREFIX=build_phantom
-cmake --build build --target install --parallel
-```
-You may need to add the following line to the `~/.bashrc` file and run `source ~/.bashrc`:
-```
-export CUDA_HOME=/usr/local/cuda
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
-export PATH=$PATH:$CUDA_HOME/bin
-```
+
+## GPU dependency
+
+With the CUDA toolkit on your PATH, run `bash Extern/build-phantom.sh` from the repository root. The script checks out the revision in `Extern/phantom-fhe.rev`, applies the bundled patch and builds for the installed GPU. Set `CUDA_ARCHITECTURES` to override the native architecture.
