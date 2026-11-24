@@ -37,6 +37,36 @@ Tests use a two-party protocol. Start **Server** (`r=1`) before **Client** (`r=2
 ./build/Test/test_cir_conv r=2 p=1234     # Terminal 2 (Client)
 ```
 
+### OptiEncode convolution
+
+OptiEncode is the CPU/GPU encrypted convolution protocol from OptiPrime (MICRO 2026). For end-to-end quantized inference on ResNet or VGG, see the [experiment guide](Experiments/OptiPrime/README.md) and [network definitions](Experiments/OptiPrime/imagenet/architecture.py). [Paper](https://arxiv.org/abs/2609.16898) · [Citation](#citation)
+
+From the repository root, run the CPU suite after building with `BUILD_TESTING=ON` (the default). It checks the encoding algebra, two-party convolution against a clear reference, default Galois keys, and FaceResNet integration. CTest starts both parties automatically.
+
+```bash
+ctest --test-dir build --output-on-failure -R '^optiencode_'
+```
+
+For the GPU convolution check, first install the [GPU dependency](Extern/README.md#gpu-dependency) and use the GPU build directory.
+
+```bash
+cmake -S . -B build-gpu -DUSE_HE_GPU=ON -DBUILD_TESTING=ON
+cmake --build build-gpu --target test_optiencode_conv -j8
+ctest --test-dir build-gpu --output-on-failure -R '^optiencode_gpu_conv$'
+```
+
+To call the operator from C++, link the CMake target `LinearLayer`. Each party supplies its additive input share. The server supplies OIHW weights and per-channel bias modulo the plaintext modulus. The client passes zero tensors of the same shapes. For a power-of-two plaintext modulus, set `options.ciphertext_inverse_normalization = true` on both parties. [Public header](Layer/LinearLayer/include/LinearLayer/ConvOptiEncode.h) · [Two-party example](Test/src/TestOptiEncodeConv.cpp)
+
+```cpp
+#include <LinearLayer/ConvOptiEncode.h>
+
+he.GenerateNewKey(LinearLayer::Conv2DOptiEncode::GaloisElements(he.polyModulusDegree));
+LinearLayer::OptiEncodeOptions options;
+options.threads = 4;
+LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, options);
+auto output_share = conv(input_share);
+```
+
 ### FaceResNet64
 
 `Model::FaceResNet64` verifies a pair of aligned RGB face crops with shape
@@ -340,7 +370,7 @@ exact truncation.
 
 ## Citation
 
-If you use this codebase, please cite both of the following:
+Please cite PrivCirNet and Breaking the Layer Barrier when using SEC-PPDL. If you use its OptiEncode convolution implementation, please also cite OptiPrime.
 
 ```bibtex
 @article{xu2024privcirnet,
@@ -359,24 +389,12 @@ If you use this codebase, please cite both of the following:
   pages={2653--2672},
   year={2025}
 }
+
+@inproceedings{yu2026optiprime,
+  title={{OptiPrime}: Optimizing Private Inference through Protocol-Hardware Co-design},
+  author={Yu, Jiangrui and Yu, Ye and Chen, Si and Lin, Chenqi and Zeng, Wenxuan and Fan, Junfeng and Gao, Mingyu and Li, Meng},
+  booktitle={Proceedings of the 59th IEEE/ACM International Symposium on Microarchitecture (MICRO)},
+  year={2026},
+  url={https://arxiv.org/abs/2609.16898}
+}
 ```
-
-## OptiEncode convolution
-
-OptiEncode is the encrypted convolution protocol from Jiangrui Yu et al., *OptiPrime: Optimizing Private Inference through Protocol-Hardware Co-design*, MICRO 2026. Please cite the paper when using this protocol. [OptiPrime paper](https://arxiv.org/abs/2609.16898)
-
-Use `LinearLayer::Conv2DOptiEncode` with the host or GPU HE backend. Both parties supply additive input shares. The server supplies OIHW weights and per-channel bias as residues of the plaintext modulus.
-
-```cpp
-#include <LinearLayer/ConvOptiEncode.h>
-
-he.GenerateNewKey(LinearLayer::Conv2DOptiEncode::GaloisElements(he.polyModulusDegree));
-LinearLayer::OptiEncodeOptions options;
-options.threads = 4;
-LinearLayer::Conv2DOptiEncode conv(height, stride, padding, weight, bias, &he, options);
-auto output_share = conv(input_share);
-```
-
-Run `ctest --test-dir build --output-on-failure -R optiencode` for the algebra and two-party convolution checks. For GPU builds, configure with `-DUSE_HE_GPU=ON` and use the corresponding build directory.
-
-For exact and approximate quantized ImageNet inference, see the [ResNet and VGG module](Experiments/QuantizedResNet18/README.md).

@@ -95,7 +95,7 @@ if imagenet:
     if not args.binary:
         root = Path(__file__).resolve().parents[2]
         build = "build-gpu" if args.linear == "gpu" else "build"
-        args.binary = str(root / build / "Experiments/QuantizedResNet18/test_quant_imagenet")
+        args.binary = str(root / build / "Experiments/OptiPrime/test_quant_imagenet")
 elif not args.binary:
     parser.error("provide --binary for a benchmark or --bundle for ImageNet inference")
 else:
